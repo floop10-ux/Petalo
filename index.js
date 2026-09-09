@@ -9,6 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 let bouquets = [];
 let idCounter = 1;
 
+// ---- Приветствие ----
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   bot.sendMessage(chatId, 
@@ -19,6 +20,7 @@ bot.onText(/\/start/, (msg) => {
   );
 });
 
+// ---- Добавление букета ----
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   const caption = msg.caption || '';
@@ -58,14 +60,76 @@ bot.on('photo', async (msg) => {
     price: price,
     filePath: filePath,
     createdAt: new Date().toISOString(),
-    isPinned: name.trim().startsWith('.')
+    isPinned: name.trim().startsWith('.'),
+    chatId: chatId,          // запоминаем, кто добавил
+    reminded: false          // флаг – отправляли ли уведомление
   };
   
   bouquets.push(bouquet);
   bot.sendMessage(chatId, `✅ Букет «${bouquet.name}» добавлен! Цена: ${bouquet.price} ₽`);
 });
 
+// ---- Обработка кнопки "Продлить" ----
+bot.on('callback_query', (query) => {
+  const data = query.data;
+  if (data.startsWith('extend_')) {
+    const bouquetId = parseInt(data.split('_')[1]);
+    const bouquet = bouquets.find(b => b.id === bouquetId);
+    if (bouquet) {
+      // Продлеваем на 1 день (24 часа)
+      const newDate = new Date();
+      newDate.setHours(newDate.getHours() + 24);
+      bouquet.createdAt = newDate.toISOString();
+      bouquet.reminded = false;
+      
+      bot.answerCallbackQuery(query.id, { text: '✅ Букет продлён на 1 день!' });
+      bot.sendMessage(query.from.id, `🌿 Букет «${bouquet.name}» продлён до ${newDate.toLocaleString()}`);
+    } else {
+      bot.answerCallbackQuery(query.id, { text: '❌ Букет уже удалён' });
+    }
+  }
+});
+
+// ---- Проверка и отправка уведомлений ----
+function checkAndNotify() {
+  const now = Date.now();
+  const threeDays = 3 * 24 * 60 * 60 * 1000;
+  const twelveHours = 12 * 60 * 60 * 1000;
+  
+  for (let b of bouquets) {
+    if (b.isPinned) continue; // закреплённые не удаляются и не напоминаем
+    
+    const age = now - new Date(b.createdAt).getTime();
+    const remaining = threeDays - age;
+    
+    // Если осталось меньше 12 часов, но ещё не напоминали
+    if (remaining > 0 && remaining <= twelveHours && !b.reminded) {
+      const chatId = b.chatId;
+      const options = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🌿 Продлить на 1 день', callback_data: `extend_${b.id}` }]
+          ]
+        }
+      };
+      bot.sendMessage(chatId, 
+        `⚠️ Букет «${b.name}» скоро исчезнет с витрины (осталось ~${Math.round(remaining / 3600000)} ч.).\n` +
+        `Нажмите «Продлить», чтобы оставить его ещё на сутки.`,
+        options
+      );
+      b.reminded = true;
+    }
+  }
+}
+
+// ---- Запуск периодической проверки (каждые 10 минут) ----
+setInterval(checkAndNotify, 10 * 60 * 1000);
+
+// ---- Витрина для клиентов ----
 app.get('/', (req, res) => {
+  // Заодно проверим уведомления при каждом запросе (на случай, если сервер проснулся)
+  checkAndNotify();
+  
   const now = Date.now();
   const threeDays = 3 * 24 * 60 * 60 * 1000;
   
