@@ -16,7 +16,8 @@ bot.onText(/\/start/, (msg) => {
     '🌸 Добро пожаловать в Petalo!\n\n' +
     'Просто отправьте мне ФОТО и в подписи напишите:\n' +
     'Название и цену (последнее число).\n' +
-    'Например: "Розы в крафте 4500"'
+    'Например: "Розы в крафте 2200"\n\n' +
+    'Цена на витрине будет показана с перечёркнутой старой ценой (+20%, округлено до 100 ₽).'
   );
 });
 
@@ -38,7 +39,7 @@ bot.on('photo', async (msg) => {
   }
   
   if (price === 0 || name === '') {
-    bot.sendMessage(chatId, '❌ Не могу разобрать цену. Укажите число в конце, например: "Розы 4500"');
+    bot.sendMessage(chatId, '❌ Не могу разобрать цену. Укажите число в конце, например: "Розы 2200"');
     return;
   }
   
@@ -61,8 +62,8 @@ bot.on('photo', async (msg) => {
     filePath: filePath,
     createdAt: new Date().toISOString(),
     isPinned: name.trim().startsWith('.'),
-    chatId: chatId,          // запоминаем, кто добавил
-    reminded: false          // флаг – отправляли ли уведомление
+    chatId: chatId,
+    reminded: false
   };
   
   bouquets.push(bouquet);
@@ -76,7 +77,6 @@ bot.on('callback_query', (query) => {
     const bouquetId = parseInt(data.split('_')[1]);
     const bouquet = bouquets.find(b => b.id === bouquetId);
     if (bouquet) {
-      // Продлеваем на 1 день (24 часа)
       const newDate = new Date();
       newDate.setHours(newDate.getHours() + 24);
       bouquet.createdAt = newDate.toISOString();
@@ -97,12 +97,11 @@ function checkAndNotify() {
   const twelveHours = 12 * 60 * 60 * 1000;
   
   for (let b of bouquets) {
-    if (b.isPinned) continue; // закреплённые не удаляются и не напоминаем
+    if (b.isPinned) continue;
     
     const age = now - new Date(b.createdAt).getTime();
     const remaining = threeDays - age;
     
-    // Если осталось меньше 12 часов, но ещё не напоминали
     if (remaining > 0 && remaining <= twelveHours && !b.reminded) {
       const chatId = b.chatId;
       const options = {
@@ -122,12 +121,10 @@ function checkAndNotify() {
   }
 }
 
-// ---- Запуск периодической проверки (каждые 10 минут) ----
 setInterval(checkAndNotify, 10 * 60 * 1000);
 
 // ---- Витрина для клиентов ----
 app.get('/', (req, res) => {
-  // Заодно проверим уведомления при каждом запросе (на случай, если сервер проснулся)
   checkAndNotify();
   
   const now = Date.now();
@@ -150,11 +147,18 @@ app.get('/', (req, res) => {
   } else {
     for (let b of active) {
       const photoUrl = `https://api.telegram.org/file/bot${token}/${b.filePath}`;
+      
+      // ---- НАЦЕНКА: вычисляем старую цену (+20%, округление до 100 вверх) ----
+      const oldPrice = Math.ceil(b.price * 1.2 / 100) * 100;
+      
       cards += `
         <div style="border:1px solid #eee; border-radius:16px; padding:16px; margin:12px; max-width:300px; display:inline-block; vertical-align:top; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
           <img src="${photoUrl}" style="width:100%; height:auto; border-radius:12px; aspect-ratio:1/1; object-fit:cover;" />
           <h3 style="margin:12px 0 6px; font-family:sans-serif;">${b.name}</h3>
-          <p style="font-size:22px; font-weight:bold; color:#2c3e50; margin:6px 0;">${b.price} ₽</p>
+          <p style="font-size:22px; font-weight:bold; color:#2c3e50; margin:6px 0;">
+            <span style="text-decoration:line-through; color:#999; font-weight:normal; font-size:18px;">${oldPrice} ₽</span>
+            &nbsp; ${b.price} ₽
+          </p>
           ${b.isPinned ? '<span style="background:#f1c40f; padding:2px 10px; border-radius:20px; font-size:12px;">⭐ Закреплён</span>' : ''}
           <br>
           <a href="tg://resolve?domain=floop10" style="display:inline-block; margin-top:12px; background:#4CAF50; color:#fff; padding:10px 20px; border-radius:30px; text-decoration:none; font-weight:bold; font-size:16px;">📩 Заказать в Telegram</a>
