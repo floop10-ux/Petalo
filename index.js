@@ -14,7 +14,7 @@ const PRESET_SHOP = {
   displayName: '🌸 Kupidon - для цветов не нужен повод',
   address: 'Ставрополь, Краснофлотская 157/1',
   hours: 'Пн-Вс 10:30-21:00',
-  phone: '+7 961 402-51-75',
+  phone: '+7 962 402-51-75',
   telegramUsername: 'KupidonAdm',   // без @
   markupPercent: 20,
   trialMonths: 3
