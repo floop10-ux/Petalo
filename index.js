@@ -25,10 +25,11 @@ const shops = {};
 const userToShop = {};
 const registrationState = {};
 const lastBouquetByUser = {};
+const awaitingUpload = {}; // chatId -> 'logo' | 'background'
 
 let idCounter = 1;
 
-// ---------- Создание preset-магазина ----------
+// ---------- Инициализация магазина ----------
 function initPresetShop() {
   const now = new Date();
   const trialEnd = new Date(now);
@@ -82,7 +83,6 @@ function getRemainingDays(shop) {
   return diff <= 0 ? 0 : Math.ceil(diff / (24 * 60 * 60 * 1000));
 }
 
-// Проверка: подтверждён ли букет за последние 3 дня
 function isConfirmedRecently(bouquet) {
   if (bouquet.isPinned) return true;
   if (!bouquet.confirmedAt) return false;
@@ -90,36 +90,25 @@ function isConfirmedRecently(bouquet) {
   return age < 3 * 24 * 60 * 60 * 1000;
 }
 
-// Формирование списка для /check
 function buildCheckMessage(shop) {
   const bouquets = shop.bouquets
-    .filter(b => {
-      // показываем только те, что ещё не удалены (подтверждены за последние 3 дня или закреплены)
-      return isConfirmedRecently(b) || b.isPinned;
-    })
+    .filter(b => isConfirmedRecently(b) || b.isPinned)
     .sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
       return new Date(b.confirmedAt || b.createdAt) - new Date(a.confirmedAt || a.createdAt);
     });
   
-  if (bouquets.length === 0) {
-    return { text: '🌿 Нет активных букетов. Добавьте новый через фото.', options: {} };
-  }
+  if (bouquets.length === 0) return { text: '🌿 Нет активных букетов.', options: {} };
   
   let text = '✅ Отметьте букеты, которые есть в наличии:\n\n';
   const keyboard = [];
-  
   for (const b of bouquets) {
     const confirmed = b.confirmedAt && (Date.now() - new Date(b.confirmedAt).getTime() < 24 * 60 * 60 * 1000);
     const emoji = confirmed ? '✅' : '⬜';
     text += `${emoji} ${b.name} — ${b.price} ₽\n`;
-    keyboard.push([{
-      text: `${emoji} ${b.name}`,
-      callback_data: `confirm_${b.id}`
-    }]);
+    keyboard.push([{ text: `${emoji} ${b.name}`, callback_data: `confirm_${b.id}` }]);
   }
-  
   return { text, options: { reply_markup: { inline_keyboard: keyboard } } };
 }
 
@@ -139,13 +128,16 @@ bot.onText(/\/start/, (msg) => {
   if (shopId) {
     const shop = getShop(shopId);
     bot.sendMessage(chatId, 
-      `🌸 Добро пожаловать в «${shop.displayName}»!\n\n` +
-      `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${shopId}\n\n` +
-      `📅 Осталось дней подписки: ${getRemainingDays(shop)}\n\n` +
-      `📷 Как добавить букет: отправьте ФОТО с подписью "Название цена"\n\n` +
-      `✅ Как подтвердить наличие: команда /check\n` +
-      `📊 Статус: /status\n\n` +
-      `Команды: /check, /status, /renew`
+      `🌸 «${shop.displayName}»\n\n` +
+      `🔗 Витрина:\nhttps://petalo.onrender.com/shop/${shopId}\n\n` +
+      `📅 Осталось дней: ${getRemainingDays(shop)}\n\n` +
+      `📷 Добавить букет: ФОТО + подпись "Название цена"\n` +
+      `✅ Подтвердить наличие: /check\n\n` +
+      `🎨 Оформление:\n` +
+      `/setlogo — загрузить логотип\n` +
+      `/setbackground — загрузить фон\n` +
+      `/resetlogo, /resetbackground — сбросить\n\n` +
+      `📊 /status, 💳 /renew`
     );
   } else {
     bot.sendMessage(chatId, '🌸 Отправьте /register для создания магазина.');
@@ -174,7 +166,7 @@ bot.on('message', (msg) => {
     if (shops[name]) return bot.sendMessage(chatId, '❌ Имя занято. Другое:');
     state.data.shopId = name;
     state.step = 'displayName';
-    return bot.sendMessage(chatId, '✅ Шаг 2 из 5.\nНапишите **красивое название**.');
+    return bot.sendMessage(chatId, '✅ Шаг 2 из 5.\n**Красивое название**.');
   }
   if (state.step === 'displayName') {
     if (text.length < 2 || text.length > 60) return bot.sendMessage(chatId, '❌ От 2 до 60 символов. Снова:');
@@ -215,14 +207,56 @@ bot.on('message', (msg) => {
   }
 });
 
-// ---------- Команда /check ----------
-bot.onText(/\/check/, (msg) => {
+// ---------- Команды настройки внешнего вида ----------
+bot.onText(/\/setlogo/, (msg) => {
   const chatId = msg.chat.id;
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
+  awaitingUpload[chatId] = 'logo';
+  bot.sendMessage(chatId, '🖼 Отправьте фото — я установлю его как логотип витрины.\n(Отмена: /cancel)');
+});
+
+bot.onText(/\/setbackground/, (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
+  awaitingUpload[chatId] = 'background';
+  bot.sendMessage(chatId, '🖼 Отправьте фото — я установлю его как фон витрины.\n(Совет: светлые тона, крупные цветы.)\n(Отмена: /cancel)');
+});
+
+bot.onText(/\/resetlogo/, (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌');
+  const shop = getShop(shopId);
+  shop.settings.logo = null;
+  bot.sendMessage(chatId, '✅ Логотип сброшен.');
+});
+
+bot.onText(/\/resetbackground/, (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌');
+  const shop = getShop(shopId);
+  shop.settings.background = null;
+  bot.sendMessage(chatId, '✅ Фон сброшен.');
+});
+
+bot.onText(/\/cancel/, (msg) => {
+  const chatId = msg.chat.id;
+  if (awaitingUpload[chatId]) {
+    delete awaitingUpload[chatId];
+    bot.sendMessage(chatId, '❌ Отменено.');
+  }
+});
+
+// ---------- /check ----------
+bot.onText(/\/check/, (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌ /start');
   const shop = getShop(shopId);
   if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
-  
   const { text, options } = buildCheckMessage(shop);
   bot.sendMessage(chatId, text, options);
 });
@@ -231,7 +265,7 @@ bot.onText(/\/check/, (msg) => {
 bot.onText(/\/status/, (msg) => {
   const chatId = msg.chat.id;
   const shopId = getShopId(chatId);
-  if (!shopId) return bot.sendMessage(chatId, '❌ Не привязаны.');
+  if (!shopId) return bot.sendMessage(chatId, '❌');
   const shop = getShop(shopId);
   const days = getRemainingDays(shop);
   let txt = `📊 ${shop.displayName}\n`;
@@ -240,9 +274,9 @@ bot.onText(/\/status/, (msg) => {
   bot.sendMessage(chatId, txt);
 });
 
-bot.onText(/\/renew/, (msg) => bot.sendMessage(msg.chat.id, '💳 Продление: @floop10'));
+bot.onText(/\/renew/, (msg) => bot.sendMessage(msg.chat.id, '💳 @floop10'));
 
-// ---------- Фото ----------
+// ---------- Фото: логотип, фон или букет ----------
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   let shopId = getShopId(chatId);
@@ -254,9 +288,34 @@ bot.on('photo', async (msg) => {
     }
     shopId = PRESET_SHOP.shopId;
   }
-  
   if (!shopId) return bot.sendMessage(chatId, '❌ /start');
   const shop = getShop(shopId);
+
+  // --- Если ждём логотип или фон ---
+  const awaiting = awaitingUpload[chatId];
+  if (awaiting) {
+    const photo = msg.photo[msg.photo.length - 1];
+    let filePath = '';
+    try {
+      const fi = await bot.getFile(photo.file_id);
+      filePath = fi.file_path;
+    } catch (e) {
+      return bot.sendMessage(chatId, '❌ Ошибка загрузки.');
+    }
+    if (awaiting === 'logo') {
+      shop.settings.logo = filePath;
+      delete awaitingUpload[chatId];
+      return bot.sendMessage(chatId, '✅ Логотип установлен! Обновите витрину.');
+    }
+    if (awaiting === 'background') {
+      shop.settings.background = filePath;
+      delete awaitingUpload[chatId];
+      return bot.sendMessage(chatId, '✅ Фон установлен! Обновите витрину.');
+    }
+    return;
+  }
+
+  // --- Иначе — добавление букета ---
   if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
 
   const caption = (msg.caption || '').trim();
@@ -276,9 +335,7 @@ bot.on('photo', async (msg) => {
       const num = parseFloat(words[i]);
       if (!isNaN(num) && num > 0) { price = num; name = words.slice(0, i).join(' '); break; }
     }
-    if (price === 0 || name === '') {
-      return bot.sendMessage(chatId, '❌ Укажите цену в конце. Пример: "Розы 4500"');
-    }
+    if (price === 0 || name === '') return bot.sendMessage(chatId, '❌ Укажите цену в конце. Пример: "Розы 4500"');
     
     const bouquet = {
       id: idCounter++,
@@ -295,29 +352,26 @@ bot.on('photo', async (msg) => {
     lastBouquetByUser[chatId] = bouquet.id;
     
     return bot.sendMessage(chatId, 
-      `✅ Букет «${bouquet.name}» добавлен! Цена: ${bouquet.price} ₽\n\n` +
-      `💡 Ещё фото? Отправьте без подписи.\n` +
-      `✅ Подтвердить наличие: /check`
+      `✅ Букет «${bouquet.name}» добавлен! ${bouquet.price} ₽\n💡 Ещё фото — без подписи.`
     );
   }
 
   const lastId = lastBouquetByUser[chatId];
   if (!lastId) return bot.sendMessage(chatId, '❌ Отправьте фото с подписью.');
   const bouquet = shop.bouquets.find(b => b.id === lastId);
-  if (!bouquet) return bot.sendMessage(chatId, '❌ Последний букет не найден.');
+  if (!bouquet) return bot.sendMessage(chatId, '❌ Букет не найден.');
   bouquet.photos.push(filePath);
   bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${bouquet.photos.length}`);
 });
 
-// ---------- Обработка кнопок ----------
+// ---------- Кнопки ----------
 bot.on('callback_query', (q) => {
   const chatId = q.from.id;
   const data = q.data;
   const shopId = getShopId(chatId);
   if (!shopId) return bot.answerCallbackQuery(q.id, { text: 'Ошибка' });
   const shop = getShop(shopId);
-  
-  // ---- Подтверждение наличия букета ----
+
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -325,16 +379,14 @@ bot.on('callback_query', (q) => {
       b.confirmedAt = new Date().toISOString();
       b.reminded = false;
       bot.answerCallbackQuery(q.id, { text: '✅ Подтверждено!' });
-      // Обновим сообщение со списком
       const { text, options } = buildCheckMessage(shop);
       bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
     } else {
-      bot.answerCallbackQuery(q.id, { text: '❌ Букет не найден' });
+      bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
     }
     return;
   }
   
-  // ---- Продление по уведомлению ----
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -344,13 +396,13 @@ bot.on('callback_query', (q) => {
       bot.answerCallbackQuery(q.id, { text: '✅ Продлено' });
       bot.sendMessage(chatId, `🌿 Букет «${b.name}» продлён.`);
     } else {
-      bot.answerCallbackQuery(q.id, { text: '❌ Уже удалён' });
+      bot.answerCallbackQuery(q.id, { text: '❌' });
     }
     return;
   }
 });
 
-// ---------- Уведомления (за 12 часов до скрытия) ----------
+// ---------- Уведомления ----------
 function checkAndNotify() {
   const now = Date.now();
   const threeDays = 3 * 24 * 60 * 60 * 1000;
@@ -365,8 +417,7 @@ function checkAndNotify() {
       const rem = threeDays - age;
       if (rem > 0 && rem <= twelveHours && !b.reminded) {
         bot.sendMessage(b.chatId, 
-          `⚠️ Букет «${b.name}» скоро исчезнет с витрины (нет подтверждения ~3 дня).\n` +
-          `Нажмите «Продлить», если он ещё в наличии.`,
+          `⚠️ Букет «${b.name}» скоро скроется (нет подтверждения ~3 дня).\nЕсли он ещё в наличии — нажмите:`,
           { reply_markup: { inline_keyboard: [[{ text: '🌿 Продлить на 3 дня', callback_data: `extend_${b.id}` }]] } }
         );
         b.reminded = true;
@@ -382,12 +433,9 @@ app.get('/shop/:shopId', (req, res) => {
   if (!shop) return res.status(404).send('❌ Магазин не найден');
 
   if (!isSubscriptionActive(shop)) {
-    return res.send(`
-      <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Petalo</title>
-      <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#fafaf8;}h1{color:#2c3e50;}</style></head>
-      <body><h1>🌸 ${shop.displayName}</h1>
-      <p style="font-size:20px;">Витрина приостановлена.</p></body></html>
-    `);
+    return res.send(`<html><head><meta charset="UTF-8"><title>Petalo</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#fafaf8;}</style></head>
+      <body><h1>🌸 ${shop.displayName}</h1><p style="font-size:20px;">Витрина приостановлена.</p></body></html>`);
   }
 
   let bouquets = shop.bouquets.filter(isConfirmedRecently);
@@ -435,13 +483,29 @@ app.get('/shop/:shopId', (req, res) => {
     }
   }
 
+  // ---- Логотип и фон ----
+  const logoUrl = shop.settings.logo ? `https://api.telegram.org/file/bot${token}/${shop.settings.logo}` : null;
+  const bgUrl = shop.settings.background ? `https://api.telegram.org/file/bot${token}/${shop.settings.background}` : null;
+
+  const bodyStyle = bgUrl 
+    ? `background-image:url('${bgUrl}');background-size:cover;background-position:center;background-attachment:fixed;`
+    : `background:#fafaf8;`;
+
+  const headerHTML = logoUrl 
+    ? `<img src="${logoUrl}" style="max-height:90px;max-width:200px;display:block;margin:0 auto 12px;">`
+    : '';
+
   const html = `
     <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${shop.displayName} — Petalo</title>
-    <style>body{font-family:-apple-system,sans-serif;background:#fafaf8;margin:0;padding:20px;text-align:center;}
-    h1{color:#2c3e50;margin-bottom:4px;} .info{color:#888;font-size:14px;margin-bottom:20px;}
-    .container{max-width:1200px;margin:0 auto;}</style></head>
+    <style>
+      body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}}
+      h1{color:#2c3e50;margin-bottom:4px;text-shadow:0 1px 3px rgba(255,255,255,0.8);}
+      .info{color:#555;font-size:14px;margin-bottom:20px;background:rgba(255,255,255,0.75);display:inline-block;padding:6px 14px;border-radius:20px;}
+      .container{max-width:1200px;margin:0 auto;}
+    </style></head>
     <body><div class="container">
+      ${headerHTML}
       <h1>${shop.displayName}</h1>
       <div class="info">
         ${shop.address ? `📍 ${shop.address}` : ''}
