@@ -25,15 +25,29 @@ const shops = {};
 const userToShop = {};
 const registrationState = {};
 const lastBouquetByUser = {};
-const awaitingUpload = {}; // chatId -> 'logo' | 'background'
+const awaitingUpload = {};
+const inviteIndex = {}; // inviteCode -> shopId
 
 let idCounter = 1;
+
+// ---------- Генератор кода ----------
+function generateInviteCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
 
 // ---------- Инициализация магазина ----------
 function initPresetShop() {
   const now = new Date();
   const trialEnd = new Date(now);
   trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
+
+  const inviteCode = generateInviteCode();
+  inviteIndex[inviteCode] = PRESET_SHOP.shopId;
 
   shops[PRESET_SHOP.shopId] = {
     name: PRESET_SHOP.shopId,
@@ -42,6 +56,7 @@ function initPresetShop() {
     hours: PRESET_SHOP.hours,
     phone: PRESET_SHOP.phone,
     telegramUsername: PRESET_SHOP.telegramUsername,
+    inviteCode: inviteCode,
     bouquets: [],
     admins: [],
     subscription: {
@@ -56,7 +71,7 @@ function initPresetShop() {
       markupPercent: PRESET_SHOP.markupPercent
     }
   };
-  console.log(`✅ Магазин "${PRESET_SHOP.shopId}" создан.`);
+  console.log(`✅ Магазин "${PRESET_SHOP.shopId}" создан. Invite: ${inviteCode}`);
 }
 initPresetShop();
 
@@ -98,9 +113,7 @@ function buildCheckMessage(shop) {
       if (!a.isPinned && b.isPinned) return 1;
       return new Date(b.confirmedAt || b.createdAt) - new Date(a.confirmedAt || a.createdAt);
     });
-  
   if (bouquets.length === 0) return { text: '🌿 Нет активных букетов.', options: {} };
-  
   let text = '✅ Отметьте букеты, которые есть в наличии:\n\n';
   const keyboard = [];
   for (const b of bouquets) {
@@ -112,16 +125,48 @@ function buildCheckMessage(shop) {
   return { text, options: { reply_markup: { inline_keyboard: keyboard } } };
 }
 
-// ---------- Старт ----------
-bot.onText(/\/start/, (msg) => {
+// ---------- Функция привязки пользователя к магазину ----------
+function attachUserToShop(chatId, shopId) {
+  userToShop[chatId] = shopId;
+  if (!shops[shopId].admins.includes(chatId)) {
+    shops[shopId].admins.push(chatId);
+  }
+}
+
+// ---------- Старт (обрабатывает /start и /start <invite_code>) ----------
+bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   const chatId = msg.chat.id;
+  const param = match && match[1] ? match[1].trim() : null;
+
+  // ---- Если передан параметр приглашения ----
+  if (param && param.startsWith('inv_')) {
+    const inviteCode = param.replace('inv_', '').toUpperCase();
+    const shopId = inviteIndex[inviteCode];
+    if (shopId && shops[shopId]) {
+      if (userToShop[chatId] && userToShop[chatId] !== shopId) {
+        return bot.sendMessage(chatId, `❌ Вы уже привязаны к другому магазину («${shops[userToShop[chatId]].displayName}»).`);
+      }
+      attachUserToShop(chatId, shopId);
+      const shop = shops[shopId];
+      return bot.sendMessage(chatId, 
+        `🎉 Добро пожаловать в команду «${shop.displayName}»!\n\n` +
+        `🔗 Витрина: https://petalo.onrender.com/shop/${shopId}\n\n` +
+        `Теперь вы можете:\n` +
+        `📷 Добавлять букеты: ФОТО + подпись "Название цена"\n` +
+        `✅ Подтверждать наличие: /check\n\n` +
+        `Команды: /start, /check, /status`
+      );
+    } else {
+      return bot.sendMessage(chatId, '❌ Приглашение недействительно. Попросите владельца создать новое.');
+    }
+  }
+
+  // ---- Стандартный /start ----
   let shopId = getShopId(chatId);
 
-  if (!shopId && shops[PRESET_SHOP.shopId]) {
-    userToShop[chatId] = PRESET_SHOP.shopId;
-    if (!shops[PRESET_SHOP.shopId].admins.includes(chatId)) {
-      shops[PRESET_SHOP.shopId].admins.push(chatId);
-    }
+  // Если preset-магазин существует и у него ещё нет админов — привязываем первого
+  if (!shopId && shops[PRESET_SHOP.shopId] && shops[PRESET_SHOP.shopId].admins.length === 0) {
+    attachUserToShop(chatId, PRESET_SHOP.shopId);
     shopId = PRESET_SHOP.shopId;
   }
 
@@ -132,19 +177,37 @@ bot.onText(/\/start/, (msg) => {
       `🔗 Витрина:\nhttps://petalo.onrender.com/shop/${shopId}\n\n` +
       `📅 Осталось дней: ${getRemainingDays(shop)}\n\n` +
       `📷 Добавить букет: ФОТО + подпись "Название цена"\n` +
-      `✅ Подтвердить наличие: /check\n\n` +
-      `🎨 Оформление:\n` +
-      `/setlogo — загрузить логотип\n` +
-      `/setbackground — загрузить фон\n` +
-      `/resetlogo, /resetbackground — сбросить\n\n` +
+      `✅ Подтвердить наличие: /check\n` +
+      `🔑 Пригласить флориста: /invite\n\n` +
+      `🎨 /setlogo, /setbackground\n` +
       `📊 /status, 💳 /renew`
     );
   } else {
-    bot.sendMessage(chatId, '🌸 Отправьте /register для создания магазина.');
+    bot.sendMessage(chatId, 
+      '🌸 Petalo — витрина для цветочных магазинов.\n\n' +
+      'Если вас пригласили в магазин — попросите ссылку-приглашение.\n\n' +
+      'Или создайте свой магазин:\n/register'
+    );
   }
 });
 
-// ---------- Регистрация ----------
+// ---------- /invite ----------
+bot.onText(/\/invite/, (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
+  const shop = getShop(shopId);
+  if (!shop) return bot.sendMessage(chatId, '❌ Магазин не найден.');
+  if (!shop.admins.includes(chatId)) return bot.sendMessage(chatId, '❌ Только админ может приглашать.');
+
+  const link = `https://t.me/petalo_rus_bot?start=inv_${shop.inviteCode}`;
+  bot.sendMessage(chatId, 
+    `🔑 Ссылка-приглашение для флористов:\n\n${link}\n\n` +
+    `Перешлите её флористу. Когда он откроет ссылку, он автоматически присоединится к «${shop.displayName}» и сможет добавлять букеты.`
+  );
+});
+
+// ---------- Регистрация нового магазина ----------
 bot.onText(/\/register/, (msg) => {
   const chatId = msg.chat.id;
   if (userToShop[chatId]) return bot.sendMessage(chatId, '❌ Вы уже привязаны к магазину.');
@@ -189,6 +252,8 @@ bot.on('message', (msg) => {
     const now = new Date();
     const trialEnd = new Date(now);
     trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
+    const newInvite = generateInviteCode();
+    inviteIndex[newInvite] = state.data.shopId;
     shops[state.data.shopId] = {
       name: state.data.shopId,
       displayName: state.data.displayName,
@@ -196,6 +261,7 @@ bot.on('message', (msg) => {
       hours: state.data.hours,
       phone: state.data.phone,
       telegramUsername: PRESET_SHOP.telegramUsername,
+      inviteCode: newInvite,
       bouquets: [],
       admins: [chatId],
       subscription: { status: 'trial', trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(), paidUntil: null },
@@ -203,17 +269,20 @@ bot.on('message', (msg) => {
     };
     userToShop[chatId] = state.data.shopId;
     delete registrationState[chatId];
-    return bot.sendMessage(chatId, `🎉 Магазин создан!\n🔗 https://petalo.onrender.com/shop/${state.data.shopId}`);
+    return bot.sendMessage(chatId, 
+      `🎉 Магазин создан!\n🔗 https://petalo.onrender.com/shop/${state.data.shopId}\n\n` +
+      `Пригласите флористов: /invite`
+    );
   }
 });
 
-// ---------- Команды настройки внешнего вида ----------
+// ---------- Настройка внешнего вида ----------
 bot.onText(/\/setlogo/, (msg) => {
   const chatId = msg.chat.id;
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
   awaitingUpload[chatId] = 'logo';
-  bot.sendMessage(chatId, '🖼 Отправьте фото — я установлю его как логотип витрины.\n(Отмена: /cancel)');
+  bot.sendMessage(chatId, '🖼 Отправьте фото — установлю как логотип.\n(Отмена: /cancel)');
 });
 
 bot.onText(/\/setbackground/, (msg) => {
@@ -221,15 +290,14 @@ bot.onText(/\/setbackground/, (msg) => {
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
   awaitingUpload[chatId] = 'background';
-  bot.sendMessage(chatId, '🖼 Отправьте фото — я установлю его как фон витрины.\n(Совет: светлые тона, крупные цветы.)\n(Отмена: /cancel)');
+  bot.sendMessage(chatId, '🖼 Отправьте фото — установлю как фон.\n(Совет: светлые тона.)\n(Отмена: /cancel)');
 });
 
 bot.onText(/\/resetlogo/, (msg) => {
   const chatId = msg.chat.id;
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌');
-  const shop = getShop(shopId);
-  shop.settings.logo = null;
+  getShop(shopId).settings.logo = null;
   bot.sendMessage(chatId, '✅ Логотип сброшен.');
 });
 
@@ -237,8 +305,7 @@ bot.onText(/\/resetbackground/, (msg) => {
   const chatId = msg.chat.id;
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌');
-  const shop = getShop(shopId);
-  shop.settings.background = null;
+  getShop(shopId).settings.background = null;
   bot.sendMessage(chatId, '✅ Фон сброшен.');
 });
 
@@ -268,7 +335,7 @@ bot.onText(/\/status/, (msg) => {
   if (!shopId) return bot.sendMessage(chatId, '❌');
   const shop = getShop(shopId);
   const days = getRemainingDays(shop);
-  let txt = `📊 ${shop.displayName}\n`;
+  let txt = `📊 ${shop.displayName}\n👥 Флористов: ${shop.admins.length}\n`;
   txt += shop.subscription.status === 'trial' ? `Триал: ${days} дней\n` : `Активна: ${days} дней\n`;
   if (days <= 0) txt += '⚠️ Приостановлена. /renew';
   bot.sendMessage(chatId, txt);
@@ -276,22 +343,14 @@ bot.onText(/\/status/, (msg) => {
 
 bot.onText(/\/renew/, (msg) => bot.sendMessage(msg.chat.id, '💳 @floop10'));
 
-// ---------- Фото: логотип, фон или букет ----------
+// ---------- Фото ----------
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   let shopId = getShopId(chatId);
   
-  if (!shopId && shops[PRESET_SHOP.shopId]) {
-    userToShop[chatId] = PRESET_SHOP.shopId;
-    if (!shops[PRESET_SHOP.shopId].admins.includes(chatId)) {
-      shops[PRESET_SHOP.shopId].admins.push(chatId);
-    }
-    shopId = PRESET_SHOP.shopId;
-  }
-  if (!shopId) return bot.sendMessage(chatId, '❌ /start');
+  if (!shopId) return bot.sendMessage(chatId, '❌ Вы не привязаны к магазину. Попросите ссылку-приглашение или /register');
   const shop = getShop(shopId);
 
-  // --- Если ждём логотип или фон ---
   const awaiting = awaitingUpload[chatId];
   if (awaiting) {
     const photo = msg.photo[msg.photo.length - 1];
@@ -305,17 +364,16 @@ bot.on('photo', async (msg) => {
     if (awaiting === 'logo') {
       shop.settings.logo = filePath;
       delete awaitingUpload[chatId];
-      return bot.sendMessage(chatId, '✅ Логотип установлен! Обновите витрину.');
+      return bot.sendMessage(chatId, '✅ Логотип установлен!');
     }
     if (awaiting === 'background') {
       shop.settings.background = filePath;
       delete awaitingUpload[chatId];
-      return bot.sendMessage(chatId, '✅ Фон установлен! Обновите витрину.');
+      return bot.sendMessage(chatId, '✅ Фон установлен!');
     }
     return;
   }
 
-  // --- Иначе — добавление букета ---
   if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
 
   const caption = (msg.caption || '').trim();
@@ -351,9 +409,7 @@ bot.on('photo', async (msg) => {
     shop.bouquets.push(bouquet);
     lastBouquetByUser[chatId] = bouquet.id;
     
-    return bot.sendMessage(chatId, 
-      `✅ Букет «${bouquet.name}» добавлен! ${bouquet.price} ₽\n💡 Ещё фото — без подписи.`
-    );
+    return bot.sendMessage(chatId, `✅ Букет «${bouquet.name}» добавлен! ${bouquet.price} ₽`);
   }
 
   const lastId = lastBouquetByUser[chatId];
@@ -465,7 +521,6 @@ app.get('/shop/:shopId', (req, res) => {
           <div style="font-size:12px;color:#aaa;margin-bottom:6px;">← листайте фото →</div>
         `;
       }
-
       const oldPrice = Math.ceil(b.price * (1 + shop.settings.markupPercent / 100) / 100) * 100;
       cards += `
         <div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;">
@@ -483,17 +538,10 @@ app.get('/shop/:shopId', (req, res) => {
     }
   }
 
-  // ---- Логотип и фон ----
   const logoUrl = shop.settings.logo ? `https://api.telegram.org/file/bot${token}/${shop.settings.logo}` : null;
   const bgUrl = shop.settings.background ? `https://api.telegram.org/file/bot${token}/${shop.settings.background}` : null;
-
-  const bodyStyle = bgUrl 
-    ? `background-image:url('${bgUrl}');background-size:cover;background-position:center;background-attachment:fixed;`
-    : `background:#fafaf8;`;
-
-  const headerHTML = logoUrl 
-    ? `<img src="${logoUrl}" style="max-height:90px;max-width:200px;display:block;margin:0 auto 12px;">`
-    : '';
+  const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-position:center;background-attachment:fixed;` : `background:#fafaf8;`;
+  const headerHTML = logoUrl ? `<img src="${logoUrl}" style="max-height:90px;max-width:200px;display:block;margin:0 auto 12px;">` : '';
 
   const html = `
     <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
