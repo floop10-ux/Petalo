@@ -384,7 +384,10 @@ bot.on('photo', async (msg) => {
     };
     shop.bouquets.push(bouquet);
     lastBouquetByUser[chatId] = bouquet.id;
-    return bot.sendMessage(chatId, `✅ Букет «${bouquet.name}» добавлен! ${bouquet.price} ₽`);
+    return bot.sendMessage(chatId, 
+      `✅ Букет «${bouquet.name}» добавлен! ${bouquet.price} ₽\n\n` +
+      `💡 Хотите добавить ещё фото (другой ракурс)? Отправьте их без подписи.`
+    );
   }
 
   const lastId = lastBouquetByUser[chatId];
@@ -403,7 +406,6 @@ bot.on('callback_query', (q) => {
   if (!shopId) return bot.answerCallbackQuery(q.id, { text: 'Ошибка' });
   const shop = getShop(shopId);
 
-  // Подтверждение наличия
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -419,7 +421,6 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // Продление по уведомлению
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -434,7 +435,6 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // Запрос подтверждения удаления
   if (data.startsWith('askdel_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -449,7 +449,6 @@ bot.on('callback_query', (q) => {
     );
   }
 
-  // Подтверждение удаления
   if (data.startsWith('confirmdel_')) {
     const id = parseInt(data.split('_')[1]);
     const idx = shop.bouquets.findIndex(x => x.id === id);
@@ -464,7 +463,6 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // Отмена
   if (data === 'canceldel') {
     bot.answerCallbackQuery(q.id, { text: 'Отменено' });
     bot.editMessageText('❌ Удаление отменено.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
