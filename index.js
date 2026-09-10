@@ -26,26 +26,21 @@ const userToShop = {};
 const registrationState = {};
 const lastBouquetByUser = {};
 const awaitingUpload = {};
-const inviteIndex = {}; // inviteCode -> shopId
+const inviteIndex = {};
 
 let idCounter = 1;
 
-// ---------- Генератор кода ----------
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
+  for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
   return code;
 }
 
-// ---------- Инициализация магазина ----------
 function initPresetShop() {
   const now = new Date();
   const trialEnd = new Date(now);
   trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
-
   const inviteCode = generateInviteCode();
   inviteIndex[inviteCode] = PRESET_SHOP.shopId;
 
@@ -59,23 +54,13 @@ function initPresetShop() {
     inviteCode: inviteCode,
     bouquets: [],
     admins: [],
-    subscription: {
-      status: 'trial',
-      trialStart: now.toISOString(),
-      trialEnd: trialEnd.toISOString(),
-      paidUntil: null
-    },
-    settings: {
-      logo: null,
-      background: null,
-      markupPercent: PRESET_SHOP.markupPercent
-    }
+    subscription: { status: 'trial', trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(), paidUntil: null },
+    settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent }
   };
   console.log(`✅ Магазин "${PRESET_SHOP.shopId}" создан. Invite: ${inviteCode}`);
 }
 initPresetShop();
 
-// ---------- Вспомогательные ----------
 function getShopId(chatId) { return userToShop[chatId] || null; }
 function getShop(shopId) { return shops[shopId] || null; }
 
@@ -125,46 +110,38 @@ function buildCheckMessage(shop) {
   return { text, options: { reply_markup: { inline_keyboard: keyboard } } };
 }
 
-// ---------- Функция привязки пользователя к магазину ----------
 function attachUserToShop(chatId, shopId) {
   userToShop[chatId] = shopId;
-  if (!shops[shopId].admins.includes(chatId)) {
-    shops[shopId].admins.push(chatId);
-  }
+  if (!shops[shopId].admins.includes(chatId)) shops[shopId].admins.push(chatId);
 }
 
-// ---------- Старт (обрабатывает /start и /start <invite_code>) ----------
+// ---------- Старт ----------
 bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
 
-  // ---- Если передан параметр приглашения ----
   if (param && param.startsWith('inv_')) {
     const inviteCode = param.replace('inv_', '').toUpperCase();
     const shopId = inviteIndex[inviteCode];
     if (shopId && shops[shopId]) {
       if (userToShop[chatId] && userToShop[chatId] !== shopId) {
-        return bot.sendMessage(chatId, `❌ Вы уже привязаны к другому магазину («${shops[userToShop[chatId]].displayName}»).`);
+        return bot.sendMessage(chatId, `❌ Вы уже привязаны к другому магазину.`);
       }
       attachUserToShop(chatId, shopId);
       const shop = shops[shopId];
       return bot.sendMessage(chatId, 
         `🎉 Добро пожаловать в команду «${shop.displayName}»!\n\n` +
         `🔗 Витрина: https://petalo.onrender.com/shop/${shopId}\n\n` +
-        `Теперь вы можете:\n` +
-        `📷 Добавлять букеты: ФОТО + подпись "Название цена"\n` +
-        `✅ Подтверждать наличие: /check\n\n` +
-        `Команды: /start, /check, /status`
+        `📷 Добавляйте букеты: ФОТО + подпись "Название цена"\n` +
+        `✅ Подтверждайте наличие: /check\n` +
+        `🗑 Удаляйте ненужные: /delete`
       );
     } else {
-      return bot.sendMessage(chatId, '❌ Приглашение недействительно. Попросите владельца создать новое.');
+      return bot.sendMessage(chatId, '❌ Приглашение недействительно.');
     }
   }
 
-  // ---- Стандартный /start ----
   let shopId = getShopId(chatId);
-
-  // Если preset-магазин существует и у него ещё нет админов — привязываем первого
   if (!shopId && shops[PRESET_SHOP.shopId] && shops[PRESET_SHOP.shopId].admins.length === 0) {
     attachUserToShop(chatId, PRESET_SHOP.shopId);
     shopId = PRESET_SHOP.shopId;
@@ -178,16 +155,13 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
       `📅 Осталось дней: ${getRemainingDays(shop)}\n\n` +
       `📷 Добавить букет: ФОТО + подпись "Название цена"\n` +
       `✅ Подтвердить наличие: /check\n` +
+      `🗑 Удалить букет: /delete\n` +
       `🔑 Пригласить флориста: /invite\n\n` +
       `🎨 /setlogo, /setbackground\n` +
-      `📊 /status, 💳 /renew`
+      `📊 /status`
     );
   } else {
-    bot.sendMessage(chatId, 
-      '🌸 Petalo — витрина для цветочных магазинов.\n\n' +
-      'Если вас пригласили в магазин — попросите ссылку-приглашение.\n\n' +
-      'Или создайте свой магазин:\n/register'
-    );
+    bot.sendMessage(chatId, '🌸 Petalo — витрина для цветочных магазинов.\n\n/register — создать свой магазин');
   }
 });
 
@@ -197,22 +171,37 @@ bot.onText(/\/invite/, (msg) => {
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
   const shop = getShop(shopId);
-  if (!shop) return bot.sendMessage(chatId, '❌ Магазин не найден.');
-  if (!shop.admins.includes(chatId)) return bot.sendMessage(chatId, '❌ Только админ может приглашать.');
-
   const link = `https://t.me/petalo_rus_bot?start=inv_${shop.inviteCode}`;
+  bot.sendMessage(chatId, `🔑 Ссылка для флористов:\n\n${link}\n\nПерешлите её флористу.`);
+});
+
+// ---------- /delete ----------
+bot.onText(/\/delete/, (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
+  const shop = getShop(shopId);
+  if (!shop) return bot.sendMessage(chatId, '❌ Магазин не найден.');
+  if (shop.bouquets.length === 0) return bot.sendMessage(chatId, '🌿 Букетов пока нет.');
+
+  const sorted = [...shop.bouquets].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const keyboard = sorted.slice(0, 30).map(b => [{
+    text: `🗑 ${b.name} — ${b.price} ₽`,
+    callback_data: `askdel_${b.id}`
+  }]);
+
   bot.sendMessage(chatId, 
-    `🔑 Ссылка-приглашение для флористов:\n\n${link}\n\n` +
-    `Перешлите её флористу. Когда он откроет ссылку, он автоматически присоединится к «${shop.displayName}» и сможет добавлять букеты.`
+    `🗑 Выберите букет для удаления.\nВсего в магазине: ${shop.bouquets.length}`,
+    { reply_markup: { inline_keyboard: keyboard } }
   );
 });
 
-// ---------- Регистрация нового магазина ----------
+// ---------- Регистрация ----------
 bot.onText(/\/register/, (msg) => {
   const chatId = msg.chat.id;
   if (userToShop[chatId]) return bot.sendMessage(chatId, '❌ Вы уже привязаны к магазину.');
   registrationState[chatId] = { step: 'name', data: {} };
-  bot.sendMessage(chatId, '📝 Шаг 1 из 5.\n\nПридумайте **техническое имя** (латиницей).\nПример: `flowers_msk`');
+  bot.sendMessage(chatId, '📝 Шаг 1 из 5.\n\n**Техническое имя** (латиницей).\nПример: `flowers_msk`');
 });
 
 bot.on('message', (msg) => {
@@ -269,10 +258,7 @@ bot.on('message', (msg) => {
     };
     userToShop[chatId] = state.data.shopId;
     delete registrationState[chatId];
-    return bot.sendMessage(chatId, 
-      `🎉 Магазин создан!\n🔗 https://petalo.onrender.com/shop/${state.data.shopId}\n\n` +
-      `Пригласите флористов: /invite`
-    );
+    return bot.sendMessage(chatId, `🎉 Магазин создан!\n🔗 https://petalo.onrender.com/shop/${state.data.shopId}`);
   }
 });
 
@@ -290,7 +276,7 @@ bot.onText(/\/setbackground/, (msg) => {
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
   awaitingUpload[chatId] = 'background';
-  bot.sendMessage(chatId, '🖼 Отправьте фото — установлю как фон.\n(Совет: светлые тона.)\n(Отмена: /cancel)');
+  bot.sendMessage(chatId, '🖼 Отправьте фото — установлю как фон.\n(Отмена: /cancel)');
 });
 
 bot.onText(/\/resetlogo/, (msg) => {
@@ -335,7 +321,7 @@ bot.onText(/\/status/, (msg) => {
   if (!shopId) return bot.sendMessage(chatId, '❌');
   const shop = getShop(shopId);
   const days = getRemainingDays(shop);
-  let txt = `📊 ${shop.displayName}\n👥 Флористов: ${shop.admins.length}\n`;
+  let txt = `📊 ${shop.displayName}\n👥 Флористов: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
   txt += shop.subscription.status === 'trial' ? `Триал: ${days} дней\n` : `Активна: ${days} дней\n`;
   if (days <= 0) txt += '⚠️ Приостановлена. /renew';
   bot.sendMessage(chatId, txt);
@@ -347,20 +333,15 @@ bot.onText(/\/renew/, (msg) => bot.sendMessage(msg.chat.id, '💳 @floop10'));
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   let shopId = getShopId(chatId);
-  
-  if (!shopId) return bot.sendMessage(chatId, '❌ Вы не привязаны к магазину. Попросите ссылку-приглашение или /register');
+  if (!shopId) return bot.sendMessage(chatId, '❌ Вы не привязаны к магазину.');
   const shop = getShop(shopId);
 
   const awaiting = awaitingUpload[chatId];
   if (awaiting) {
     const photo = msg.photo[msg.photo.length - 1];
     let filePath = '';
-    try {
-      const fi = await bot.getFile(photo.file_id);
-      filePath = fi.file_path;
-    } catch (e) {
-      return bot.sendMessage(chatId, '❌ Ошибка загрузки.');
-    }
+    try { const fi = await bot.getFile(photo.file_id); filePath = fi.file_path; }
+    catch (e) { return bot.sendMessage(chatId, '❌ Ошибка загрузки.'); }
     if (awaiting === 'logo') {
       shop.settings.logo = filePath;
       delete awaitingUpload[chatId];
@@ -379,12 +360,8 @@ bot.on('photo', async (msg) => {
   const caption = (msg.caption || '').trim();
   const photo = msg.photo[msg.photo.length - 1];
   let filePath = '';
-  try {
-    const fi = await bot.getFile(photo.file_id);
-    filePath = fi.file_path;
-  } catch (e) {
-    return bot.sendMessage(chatId, '❌ Ошибка фото.');
-  }
+  try { const fi = await bot.getFile(photo.file_id); filePath = fi.file_path; }
+  catch (e) { return bot.sendMessage(chatId, '❌ Ошибка фото.'); }
 
   if (caption) {
     const words = caption.split(/\s+/);
@@ -394,7 +371,6 @@ bot.on('photo', async (msg) => {
       if (!isNaN(num) && num > 0) { price = num; name = words.slice(0, i).join(' '); break; }
     }
     if (price === 0 || name === '') return bot.sendMessage(chatId, '❌ Укажите цену в конце. Пример: "Розы 4500"');
-    
     const bouquet = {
       id: idCounter++,
       name: name.trim(),
@@ -408,7 +384,6 @@ bot.on('photo', async (msg) => {
     };
     shop.bouquets.push(bouquet);
     lastBouquetByUser[chatId] = bouquet.id;
-    
     return bot.sendMessage(chatId, `✅ Букет «${bouquet.name}» добавлен! ${bouquet.price} ₽`);
   }
 
@@ -428,6 +403,7 @@ bot.on('callback_query', (q) => {
   if (!shopId) return bot.answerCallbackQuery(q.id, { text: 'Ошибка' });
   const shop = getShop(shopId);
 
+  // Подтверждение наличия
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -442,7 +418,8 @@ bot.on('callback_query', (q) => {
     }
     return;
   }
-  
+
+  // Продление по уведомлению
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -454,6 +431,43 @@ bot.on('callback_query', (q) => {
     } else {
       bot.answerCallbackQuery(q.id, { text: '❌' });
     }
+    return;
+  }
+
+  // Запрос подтверждения удаления
+  if (data.startsWith('askdel_')) {
+    const id = parseInt(data.split('_')[1]);
+    const b = shop.bouquets.find(x => x.id === id);
+    if (!b) return bot.answerCallbackQuery(q.id, { text: '❌ Букет не найден' });
+    bot.answerCallbackQuery(q.id);
+    return bot.sendMessage(chatId, 
+      `🗑 Удалить букет «${b.name}» (${b.price} ₽)?\n\nЭто действие нельзя отменить.`,
+      { reply_markup: { inline_keyboard: [
+        [{ text: '🗑 Да, удалить', callback_data: `confirmdel_${b.id}` }],
+        [{ text: '↩️ Отмена', callback_data: `canceldel` }]
+      ]}}
+    );
+  }
+
+  // Подтверждение удаления
+  if (data.startsWith('confirmdel_')) {
+    const id = parseInt(data.split('_')[1]);
+    const idx = shop.bouquets.findIndex(x => x.id === id);
+    if (idx === -1) {
+      bot.answerCallbackQuery(q.id, { text: '❌ Уже удалён' });
+      return bot.editMessageText('❌ Букет уже удалён.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
+    }
+    const name = shop.bouquets[idx].name;
+    shop.bouquets.splice(idx, 1);
+    bot.answerCallbackQuery(q.id, { text: '🗑 Удалено' });
+    bot.editMessageText(`✅ Букет «${name}» удалён с витрины.`, { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
+    return;
+  }
+
+  // Отмена
+  if (data === 'canceldel') {
+    bot.answerCallbackQuery(q.id, { text: 'Отменено' });
+    bot.editMessageText('❌ Удаление отменено.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
     return;
   }
 });
