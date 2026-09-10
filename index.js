@@ -15,13 +15,12 @@ const PRESET_SHOP = {
   address: 'Ставрополь, Краснофлотская 157/1',
   hours: 'Пн-Вс 10:30-21:00',
   phone: '+7 962 402-51-75',
-  telegramUsername: 'KupidonAdm',   // без @
+  telegramUsername: 'KupidonAdm',
   markupPercent: 20,
   trialMonths: 3
 };
 // ============================================================
 
-// ---------- Хранилище ----------
 const shops = {};
 const userToShop = {};
 const registrationState = {};
@@ -29,7 +28,7 @@ const lastBouquetByUser = {};
 
 let idCounter = 1;
 
-// ---------- Инициализация preset-магазина при старте ----------
+// ---------- Создание preset-магазина ----------
 function initPresetShop() {
   const now = new Date();
   const trialEnd = new Date(now);
@@ -56,7 +55,7 @@ function initPresetShop() {
       markupPercent: PRESET_SHOP.markupPercent
     }
   };
-  console.log(`✅ Магазин "${PRESET_SHOP.shopId}" создан автоматически.`);
+  console.log(`✅ Магазин "${PRESET_SHOP.shopId}" создан.`);
 }
 initPresetShop();
 
@@ -83,6 +82,47 @@ function getRemainingDays(shop) {
   return diff <= 0 ? 0 : Math.ceil(diff / (24 * 60 * 60 * 1000));
 }
 
+// Проверка: подтверждён ли букет за последние 3 дня
+function isConfirmedRecently(bouquet) {
+  if (bouquet.isPinned) return true;
+  if (!bouquet.confirmedAt) return false;
+  const age = Date.now() - new Date(bouquet.confirmedAt).getTime();
+  return age < 3 * 24 * 60 * 60 * 1000;
+}
+
+// Формирование списка для /check
+function buildCheckMessage(shop) {
+  const bouquets = shop.bouquets
+    .filter(b => {
+      // показываем только те, что ещё не удалены (подтверждены за последние 3 дня или закреплены)
+      return isConfirmedRecently(b) || b.isPinned;
+    })
+    .sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return new Date(b.confirmedAt || b.createdAt) - new Date(a.confirmedAt || a.createdAt);
+    });
+  
+  if (bouquets.length === 0) {
+    return { text: '🌿 Нет активных букетов. Добавьте новый через фото.', options: {} };
+  }
+  
+  let text = '✅ Отметьте букеты, которые есть в наличии:\n\n';
+  const keyboard = [];
+  
+  for (const b of bouquets) {
+    const confirmed = b.confirmedAt && (Date.now() - new Date(b.confirmedAt).getTime() < 24 * 60 * 60 * 1000);
+    const emoji = confirmed ? '✅' : '⬜';
+    text += `${emoji} ${b.name} — ${b.price} ₽\n`;
+    keyboard.push([{
+      text: `${emoji} ${b.name}`,
+      callback_data: `confirm_${b.id}`
+    }]);
+  }
+  
+  return { text, options: { reply_markup: { inline_keyboard: keyboard } } };
+}
+
 // ---------- Старт ----------
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
@@ -102,36 +142,24 @@ bot.onText(/\/start/, (msg) => {
       `🌸 Добро пожаловать в «${shop.displayName}»!\n\n` +
       `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${shopId}\n\n` +
       `📅 Осталось дней подписки: ${getRemainingDays(shop)}\n\n` +
-      `Как добавить букет:\n` +
-      `1️⃣ Отправьте ФОТО с подписью "Название цена"\n` +
-      `   Пример: "Розы в крафте 4500"\n\n` +
-      `2️⃣ Хотите ещё фото к тому же букету? Отправьте их без подписи.\n\n` +
-      `Команды: /status, /renew`
+      `📷 Как добавить букет: отправьте ФОТО с подписью "Название цена"\n\n` +
+      `✅ Как подтвердить наличие: команда /check\n` +
+      `📊 Статус: /status\n\n` +
+      `Команды: /check, /status, /renew`
     );
   } else {
-    bot.sendMessage(chatId, 
-      '🌸 Petalo — витрина для цветочных магазинов.\n\n' +
-      'Отправьте команду:\n' +
-      '/register — создать новый магазин'
-    );
+    bot.sendMessage(chatId, '🌸 Отправьте /register для создания магазина.');
   }
 });
 
-// ---------- Регистрация нового магазина ----------
+// ---------- Регистрация ----------
 bot.onText(/\/register/, (msg) => {
   const chatId = msg.chat.id;
-  if (userToShop[chatId]) {
-    return bot.sendMessage(chatId, '❌ Вы уже привязаны к магазину.');
-  }
+  if (userToShop[chatId]) return bot.sendMessage(chatId, '❌ Вы уже привязаны к магазину.');
   registrationState[chatId] = { step: 'name', data: {} };
-  bot.sendMessage(chatId, 
-    '📝 Шаг 1 из 5.\n\n' +
-    'Придумайте **техническое имя** магазина (латиницей, без пробелов).\n' +
-    'Пример: `flowers_msk`'
-  );
+  bot.sendMessage(chatId, '📝 Шаг 1 из 5.\n\nПридумайте **техническое имя** (латиницей).\nПример: `flowers_msk`');
 });
 
-// ---------- Пошаговая регистрация ----------
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
@@ -142,38 +170,33 @@ bot.on('message', (msg) => {
 
   if (state.step === 'name') {
     const name = text.trim().toLowerCase().replace(/\s+/g, '_');
-    if (!/^[a-z0-9_]+$/.test(name)) return bot.sendMessage(chatId, '❌ Только латиница, цифры, _. Попробуйте снова:');
+    if (!/^[a-z0-9_]+$/.test(name)) return bot.sendMessage(chatId, '❌ Только латиница, цифры, _. Снова:');
     if (shops[name]) return bot.sendMessage(chatId, '❌ Имя занято. Другое:');
     state.data.shopId = name;
     state.step = 'displayName';
-    return bot.sendMessage(chatId, '✅ Отлично!\n\n📝 Шаг 2 из 5.\nНапишите **красивое название** магазина.\nПример: `Цветы на Фрунзе`');
+    return bot.sendMessage(chatId, '✅ Шаг 2 из 5.\nНапишите **красивое название**.');
   }
-
   if (state.step === 'displayName') {
-    if (text.length < 2 || text.length > 60) return bot.sendMessage(chatId, '❌ От 2 до 60 символов. Ещё раз:');
+    if (text.length < 2 || text.length > 60) return bot.sendMessage(chatId, '❌ От 2 до 60 символов. Снова:');
     state.data.displayName = text.trim();
     state.step = 'address';
-    return bot.sendMessage(chatId, '✅ Принято!\n\n📝 Шаг 3 из 5.\nУкажите **адрес**.\nПример: `г. Москва, ул. Фрунзе, 15`\n(Если не хотите — напишите "нет")');
+    return bot.sendMessage(chatId, '✅ Шаг 3 из 5.\n**Адрес** (или "нет").');
   }
-
   if (state.step === 'address') {
     state.data.address = text.trim().toLowerCase() === 'нет' ? null : text.trim();
     state.step = 'hours';
-    return bot.sendMessage(chatId, '✅ Принято!\n\n📝 Шаг 4 из 5.\nУкажите **часы работы**.\nПример: `Пн-Вс 09:00–21:00`\n(Если не хотите — "нет")');
+    return bot.sendMessage(chatId, '✅ Шаг 4 из 5.\n**Часы работы** (или "нет").');
   }
-
   if (state.step === 'hours') {
     state.data.hours = text.trim().toLowerCase() === 'нет' ? null : text.trim();
     state.step = 'phone';
-    return bot.sendMessage(chatId, '✅ Принято!\n\n📝 Шаг 5 из 5.\nУкажите **телефон** для клиентов.\nПример: `+7 999 123-45-67`\n(Если не хотите — "нет")');
+    return bot.sendMessage(chatId, '✅ Шаг 5 из 5.\n**Телефон** (или "нет").');
   }
-
   if (state.step === 'phone') {
     state.data.phone = text.trim().toLowerCase() === 'нет' ? null : text.trim();
     const now = new Date();
     const trialEnd = new Date(now);
     trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
-
     shops[state.data.shopId] = {
       name: state.data.shopId,
       displayName: state.data.displayName,
@@ -183,45 +206,41 @@ bot.on('message', (msg) => {
       telegramUsername: PRESET_SHOP.telegramUsername,
       bouquets: [],
       admins: [chatId],
-      subscription: {
-        status: 'trial',
-        trialStart: now.toISOString(),
-        trialEnd: trialEnd.toISOString(),
-        paidUntil: null
-      },
+      subscription: { status: 'trial', trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(), paidUntil: null },
       settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent }
     };
     userToShop[chatId] = state.data.shopId;
     delete registrationState[chatId];
-
-    return bot.sendMessage(chatId, 
-      `🎉 Магазин «${state.data.displayName}» зарегистрирован.\n\n` +
-      `🔗 Витрина:\nhttps://petalo.onrender.com/shop/${state.data.shopId}\n\n` +
-      `📅 Триал: до ${trialEnd.toLocaleDateString()}`
-    );
+    return bot.sendMessage(chatId, `🎉 Магазин создан!\n🔗 https://petalo.onrender.com/shop/${state.data.shopId}`);
   }
+});
+
+// ---------- Команда /check ----------
+bot.onText(/\/check/, (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
+  const shop = getShop(shopId);
+  if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
+  
+  const { text, options } = buildCheckMessage(shop);
+  bot.sendMessage(chatId, text, options);
 });
 
 // ---------- Статус ----------
 bot.onText(/\/status/, (msg) => {
   const chatId = msg.chat.id;
   const shopId = getShopId(chatId);
-  if (!shopId) return bot.sendMessage(chatId, '❌ Не привязаны к магазину.');
+  if (!shopId) return bot.sendMessage(chatId, '❌ Не привязаны.');
   const shop = getShop(shopId);
   const days = getRemainingDays(shop);
-  const status = shop.subscription.status;
   let txt = `📊 ${shop.displayName}\n`;
-  if (status === 'trial') txt += `Триал: осталось ${days} дней.\n`;
-  else if (status === 'active') txt += `Активна: ${days} дней.\n`;
-  else txt += `Истекла.\n`;
-  if (days <= 0) txt += '⚠️ Витрина приостановлена. /renew';
+  txt += shop.subscription.status === 'trial' ? `Триал: ${days} дней\n` : `Активна: ${days} дней\n`;
+  if (days <= 0) txt += '⚠️ Приостановлена. /renew';
   bot.sendMessage(chatId, txt);
 });
 
-// ---------- Продление ----------
-bot.onText(/\/renew/, (msg) => {
-  bot.sendMessage(msg.chat.id, '💳 Продление: свяжитесь с @floop10');
-});
+bot.onText(/\/renew/, (msg) => bot.sendMessage(msg.chat.id, '💳 Продление: @floop10'));
 
 // ---------- Фото ----------
 bot.on('photo', async (msg) => {
@@ -236,9 +255,9 @@ bot.on('photo', async (msg) => {
     shopId = PRESET_SHOP.shopId;
   }
   
-  if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
+  if (!shopId) return bot.sendMessage(chatId, '❌ /start');
   const shop = getShop(shopId);
-  if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла. /renew');
+  if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
 
   const caption = (msg.caption || '').trim();
   const photo = msg.photo[msg.photo.length - 1];
@@ -267,6 +286,7 @@ bot.on('photo', async (msg) => {
       price: price,
       photos: [filePath],
       createdAt: new Date().toISOString(),
+      confirmedAt: new Date().toISOString(),
       isPinned: name.trim().startsWith('.'),
       chatId: chatId,
       reminded: false
@@ -276,45 +296,61 @@ bot.on('photo', async (msg) => {
     
     return bot.sendMessage(chatId, 
       `✅ Букет «${bouquet.name}» добавлен! Цена: ${bouquet.price} ₽\n\n` +
-      `💡 Хотите добавить ещё фото (другой ракурс)? Отправьте их без подписи.`
+      `💡 Ещё фото? Отправьте без подписи.\n` +
+      `✅ Подтвердить наличие: /check`
     );
   }
 
   const lastId = lastBouquetByUser[chatId];
-  if (!lastId) {
-    return bot.sendMessage(chatId, '❌ Не понимаю. Отправьте фото с подписью "Название цена".');
-  }
+  if (!lastId) return bot.sendMessage(chatId, '❌ Отправьте фото с подписью.');
   const bouquet = shop.bouquets.find(b => b.id === lastId);
-  if (!bouquet) {
-    return bot.sendMessage(chatId, '❌ Последний букет не найден. Отправьте новое фото с подписью.');
-  }
+  if (!bouquet) return bot.sendMessage(chatId, '❌ Последний букет не найден.');
   bouquet.photos.push(filePath);
-  bot.sendMessage(chatId, `📸 Фото добавлено к букету «${bouquet.name}». Всего: ${bouquet.photos.length}`);
+  bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${bouquet.photos.length}`);
 });
 
-// ---------- Продление букета ----------
+// ---------- Обработка кнопок ----------
 bot.on('callback_query', (q) => {
-  if (q.data.startsWith('extend_')) {
-    const id = parseInt(q.data.split('_')[1]);
-    const chatId = q.from.id;
-    const shopId = getShopId(chatId);
-    if (!shopId) return bot.answerCallbackQuery(q.id, { text: 'Ошибка' });
-    const shop = getShop(shopId);
+  const chatId = q.from.id;
+  const data = q.data;
+  const shopId = getShopId(chatId);
+  if (!shopId) return bot.answerCallbackQuery(q.id, { text: 'Ошибка' });
+  const shop = getShop(shopId);
+  
+  // ---- Подтверждение наличия букета ----
+  if (data.startsWith('confirm_')) {
+    const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
     if (b) {
-      const d = new Date();
-      d.setHours(d.getHours() + 24);
-      b.createdAt = d.toISOString();
+      b.confirmedAt = new Date().toISOString();
+      b.reminded = false;
+      bot.answerCallbackQuery(q.id, { text: '✅ Подтверждено!' });
+      // Обновим сообщение со списком
+      const { text, options } = buildCheckMessage(shop);
+      bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
+    } else {
+      bot.answerCallbackQuery(q.id, { text: '❌ Букет не найден' });
+    }
+    return;
+  }
+  
+  // ---- Продление по уведомлению ----
+  if (data.startsWith('extend_')) {
+    const id = parseInt(data.split('_')[1]);
+    const b = shop.bouquets.find(x => x.id === id);
+    if (b) {
+      b.confirmedAt = new Date().toISOString();
       b.reminded = false;
       bot.answerCallbackQuery(q.id, { text: '✅ Продлено' });
       bot.sendMessage(chatId, `🌿 Букет «${b.name}» продлён.`);
     } else {
       bot.answerCallbackQuery(q.id, { text: '❌ Уже удалён' });
     }
+    return;
   }
 });
 
-// ---------- Уведомления ----------
+// ---------- Уведомления (за 12 часов до скрытия) ----------
 function checkAndNotify() {
   const now = Date.now();
   const threeDays = 3 * 24 * 60 * 60 * 1000;
@@ -324,12 +360,14 @@ function checkAndNotify() {
     if (!isSubscriptionActive(shop)) continue;
     for (const b of shop.bouquets) {
       if (b.isPinned) continue;
-      const age = now - new Date(b.createdAt).getTime();
+      if (!b.confirmedAt) continue;
+      const age = now - new Date(b.confirmedAt).getTime();
       const rem = threeDays - age;
       if (rem > 0 && rem <= twelveHours && !b.reminded) {
         bot.sendMessage(b.chatId, 
-          `⚠️ Букет «${b.name}» скоро исчезнет (~${Math.round(rem/3600000)} ч.).`,
-          { reply_markup: { inline_keyboard: [[{ text: '🌿 Продлить на 1 день', callback_data: `extend_${b.id}` }]] } }
+          `⚠️ Букет «${b.name}» скоро исчезнет с витрины (нет подтверждения ~3 дня).\n` +
+          `Нажмите «Продлить», если он ещё в наличии.`,
+          { reply_markup: { inline_keyboard: [[{ text: '🌿 Продлить на 3 дня', callback_data: `extend_${b.id}` }]] } }
         );
         b.reminded = true;
       }
@@ -348,21 +386,15 @@ app.get('/shop/:shopId', (req, res) => {
       <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Petalo</title>
       <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#fafaf8;}h1{color:#2c3e50;}</style></head>
       <body><h1>🌸 ${shop.displayName}</h1>
-      <p style="font-size:20px;">Витрина приостановлена.</p>
-      <p style="color:#888;">Для продления подписки свяжитесь с владельцем.</p></body></html>
+      <p style="font-size:20px;">Витрина приостановлена.</p></body></html>
     `);
   }
 
-  const now = Date.now();
-  const threeDays = 3 * 24 * 60 * 60 * 1000;
-  let bouquets = shop.bouquets.filter(b => {
-    const age = now - new Date(b.createdAt).getTime();
-    return age < threeDays || b.isPinned;
-  });
+  let bouquets = shop.bouquets.filter(isConfirmedRecently);
   bouquets.sort((a,b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
-    return new Date(b.createdAt) - new Date(a.createdAt);
+    return new Date(b.confirmedAt || b.createdAt) - new Date(a.confirmedAt || a.createdAt);
   });
 
   let cards = '';
@@ -421,14 +453,10 @@ app.get('/shop/:shopId', (req, res) => {
   res.send(html);
 });
 
-// ---------- Главная ----------
 app.get('/', (req, res) => {
   res.send(`<html><head><title>Petalo</title></head>
     <body style="font-family:sans-serif;text-align:center;padding:50px;background:#fafaf8;">
-    <h1>🌸 Petalo</h1>
-    <p>Витрина для цветочных магазинов.</p>
-    <p>Откройте бота @petalo_rus_bot в Telegram.</p>
-    </body></html>`);
+    <h1>🌸 Petalo</h1><p>Витрина для цветочных магазинов.</p></body></html>`);
 });
 
 const PORT = process.env.PORT || 3000;
