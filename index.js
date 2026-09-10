@@ -6,13 +6,59 @@ const app = express();
 const token = process.env.BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
 
+// ============================================================
+// ⚙️ НАСТРОЙКИ ВАШЕГО МАГАЗИНА
+// ============================================================
+const PRESET_SHOP = {
+  shopId: 'kupidon',
+  displayName: '🌸 Kupidon - для цветов не нужен повод',
+  address: 'Ставрополь, Краснофлотская 157/1',
+  hours: 'Пн-Вс 10:30-21:00',
+  phone: '+7 961 402-51-75',
+  telegramUsername: 'KupidonAdm',   // без @
+  markupPercent: 20,
+  trialMonths: 3
+};
+// ============================================================
+
 // ---------- Хранилище ----------
 const shops = {};
 const userToShop = {};
 const registrationState = {};
-const lastBouquetByUser = {}; // chatId -> id последнего созданного букета
+const lastBouquetByUser = {};
 
 let idCounter = 1;
+
+// ---------- Инициализация preset-магазина при старте ----------
+function initPresetShop() {
+  const now = new Date();
+  const trialEnd = new Date(now);
+  trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
+
+  shops[PRESET_SHOP.shopId] = {
+    name: PRESET_SHOP.shopId,
+    displayName: PRESET_SHOP.displayName,
+    address: PRESET_SHOP.address,
+    hours: PRESET_SHOP.hours,
+    phone: PRESET_SHOP.phone,
+    telegramUsername: PRESET_SHOP.telegramUsername,
+    bouquets: [],
+    admins: [],
+    subscription: {
+      status: 'trial',
+      trialStart: now.toISOString(),
+      trialEnd: trialEnd.toISOString(),
+      paidUntil: null
+    },
+    settings: {
+      logo: null,
+      background: null,
+      markupPercent: PRESET_SHOP.markupPercent
+    }
+  };
+  console.log(`✅ Магазин "${PRESET_SHOP.shopId}" создан автоматически.`);
+}
+initPresetShop();
 
 // ---------- Вспомогательные ----------
 function getShopId(chatId) { return userToShop[chatId] || null; }
@@ -40,31 +86,42 @@ function getRemainingDays(shop) {
 // ---------- Старт ----------
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  const shopId = getShopId(chatId);
+  let shopId = getShopId(chatId);
+
+  if (!shopId && shops[PRESET_SHOP.shopId]) {
+    userToShop[chatId] = PRESET_SHOP.shopId;
+    if (!shops[PRESET_SHOP.shopId].admins.includes(chatId)) {
+      shops[PRESET_SHOP.shopId].admins.push(chatId);
+    }
+    shopId = PRESET_SHOP.shopId;
+  }
+
   if (shopId) {
     const shop = getShop(shopId);
     bot.sendMessage(chatId, 
-      `🌸 С возвращением, «${shop.displayName}»!\n` +
-      `Витрина: https://petalo.onrender.com/shop/${shopId}\n` +
-      `Осталось дней: ${getRemainingDays(shop)}\n\n` +
-      `Отправьте фото с подписью "Название цена" — букет появится на витрине.\n` +
-      `А если хотите добавить к нему ещё фото — просто отправьте их без подписи.\n\n` +
+      `🌸 Добро пожаловать в «${shop.displayName}»!\n\n` +
+      `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${shopId}\n\n` +
+      `📅 Осталось дней подписки: ${getRemainingDays(shop)}\n\n` +
+      `Как добавить букет:\n` +
+      `1️⃣ Отправьте ФОТО с подписью "Название цена"\n` +
+      `   Пример: "Розы в крафте 4500"\n\n` +
+      `2️⃣ Хотите ещё фото к тому же букету? Отправьте их без подписи.\n\n` +
       `Команды: /status, /renew`
     );
   } else {
     bot.sendMessage(chatId, 
       '🌸 Petalo — витрина для цветочных магазинов.\n\n' +
-      'Чтобы начать, отправьте команду:\n' +
-      '/register'
+      'Отправьте команду:\n' +
+      '/register — создать новый магазин'
     );
   }
 });
 
-// ---------- Регистрация ----------
+// ---------- Регистрация нового магазина ----------
 bot.onText(/\/register/, (msg) => {
   const chatId = msg.chat.id;
   if (userToShop[chatId]) {
-    return bot.sendMessage(chatId, '❌ Вы уже зарегистрированы.');
+    return bot.sendMessage(chatId, '❌ Вы уже привязаны к магазину.');
   }
   registrationState[chatId] = { step: 'name', data: {} };
   bot.sendMessage(chatId, 
@@ -115,7 +172,7 @@ bot.on('message', (msg) => {
     state.data.phone = text.trim().toLowerCase() === 'нет' ? null : text.trim();
     const now = new Date();
     const trialEnd = new Date(now);
-    trialEnd.setMonth(trialEnd.getMonth() + 3);
+    trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
 
     shops[state.data.shopId] = {
       name: state.data.shopId,
@@ -123,6 +180,7 @@ bot.on('message', (msg) => {
       address: state.data.address,
       hours: state.data.hours,
       phone: state.data.phone,
+      telegramUsername: PRESET_SHOP.telegramUsername,
       bouquets: [],
       admins: [chatId],
       subscription: {
@@ -131,17 +189,15 @@ bot.on('message', (msg) => {
         trialEnd: trialEnd.toISOString(),
         paidUntil: null
       },
-      settings: { logo: null, background: null, markupPercent: 20 }
+      settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent }
     };
     userToShop[chatId] = state.data.shopId;
     delete registrationState[chatId];
 
     return bot.sendMessage(chatId, 
-      `🎉 Поздравляем! Магазин «${state.data.displayName}» зарегистрирован.\n\n` +
-      `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${state.data.shopId}\n\n` +
-      `📅 Триал: до ${trialEnd.toLocaleDateString()}\n\n` +
-      `Теперь отправляйте ФОТО с подписью "Название цена" — букеты появятся на витрине.\n` +
-      `Чтобы добавить к букету ещё фото, просто пришлите их без подписи.`
+      `🎉 Магазин «${state.data.displayName}» зарегистрирован.\n\n` +
+      `🔗 Витрина:\nhttps://petalo.onrender.com/shop/${state.data.shopId}\n\n` +
+      `📅 Триал: до ${trialEnd.toLocaleDateString()}`
     );
   }
 });
@@ -150,7 +206,7 @@ bot.on('message', (msg) => {
 bot.onText(/\/status/, (msg) => {
   const chatId = msg.chat.id;
   const shopId = getShopId(chatId);
-  if (!shopId) return bot.sendMessage(chatId, '❌ Не зарегистрированы.');
+  if (!shopId) return bot.sendMessage(chatId, '❌ Не привязаны к магазину.');
   const shop = getShop(shopId);
   const days = getRemainingDays(shop);
   const status = shop.subscription.status;
@@ -167,11 +223,20 @@ bot.onText(/\/renew/, (msg) => {
   bot.sendMessage(msg.chat.id, '💳 Продление: свяжитесь с @floop10');
 });
 
-// ---------- Фото (создание букета или добавление в последний) ----------
+// ---------- Фото ----------
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
-  const shopId = getShopId(chatId);
-  if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /register');
+  let shopId = getShopId(chatId);
+  
+  if (!shopId && shops[PRESET_SHOP.shopId]) {
+    userToShop[chatId] = PRESET_SHOP.shopId;
+    if (!shops[PRESET_SHOP.shopId].admins.includes(chatId)) {
+      shops[PRESET_SHOP.shopId].admins.push(chatId);
+    }
+    shopId = PRESET_SHOP.shopId;
+  }
+  
+  if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
   const shop = getShop(shopId);
   if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла. /renew');
 
@@ -185,7 +250,6 @@ bot.on('photo', async (msg) => {
     return bot.sendMessage(chatId, '❌ Ошибка фото.');
   }
 
-  // ---- Случай 1: есть подпись → создаём новый букет ----
   if (caption) {
     const words = caption.split(/\s+/);
     let price = 0, name = caption;
@@ -212,21 +276,20 @@ bot.on('photo', async (msg) => {
     
     return bot.sendMessage(chatId, 
       `✅ Букет «${bouquet.name}» добавлен! Цена: ${bouquet.price} ₽\n\n` +
-      `💡 Хотите добавить к нему ещё фото (другой ракурс)? Просто отправьте их без подписи.`
+      `💡 Хотите добавить ещё фото (другой ракурс)? Отправьте их без подписи.`
     );
   }
 
-  // ---- Случай 2: без подписи → добавляем к последнему букету ----
   const lastId = lastBouquetByUser[chatId];
   if (!lastId) {
-    return bot.sendMessage(chatId, '❌ Не понимаю. Отправьте фото с подписью "Название цена" — создам новый букет.');
+    return bot.sendMessage(chatId, '❌ Не понимаю. Отправьте фото с подписью "Название цена".');
   }
   const bouquet = shop.bouquets.find(b => b.id === lastId);
   if (!bouquet) {
     return bot.sendMessage(chatId, '❌ Последний букет не найден. Отправьте новое фото с подписью.');
   }
   bouquet.photos.push(filePath);
-  bot.sendMessage(chatId, `📸 Фото добавлено к букету «${bouquet.name}». Всего фото: ${bouquet.photos.length}`);
+  bot.sendMessage(chatId, `📸 Фото добавлено к букету «${bouquet.name}». Всего: ${bouquet.photos.length}`);
 });
 
 // ---------- Продление букета ----------
@@ -307,7 +370,6 @@ app.get('/shop/:shopId', (req, res) => {
     cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;">🌿 Пока нет букетов.</div>';
   } else {
     for (const b of bouquets) {
-      // ---- Галерея фото (горизонтальный скролл, если фото больше одного) ----
       let galleryHTML = '';
       if (b.photos.length === 1) {
         const photoUrl = `https://api.telegram.org/file/bot${token}/${b.photos[0]}`;
@@ -326,7 +388,7 @@ app.get('/shop/:shopId', (req, res) => {
 
       const oldPrice = Math.ceil(b.price * (1 + shop.settings.markupPercent / 100) / 100) * 100;
       cards += `
-        <div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:left;">
+        <div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;">
           ${galleryHTML}
           <h3 style="margin:12px 0 6px;font-family:sans-serif;">${b.name}</h3>
           <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
@@ -334,8 +396,8 @@ app.get('/shop/:shopId', (req, res) => {
             &nbsp; ${b.price} ₽
           </p>
           ${b.isPinned ? '<span style="background:#f1c40f;padding:2px 10px;border-radius:20px;font-size:12px;">⭐ Закреплён</span><br>' : ''}
-          <a href="tg://resolve?domain=floop10" style="display:inline-block;margin-top:12px;background:#4CAF50;color:#fff;padding:10px 20px;border-radius:30px;text-decoration:none;font-weight:bold;">📩 Заказать</a>
-          ${shop.phone ? `<a href="tel:${shop.phone.replace(/\D/g,'')}" style="display:inline-block;margin-top:8px;margin-left:6px;background:#3498db;color:#fff;padding:10px 20px;border-radius:30px;text-decoration:none;font-weight:bold;">📞 Позвонить</a>` : ''}
+          <a href="tg://resolve?domain=${shop.telegramUsername}" style="display:block;margin-top:12px;background:#4CAF50;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Заказать</a>
+          ${shop.phone ? `<a href="tel:${shop.phone.replace(/\D/g,'')}" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>` : ''}
         </div>
       `;
     }
@@ -348,7 +410,7 @@ app.get('/shop/:shopId', (req, res) => {
     h1{color:#2c3e50;margin-bottom:4px;} .info{color:#888;font-size:14px;margin-bottom:20px;}
     .container{max-width:1200px;margin:0 auto;}</style></head>
     <body><div class="container">
-      <h1>🌸 ${shop.displayName}</h1>
+      <h1>${shop.displayName}</h1>
       <div class="info">
         ${shop.address ? `📍 ${shop.address}` : ''}
         ${shop.hours ? ` · 🕐 ${shop.hours}` : ''}
@@ -365,7 +427,7 @@ app.get('/', (req, res) => {
     <body style="font-family:sans-serif;text-align:center;padding:50px;background:#fafaf8;">
     <h1>🌸 Petalo</h1>
     <p>Витрина для цветочных магазинов.</p>
-    <p>Откройте бота @petalo_rus_bot в Telegram и напишите /register</p>
+    <p>Откройте бота @petalo_rus_bot в Telegram.</p>
     </body></html>`);
 });
 
