@@ -22,6 +22,7 @@ const userToShop = {};
 const registrationState = {};
 const lastBouquetByUser = {};
 const awaitingUpload = {};
+const awaitingPrice = {}; // chatId -> bouquetId
 const inviteIndex = {};
 
 let idCounter = 1;
@@ -29,7 +30,8 @@ let idCounter = 1;
 const MAIN_KEYBOARD = {
   keyboard: [
     [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
-    [{ text: '🗑 Удалить букет' }, { text: '⚙️ Меню' }]
+    [{ text: '✏️ Изменить цену' }, { text: '🗑 Удалить букет' }],
+    [{ text: '⚙️ Меню' }]
   ],
   resize_keyboard: true
 };
@@ -126,7 +128,7 @@ function getRemainingDays(shop) {
 }
 
 function isConfirmedRecently(bouquet) {
-  if (bouquet.hidden) return false;    // вручную скрытые не показываем
+  if (bouquet.hidden) return false;
   if (bouquet.isPinned) return true;
   if (!bouquet.confirmedAt) return false;
   const age = Date.now() - new Date(bouquet.confirmedAt).getTime();
@@ -153,7 +155,6 @@ function hoursLeft(b) {
   return Math.round(rem / 3600000);
 }
 
-// ---------- /check ----------
 function buildCheckMessage(shop) {
   if (shop.bouquets.length === 0) {
     return { 
@@ -256,6 +257,25 @@ function buildDeleteMessage(shop) {
   };
 }
 
+// ---------- Список для смены цены ----------
+function buildPriceListMessage(shop) {
+  if (shop.bouquets.length === 0) {
+    return { text: '🌿 Букетов пока нет.', options: {} };
+  }
+  const sorted = [...shop.bouquets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const keyboard = sorted.slice(0, 30).map(b => {
+    const name = b.name.length > 25 ? b.name.slice(0, 22) + '…' : b.name;
+    return [{
+      text: `✏️ ${name} — ${b.price} ₽`,
+      callback_data: `editprice_${b.id}`
+    }];
+  });
+  return {
+    text: `✏️ Какой букет изменить?\nВсего: ${shop.bouquets.length}`,
+    options: { reply_markup: { inline_keyboard: keyboard } }
+  };
+}
+
 function attachUserToShop(chatId, shopId) {
   userToShop[chatId] = shopId;
   if (!shops[shopId].admins.includes(chatId)) shops[shopId].admins.push(chatId);
@@ -297,7 +317,8 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
       `🌸 «${shop.displayName}»\n\n` +
       `📷 Добавить букет — отправить фото с подписью\n` +
       `✅ Что в наличии — отметить актуальные\n` +
-      `🗑 Удалить — убрать букет\n` +
+      `✏️ Изменить цену — обновить стоимость\n` +
+      `🗑 Удалить — убрать букет совсем\n` +
       `⚙️ Меню — все настройки`
     );
   } else {
@@ -310,6 +331,45 @@ bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
   if (!text) return;
+
+  // --- Смена цены (ожидание числа) ---
+  const priceWaitingBouquetId = awaitingPrice[chatId];
+  if (priceWaitingBouquetId) {
+    const shopId = getShopId(chatId);
+    const shop = getShop(shopId);
+    const b = shop && shop.bouquets.find(x => x.id === priceWaitingBouquetId);
+
+    if (!b) {
+      delete awaitingPrice[chatId];
+      return sendMainMenu(chatId, '❌ Букет не найден.');
+    }
+
+    // Если это команда — отменяем
+    if (text.startsWith('/')) {
+      if (text === '/cancel') {
+        delete awaitingPrice[chatId];
+        return sendMainMenu(chatId, '❌ Изменение цены отменено.');
+      }
+      // Иначе продолжаем проверку других команд ниже — но сначала сбросим ожидание
+      delete awaitingPrice[chatId];
+    } else {
+      // Парсим цену
+      const cleaned = text.replace(/[^\d.,]/g, '').replace(',', '.');
+      const newPrice = parseFloat(cleaned);
+      if (isNaN(newPrice) || newPrice <= 0) {
+        return bot.sendMessage(chatId, '❌ Введите число, например: 5000');
+      }
+      const oldPrice = b.price;
+      b.price = Math.round(newPrice);
+      delete awaitingPrice[chatId];
+      return sendMainMenu(chatId, 
+        `✅ Цена букета «${b.name}» обновлена:\n\n` +
+        `Было: ${oldPrice} ₽\nСтало: ${b.price} ₽\n\n` +
+        `Витрина обновится автоматически.`
+      );
+    }
+  }
+
   if (text.startsWith('/')) return;
 
   if (text === '📷 Добавить букет') {
@@ -332,6 +392,14 @@ bot.on('message', (msg) => {
     const shop = getShop(shopId);
     if (!isSubscriptionActive(shop)) return sendMainMenu(chatId, '❌ Подписка истекла.');
     const { text: t, options } = buildCheckMessage(shop);
+    return bot.sendMessage(chatId, t, options);
+  }
+
+  if (text === '✏️ Изменить цену') {
+    const shopId = getShopId(chatId);
+    if (!shopId) return sendMainMenu(chatId, '❌ Сначала /start');
+    const shop = getShop(shopId);
+    const { text: t, options } = buildPriceListMessage(shop);
     return bot.sendMessage(chatId, t, options);
   }
 
@@ -452,10 +520,10 @@ bot.onText(/\/renew/, (msg) => bot.sendMessage(msg.chat.id, '💳 @floop10'));
 
 bot.onText(/\/cancel/, (msg) => {
   const chatId = msg.chat.id;
-  if (awaitingUpload[chatId]) {
-    delete awaitingUpload[chatId];
-    sendMainMenu(chatId, '❌ Отменено.');
-  }
+  let cancelled = false;
+  if (awaitingUpload[chatId]) { delete awaitingUpload[chatId]; cancelled = true; }
+  if (awaitingPrice[chatId]) { delete awaitingPrice[chatId]; cancelled = true; }
+  if (cancelled) sendMainMenu(chatId, '❌ Отменено.');
 });
 
 // ---------- Фото ----------
@@ -641,7 +709,7 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // ---- Убрать с витрины вручную ----
+  // ---- Убрать ----
   if (data.startsWith('hide_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -657,7 +725,7 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // ---- Вернуть с витрины ----
+  // ---- Вернуть ----
   if (data.startsWith('show_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -665,13 +733,30 @@ bot.on('callback_query', (q) => {
       b.hidden = false;
       b.confirmedAt = new Date().toISOString();
       b.reminded = false;
-      bot.answerCallbackQuery(q.id, { text: '✅ Возвращено на витрину' });
+      bot.answerCallbackQuery(q.id, { text: '✅ Возвращено' });
       const { text, options } = buildCheckMessage(shop);
       bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
     } else {
       bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
     }
     return;
+  }
+
+  // ---- Изменение цены: выбрали букет ----
+  if (data.startsWith('editprice_')) {
+    const id = parseInt(data.split('_')[1]);
+    const b = shop.bouquets.find(x => x.id === id);
+    if (!b) return bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
+    awaitingPrice[chatId] = b.id;
+    bot.answerCallbackQuery(q.id);
+    return bot.sendMessage(chatId, 
+      `✏️ Изменение цены\n\n` +
+      `Букет: <b>${b.name}</b>\n` +
+      `Текущая цена: <b>${b.price} ₽</b>\n\n` +
+      `Напишите новую цену числом.\n` +
+      `<i>Отмена — /cancel</i>`,
+      { parse_mode: 'HTML', reply_markup: MAIN_KEYBOARD }
+    );
   }
 
   if (data.startsWith('extend_')) {
