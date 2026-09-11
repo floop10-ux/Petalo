@@ -58,11 +58,10 @@ function generateInviteCode() {
   return code;
 }
 
-// ---------- Генерация описания через ИИ (Pollinations, бесплатно) ----------
 async function generateDescription(name, price) {
   if (typeof fetch !== 'function') return null;
   try {
-    const prompt = `Сгенерируй короткое (1-2 предложения) красивое описание для букета на витрине цветочного магазина. Название: "${name}". Цена: ${price} руб. Пиши тепло, продающе, без кавычек, без вводных слов. Пример стиля: "Нежные розы в крафтовой упаковке — идеальный подарок для любимой. Подчеркнут ваши чувства."`;
+    const prompt = `Сгенерируй короткое (1-2 предложения) красивое описание для букета на витрине цветочного магазина. Название: "${name}". Цена: ${price} руб. Пиши тепло, продающе, без кавычек, без вводных слов.`;
     const url = 'https://text.pollinations.ai/' + encodeURIComponent(prompt);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
@@ -70,9 +69,7 @@ async function generateDescription(name, price) {
     clearTimeout(timeout);
     if (!res.ok) return null;
     let text = (await res.text()).trim();
-    // Чистим от кавычек и мусора
     text = text.replace(/^["«"']+|["»"']+$/g, '').trim();
-    // Если слишком длинно — обрезаем
     if (text.length > 220) text = text.slice(0, 220) + '…';
     if (text.length < 10) return null;
     return text;
@@ -129,6 +126,7 @@ function getRemainingDays(shop) {
 }
 
 function isConfirmedRecently(bouquet) {
+  if (bouquet.hidden) return false;    // вручную скрытые не показываем
   if (bouquet.isPinned) return true;
   if (!bouquet.confirmedAt) return false;
   const age = Date.now() - new Date(bouquet.confirmedAt).getTime();
@@ -137,6 +135,7 @@ function isConfirmedRecently(bouquet) {
 
 function getBouquetStatus(b) {
   if (b.isPinned) return 'pinned';
+  if (b.hidden) return 'hidden';
   if (!b.confirmedAt) return 'expired';
   const age = Date.now() - new Date(b.confirmedAt).getTime();
   const oneDay = 24 * 60 * 60 * 1000;
@@ -154,6 +153,7 @@ function hoursLeft(b) {
   return Math.round(rem / 3600000);
 }
 
+// ---------- /check ----------
 function buildCheckMessage(shop) {
   if (shop.bouquets.length === 0) {
     return { 
@@ -162,12 +162,13 @@ function buildCheckMessage(shop) {
     };
   }
 
-  const fresh = [], stale = [], expired = [], pinned = [];
+  const fresh = [], stale = [], expired = [], hidden = [], pinned = [];
   for (const b of shop.bouquets) {
     const s = getBouquetStatus(b);
     if (s === 'fresh') fresh.push(b);
     else if (s === 'stale') stale.push(b);
     else if (s === 'expired') expired.push(b);
+    else if (s === 'hidden') hidden.push(b);
     else if (s === 'pinned') pinned.push(b);
   }
 
@@ -175,7 +176,7 @@ function buildCheckMessage(shop) {
   stale.sort((a,b) => new Date(a.confirmedAt) - new Date(b.confirmedAt));
 
   let text = '✅ <b>Что есть в наличии?</b>\n';
-  text += '<i>Нажмите на букет, чтобы подтвердить или вернуть.</i>';
+  text += '<i>Нажмите ✅ чтобы подтвердить, или 🚫 чтобы убрать с витрины.</i>';
 
   const keyboard = [];
 
@@ -184,7 +185,10 @@ function buildCheckMessage(shop) {
     for (const b of fresh) {
       text += `✅ ${esc(b.name)} — ${b.price} ₽\n`;
       const name = b.name.length > 22 ? b.name.slice(0, 20) + '…' : b.name;
-      keyboard.push([{ text: `✅ ${name}`, callback_data: `confirm_${b.id}` }]);
+      keyboard.push([
+        { text: `✅ ${name}`, callback_data: `confirm_${b.id}` },
+        { text: '🚫 Убрать', callback_data: `hide_${b.id}` }
+      ]);
     }
   }
 
@@ -195,13 +199,26 @@ function buildCheckMessage(shop) {
       const h = hoursLeft(b);
       text += `⏰ ${esc(b.name)} — ${b.price} ₽ <b>(осталось ${h}ч)</b>\n`;
       const name = b.name.length > 18 ? b.name.slice(0, 16) + '…' : b.name;
-      keyboard.push([{ text: `⏰ ${name} — ${h}ч`, callback_data: `confirm_${b.id}` }]);
+      keyboard.push([
+        { text: `⏰ ${name} — ${h}ч`, callback_data: `confirm_${b.id}` },
+        { text: '🚫 Убрать', callback_data: `hide_${b.id}` }
+      ]);
+    }
+  }
+
+  if (hidden.length > 0) {
+    text += `\n━━━━━━━━━━━━━━━\n🚫 <b>УБРАНЫ ВРУЧНУЮ</b> (${hidden.length})\n━━━━━━━━━━━━━━━\n`;
+    text += `<i>Клиенты их не видят. Нажмите «Вернуть», когда снова появятся.</i>\n`;
+    for (const b of hidden) {
+      text += `🚫 ${esc(b.name)} — ${b.price} ₽\n`;
+      const name = b.name.length > 18 ? b.name.slice(0, 16) + '…' : b.name;
+      keyboard.push([{ text: `↩️ Вернуть: ${name}`, callback_data: `show_${b.id}` }]);
     }
   }
 
   if (expired.length > 0) {
-    text += `\n━━━━━━━━━━━━━━━\n❌ <b>СКРЫТЫ С ВИТРИНЫ</b> (${expired.length})\n━━━━━━━━━━━━━━━\n`;
-    text += `<i>Клиенты их не видят. Нажмите, чтобы вернуть.</i>\n`;
+    text += `\n━━━━━━━━━━━━━━━\n❌ <b>ИСТЁК СРОК</b> (${expired.length})\n━━━━━━━━━━━━━━━\n`;
+    text += `<i>Не подтверждались 3+ дня. Нажмите, чтобы вернуть.</i>\n`;
     for (const b of expired) {
       text += `❌ ${esc(b.name)} — ${b.price} ₽\n`;
       const name = b.name.length > 18 ? b.name.slice(0, 16) + '…' : b.name;
@@ -225,12 +242,7 @@ function buildCheckMessage(shop) {
 
 function buildDeleteMessage(shop) {
   if (shop.bouquets.length === 0) return { text: '🌿 Букетов пока нет.', options: {} };
-  const order = { fresh: 0, stale: 1, expired: 2, pinned: 3 };
-  const sorted = [...shop.bouquets].sort((a, b) => {
-    const sa = getBouquetStatus(a), sb = getBouquetStatus(b);
-    if (order[sa] !== order[sb]) return order[sa] - order[sb];
-    return new Date(b.createdAt) - new Date(a.createdAt);
-  });
+  const sorted = [...shop.bouquets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const keyboard = sorted.slice(0, 30).map(b => {
     const name = b.name.length > 25 ? b.name.slice(0, 22) + '…' : b.name;
     return [{
@@ -309,7 +321,7 @@ bot.on('message', (msg) => {
       '2️⃣ Отправьте фото сюда\n' +
       '3️⃣ В подписи напишите: Название и цена\n\n' +
       'Пример: «Розы в крафте 4500»\n\n' +
-      '🤖 Бот сам сгенерирует красивое описание для витрины.\n\n' +
+      '🤖 Бот сам сгенерирует красивое описание.\n\n' +
       '💡 Ещё фото? Отправьте их следом без подписи.'
     );
   }
@@ -491,10 +503,8 @@ bot.on('photo', async (msg) => {
 
     const finalName = name.trim();
 
-    // ---- Сначала сообщим, что добавляем ----
     bot.sendMessage(chatId, '⏳ Добавляю букет и генерирую описание…');
 
-    // ---- Генерируем описание через ИИ (если включено) ----
     let description = null;
     if (shop.settings.aiEnabled !== false) {
       description = await generateDescription(finalName, price);
@@ -508,6 +518,7 @@ bot.on('photo', async (msg) => {
       photos: [filePath],
       createdAt: new Date().toISOString(),
       confirmedAt: new Date().toISOString(),
+      hidden: false,
       isPinned: finalName.startsWith('.'),
       chatId: chatId,
       reminded: false
@@ -613,11 +624,13 @@ bot.on('callback_query', (q) => {
     return bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
   }
 
+  // ---- Подтверждение ----
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
     if (b) {
       b.confirmedAt = new Date().toISOString();
+      b.hidden = false;
       b.reminded = false;
       bot.answerCallbackQuery(q.id, { text: '✅ Подтверждено!' });
       const { text, options } = buildCheckMessage(shop);
@@ -627,11 +640,46 @@ bot.on('callback_query', (q) => {
     }
     return;
   }
+
+  // ---- Убрать с витрины вручную ----
+  if (data.startsWith('hide_')) {
+    const id = parseInt(data.split('_')[1]);
+    const b = shop.bouquets.find(x => x.id === id);
+    if (b) {
+      b.hidden = true;
+      b.hiddenAt = new Date().toISOString();
+      bot.answerCallbackQuery(q.id, { text: '🚫 Убрано с витрины' });
+      const { text, options } = buildCheckMessage(shop);
+      bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
+    } else {
+      bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
+    }
+    return;
+  }
+
+  // ---- Вернуть с витрины ----
+  if (data.startsWith('show_')) {
+    const id = parseInt(data.split('_')[1]);
+    const b = shop.bouquets.find(x => x.id === id);
+    if (b) {
+      b.hidden = false;
+      b.confirmedAt = new Date().toISOString();
+      b.reminded = false;
+      bot.answerCallbackQuery(q.id, { text: '✅ Возвращено на витрину' });
+      const { text, options } = buildCheckMessage(shop);
+      bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
+    } else {
+      bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
+    }
+    return;
+  }
+
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
     if (b) {
       b.confirmedAt = new Date().toISOString();
+      b.hidden = false;
       b.reminded = false;
       bot.answerCallbackQuery(q.id, { text: '✅ Продлено' });
       bot.sendMessage(chatId, `🌿 Букет «${b.name}» продлён.`);
@@ -640,6 +688,7 @@ bot.on('callback_query', (q) => {
     }
     return;
   }
+
   if (data.startsWith('askdel_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -683,6 +732,7 @@ function checkAndNotify() {
     if (!isSubscriptionActive(shop)) continue;
     for (const b of shop.bouquets) {
       if (b.isPinned) continue;
+      if (b.hidden) continue;
       if (!b.confirmedAt) continue;
       const age = now - new Date(b.confirmedAt).getTime();
       const rem = threeDays - age;
