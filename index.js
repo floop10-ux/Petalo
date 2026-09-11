@@ -24,6 +24,7 @@ const lastBouquetByUser = {};
 const awaitingUpload = {};
 const awaitingPrice = {};
 const awaitingName = {};
+const awaitingMarkup = {};
 const inviteIndex = {};
 
 let idCounter = 1;
@@ -143,6 +144,12 @@ function hoursLeft(b) {
   return Math.round(rem / 3600000);
 }
 
+// Расчёт старой цены для отображения "скидки"
+function calculateOldPrice(price, percent) {
+  const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
+  return Math.ceil(price * (1 + pct / 100) / 100) * 100;
+}
+
 function getMainKeyboard(shop, chatId) {
   if (!shop) return { remove_keyboard: true };
   const owner = isOwner(shop, chatId);
@@ -175,6 +182,7 @@ function getSettingsMenu(shop, chatId) {
           [{ text: '🔑 Пригласить флориста', callback_data: 'menu_invite' }],
           [{ text: '👥 Управление флористами', callback_data: 'menu_team' }],
           [{ text: '📊 Статистика', callback_data: 'menu_stats' }],
+          [{ text: '💰 Наценка', callback_data: 'menu_markup' }],
           [{ text: '🎨 Логотип', callback_data: 'menu_logo' }, { text: '🖼 Фон витрины', callback_data: 'menu_background' }],
           [{ text: '📋 Статус магазина', callback_data: 'menu_status' }],
           [{ text: '💳 Продлить подписку', callback_data: 'menu_renew' }],
@@ -198,6 +206,37 @@ function sendMainMenu(chatId, text) {
   const shopId = getShopId(chatId);
   const shop = shopId ? getShop(shopId) : null;
   bot.sendMessage(chatId, text, { reply_markup: getMainKeyboard(shop, chatId) });
+}
+
+function buildMarkupMessage(shop) {
+  const current = shop.settings.markupPercent || 0;
+  let text = `💰 <b>Наценка на витрине</b>\n\n`;
+  text += `Сейчас: <b>${current}%</b>\n\n`;
+  text += `<i>Этот процент прибавляется к цене букета, и результат показывается на витрине перечёркнутым — как «старая цена» со скидкой.</i>\n\n`;
+  text += `Пример: флорист ввёл <b>1000 ₽</b> — на витрине будет:\n`;
+  text += `<s>${calculateOldPrice(1000, current)} ₽</s> <b>1000 ₽</b>\n\n`;
+  text += `Выберите новый процент:`;
+
+  const buttons = [
+    [
+      { text: '0%', callback_data: 'markup_set_0' },
+      { text: '10%', callback_data: 'markup_set_10' },
+      { text: '15%', callback_data: 'markup_set_15' }
+    ],
+    [
+      { text: '20%', callback_data: 'markup_set_20' },
+      { text: '30%', callback_data: 'markup_set_30' },
+      { text: '50%', callback_data: 'markup_set_50' }
+    ],
+    [
+      { text: '✏️ Ввести своё', callback_data: 'markup_custom' }
+    ],
+    [
+      { text: '↩️ Назад', callback_data: 'menu_back' }
+    ]
+  ];
+
+  return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } } };
 }
 
 function buildCheckMessage(shop) {
@@ -521,6 +560,43 @@ bot.on('message', (msg) => {
     }
   }
 
+  // ---- Ожидание новой наценки ----
+  if (awaitingMarkup[chatId]) {
+    const shopId = getShopId(chatId);
+    const shop = getShop(shopId);
+    if (!shop) {
+      delete awaitingMarkup[chatId];
+      return sendMainMenu(chatId, '❌ Магазин не найден.');
+    }
+    if (!isOwner(shop, chatId)) {
+      delete awaitingMarkup[chatId];
+      return sendMainMenu(chatId, '🚫 Только владелец.');
+    }
+
+    if (text.startsWith('/')) {
+      if (text === '/cancel') {
+        delete awaitingMarkup[chatId];
+        return sendMainMenu(chatId, '❌ Изменение наценки отменено.');
+      }
+      delete awaitingMarkup[chatId];
+    } else {
+      const cleaned = text.replace(/[^\d]/g, '');
+      const newPercent = parseInt(cleaned);
+      if (isNaN(newPercent) || newPercent < 0 || newPercent > 200) {
+        return bot.sendMessage(chatId, '❌ Введите число от 0 до 200. Например: 25');
+      }
+      shop.settings.markupPercent = newPercent;
+      delete awaitingMarkup[chatId];
+      const example = calculateOldPrice(1000, newPercent);
+      return sendMainMenu(chatId, 
+        `✅ Наценка обновлена: <b>${newPercent}%</b>\n\n` +
+        `Пример для букета 1000 ₽:\n` +
+        `<s>${example} ₽</s> <b>1000 ₽</b>`,
+        { parse_mode: 'HTML' }
+      );
+    }
+  }
+
   if (text.startsWith('/')) return;
 
   if (text === '📷 Добавить букет') {
@@ -689,7 +765,7 @@ bot.onText(/\/status/, (msg) => {
   const owner = isOwner(shop, chatId);
   const days = getRemainingDays(shop);
   const myRole = owner ? '👑 Владелец' : '🌸 Флорист';
-  let txt = `📋 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
+  let txt = `📋 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n💰 Наценка: ${shop.settings.markupPercent}%\n`;
   txt += shop.subscription.status === 'trial' ? `Триал: ${days} дней\n` : `Активна: ${days} дней\n`;
   bot.sendMessage(chatId, txt);
 });
@@ -702,6 +778,7 @@ bot.onText(/\/cancel/, (msg) => {
   if (awaitingUpload[chatId]) { delete awaitingUpload[chatId]; cancelled = true; }
   if (awaitingPrice[chatId]) { delete awaitingPrice[chatId]; cancelled = true; }
   if (awaitingName[chatId]) { delete awaitingName[chatId]; cancelled = true; }
+  if (awaitingMarkup[chatId]) { delete awaitingMarkup[chatId]; cancelled = true; }
   if (cancelled) sendMainMenu(chatId, '❌ Отменено.');
 });
 
@@ -810,11 +887,47 @@ bot.on('callback_query', (q) => {
     const text = buildStatsMessage(shop);
     return bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
   }
+  if (data === 'menu_markup') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    bot.answerCallbackQuery(q.id);
+    const { text, options } = buildMarkupMessage(shop);
+    return bot.sendMessage(chatId, text, options);
+  }
+  if (data.startsWith('markup_set_')) {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    const percent = parseInt(data.replace('markup_set_', ''));
+    if (isNaN(percent) || percent < 0 || percent > 200) {
+      return bot.answerCallbackQuery(q.id, { text: '❌ Ошибка' });
+    }
+    shop.settings.markupPercent = percent;
+    bot.answerCallbackQuery(q.id, { text: `✅ ${percent}%` });
+    const example = calculateOldPrice(1000, percent);
+    return bot.editMessageText(
+      `✅ <b>Наценка обновлена: ${percent}%</b>\n\n` +
+      `Пример для букета 1000 ₽:\n` +
+      `<s>${example} ₽</s> <b>1000 ₽</b>\n\n` +
+      `Витрина обновится автоматически.`,
+      { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } }
+    ).catch(() => {});
+  }
+  if (data === 'markup_custom') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    awaitingMarkup[chatId] = true;
+    bot.answerCallbackQuery(q.id);
+    return bot.sendMessage(chatId, 
+      `💰 <b>Своя наценка</b>\n\n` +
+      `Сейчас: <b>${shop.settings.markupPercent}%</b>\n\n` +
+      `Напишите процент числом (от 0 до 200).\n` +
+      `Пример: <code>25</code>\n\n` +
+      `<i>Отмена — /cancel</i>`,
+      { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) }
+    );
+  }
   if (data === 'menu_status') {
     const days = getRemainingDays(shop);
     const aiStatus = shop.settings.aiEnabled !== false ? '✅' : '❌';
     const myRole = owner ? '👑 Владелец' : '🌸 Флорист';
-    let txt = `📋 Статус\n\n🏪 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n📅 ${shop.subscription.status === 'trial' ? 'Триал' : 'Подписка'}: ${days} дней\n🤖 ИИ: ${aiStatus}`;
+    let txt = `📋 Статус\n\n🏪 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n💰 Наценка: ${shop.settings.markupPercent}%\n📅 ${shop.subscription.status === 'trial' ? 'Триал' : 'Подписка'}: ${days} дней\n🤖 ИИ: ${aiStatus}`;
     bot.answerCallbackQuery(q.id);
     const kb = owner 
       ? { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } 
@@ -987,8 +1100,6 @@ bot.on('callback_query', (q) => {
     }
     return;
   }
-
-  // ---- Изменение цены ----
   if (data.startsWith('editprice_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -1004,8 +1115,6 @@ bot.on('callback_query', (q) => {
       { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) }
     );
   }
-
-  // ---- Переименование ----
   if (data.startsWith('rename_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -1016,12 +1125,11 @@ bot.on('callback_query', (q) => {
       `📝 Переименование\n\n` +
       `Текущее название: <b>${esc(b.name)}</b>\n\n` +
       `Напишите новое название букета.\n` +
-      `<i>Совет: если название начинается с точки (например «.Розы»), букет станет закреплённым — будет всегда внизу витрины.\n\n` +
+      `<i>Совет: если название начинается с точки (например «.Розы»), букет станет закреплённым.\n\n` +
       `Отмена — /cancel</i>`,
       { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) }
     );
   }
-
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -1155,7 +1263,7 @@ app.get('/shop/:shopId', (req, res) => {
           <div style="font-size:12px;color:#aaa;margin-bottom:6px;">← листайте фото →</div>
         `;
       }
-      const oldPrice = Math.ceil(b.price * (1 + shop.settings.markupPercent / 100) / 100) * 100;
+      const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
       const descHTML = b.description 
         ? `<p style="font-size:13px;color:#777;font-style:italic;margin:4px 0 8px;line-height:1.4;">${b.description}</p>` 
         : '';
