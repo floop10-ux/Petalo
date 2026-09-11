@@ -101,13 +101,12 @@ function getShop(shopId) { return shops[shopId] || null; }
 function isSubscriptionActive(shop) {
   if (!shop || !shop.subscription) return false;
   const now = Date.now();
-  if (shop.subscription.status === 'trial') return now < new Date0(shop.subscription.trialEnd).;
-getTime();
-  if (shop.subscription.status === 'active') return  shop.subscription.paidUntil ? now < new Date(shop.sub ifscription.paidUntil).get (Time() : false;
+  if (shop.subscription.status === 'trial') return now < new Date(shop.subscription.trialEnd).getTime();
+  if (shop.subscription.status === 'active') return shop.subscription.paidUntil ? now < new Date(shop.subscription.paidUntil).getTime() : false;
   return false;
 }
 
-functionage getRemainingDays(shop) {
+function getRemainingDays(shop) {
   if (!shop || !shop.subscription) return 0;
   const now = Date.now();
   let end;
@@ -131,7 +130,8 @@ function getBouquetStatus(b) {
   if (b.hidden) return 'hidden';
   if (!b.confirmedAt) return 'expired';
   const age = Date.now() - new Date(b.confirmedAt).getTime();
-  const oneDay = 24 * 60 * 60 * 100 < oneDay) return 'fresh';
+  const oneDay = 24 * 60 * 60 * 1000;
+  if (age < oneDay) return 'fresh';
   if (age < 3 * oneDay) return 'stale';
   return 'expired';
 }
@@ -323,7 +323,7 @@ function buildPriceListMessage(shop) {
   };
 }
 
-// ---------- Команда управления командой ----------
+// ---------- Команда управления флористами ----------
 function buildTeamMessage(shop, ownerChatId) {
   const others = shop.admins.filter(a => a.chatId !== ownerChatId);
   if (others.length === 0) {
@@ -389,16 +389,12 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
     const shop = getShop(shopId);
     const owner = isOwner(shop, chatId);
     let txt = `🌸 «${shop.displayName}»\n\n`;
-    if (owner) {
-      txt += `👑 Вы — владелец.\n\n`;
-    } else {
-      txt += `🌸 Вы — флорист.\n\n`;
-    }
+    if (owner) txt += `👑 Вы — владелец.\n\n`;
+    else txt += `🌸 Вы — флорист.\n\n`;
     txt += `📷 Добавить букет — отправить фото с подписью\n`;
     txt += `✅ Что в наличии — отметить актуальные\n`;
     txt += `✏️ Изменить цену — обновить стоимость\n`;
-    if (owner) txt += `🗑 Удалить —Id убрать букет совсем);
-\n`;
+    if (owner) txt += `🗑 Удалить — убрать букет совсем\n`;
     txt += `⚙️ Меню — настройки`;
     sendMainMenu(chatId, txt);
   } else {
@@ -406,13 +402,12 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   }
 });
 
-// ---------- Тексты (главное меню) ----------
+// ---------- Тексты ----------
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
   if (!text) return;
 
-  // --- Ожидание новой цены ---
   const priceWaitingBouquetId = awaitingPrice[chatId];
   if (priceWaitingBouquetId) {
     const shopId = getShopId(chatId);
@@ -494,7 +489,8 @@ bot.on('message', (msg) => {
   if (text === '⚙️ Меню') {
     const shopId = getShopId(chatId);
     if (!shopId) return sendMainMenu(chatId, '❌ Сначала /start');
-    const shop = getShop(shop    return bot.sendMessage(chatId, '⚙️ Меню магазина:', getSettingsMenu(shop, chatId));
+    const shop = getShop(shopId);
+    return bot.sendMessage(chatId, '⚙️ Меню магазина:', getSettingsMenu(shop, chatId));
   }
 
   const state = registrationState[chatId];
@@ -593,8 +589,10 @@ bot.onText(/\/status/, (msg) => {
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌');
   const shop = getShop(shopId);
+  const owner = isOwner(shop, chatId);
   const days = getRemainingDays(shop);
-  let txt = `📊 ${shop.displayName}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
+  const myRole = owner ? '👑 Владелец' : '🌸 Флорист';
+  let txt = `📊 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
   txt += shop.subscription.status === 'trial' ? `Триал: ${days} дней\n` : `Активна: ${days} дней\n`;
   bot.sendMessage(chatId, txt);
 });
@@ -705,7 +703,6 @@ bot.on('callback_query', (q) => {
   const shop = getShop(shopId);
   const owner = isOwner(shop, chatId);
 
-  // ---- Меню: только для владельца ----
   if (data === 'menu_link') {
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${shopId}`);
@@ -726,7 +723,6 @@ bot.on('callback_query', (q) => {
     return bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
   }
 
-  // ---- Только для владельца ----
   if (data === 'menu_back') {
     if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     bot.answerCallbackQuery(q.id);
@@ -798,7 +794,7 @@ bot.on('callback_query', (q) => {
     return bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
   }
 
-  // ---- Управление флористом (kick) ----
+  // ---- Управление флористами ----
   if (data.startsWith('team_user_')) {
     if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     const targetChatId = parseInt(data.split('_')[2]);
@@ -814,6 +810,12 @@ bot.on('callback_query', (q) => {
         [{ text: '↩️ Назад', callback_data: 'menu_team' }]
       ]}}
     );
+  }
+  if (data === 'menu_team') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    bot.answerCallbackQuery(q.id);
+    const { text, options } = buildTeamMessage(shop, chatId);
+    return bot.sendMessage(chatId, text, options);
   }
   if (data.startsWith('kick_')) {
     if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
@@ -839,7 +841,6 @@ bot.on('callback_query', (q) => {
     delete userToShop[targetChatId];
     bot.answerCallbackQuery(q.id, { text: '🗑 Доступ удалён' });
     bot.editMessageText(`✅ Доступ для «${name}» удалён.`, { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
-    // Уведомим бывшего флориста
     bot.sendMessage(targetChatId, 
       `🚫 Ваш доступ к витрине «${shop.displayName}» удалён владельцем.\n\n` +
       `Если это ошибка — свяжитесь с руководителем.`
@@ -847,7 +848,6 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // ---- Подтверждение / убрать / вернуть ----
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -893,7 +893,6 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // ---- Смена цены ----
   if (data.startsWith('editprice_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -925,7 +924,6 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // ---- Удаление: только владелец ----
   if (data.startsWith('askdel_')) {
     if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     const id = parseInt(data.split('_')[1]);
