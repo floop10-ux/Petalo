@@ -23,6 +23,7 @@ const registrationState = {};
 const lastBouquetByUser = {};
 const awaitingUpload = {};
 const awaitingPrice = {};
+const awaitingName = {};
 const inviteIndex = {};
 
 let idCounter = 1;
@@ -149,8 +150,8 @@ function getMainKeyboard(shop, chatId) {
     return {
       keyboard: [
         [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
-        [{ text: '✏️ Изменить цену' }, { text: '🗑 Удалить букет' }],
-        [{ text: '⚙️ Меню' }]
+        [{ text: '✏️ Изменить цену' }, { text: '📝 Переименовать' }],
+        [{ text: '🗑 Удалить букет' }, { text: '⚙️ Меню' }]
       ],
       resize_keyboard: true
     };
@@ -158,7 +159,7 @@ function getMainKeyboard(shop, chatId) {
   return {
     keyboard: [
       [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
-      [{ text: '✏️ Изменить цену' }],
+      [{ text: '✏️ Изменить цену' }, { text: '📝 Переименовать' }],
       [{ text: '⚙️ Меню' }]
     ],
     resize_keyboard: true
@@ -319,6 +320,24 @@ function buildPriceListMessage(shop) {
   };
 }
 
+function buildRenameListMessage(shop) {
+  if (shop.bouquets.length === 0) {
+    return { text: '🌿 Букетов пока нет.', options: {} };
+  }
+  const sorted = [...shop.bouquets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const keyboard = sorted.slice(0, 30).map(b => {
+    const name = b.name.length > 25 ? b.name.slice(0, 22) + '…' : b.name;
+    return [{
+      text: `📝 ${name}`,
+      callback_data: `rename_${b.id}`
+    }];
+  });
+  return {
+    text: `📝 Какой букет переименовать?\nВсего: ${shop.bouquets.length}`,
+    options: { reply_markup: { inline_keyboard: keyboard } }
+  };
+}
+
 function buildTeamMessage(shop, ownerChatId) {
   const others = shop.admins.filter(a => a.chatId !== ownerChatId);
   if (others.length === 0) {
@@ -367,7 +386,6 @@ function buildStatsMessage(shop) {
   }
 
   text += `\n📅 Статистика с ${new Date(stats.startedAt).toLocaleDateString()}`;
-
   return text;
 }
 
@@ -419,6 +437,7 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
     txt += `📷 Добавить букет — отправить фото с подписью\n`;
     txt += `✅ Что в наличии — отметить актуальные\n`;
     txt += `✏️ Изменить цену — обновить стоимость\n`;
+    txt += `📝 Переименовать — изменить название\n`;
     if (owner) txt += `🗑 Удалить — убрать букет совсем\n`;
     txt += `⚙️ Меню — настройки`;
     sendMainMenu(chatId, txt);
@@ -432,6 +451,7 @@ bot.on('message', (msg) => {
   const text = msg.text;
   if (!text) return;
 
+  // ---- Ожидание новой цены ----
   const priceWaitingBouquetId = awaitingPrice[chatId];
   if (priceWaitingBouquetId) {
     const shopId = getShopId(chatId);
@@ -461,6 +481,41 @@ bot.on('message', (msg) => {
       return sendMainMenu(chatId, 
         `✅ Цена букета «${b.name}» обновлена:\n\n` +
         `Было: ${oldPrice} ₽\nСтало: ${b.price} ₽\n\n` +
+        `Витрина обновится автоматически.`
+      );
+    }
+  }
+
+  // ---- Ожидание нового названия ----
+  const nameWaitingBouquetId = awaitingName[chatId];
+  if (nameWaitingBouquetId) {
+    const shopId = getShopId(chatId);
+    const shop = getShop(shopId);
+    const b = shop && shop.bouquets.find(x => x.id === nameWaitingBouquetId);
+
+    if (!b) {
+      delete awaitingName[chatId];
+      return sendMainMenu(chatId, '❌ Букет не найден.');
+    }
+
+    if (text.startsWith('/')) {
+      if (text === '/cancel') {
+        delete awaitingName[chatId];
+        return sendMainMenu(chatId, '❌ Переименование отменено.');
+      }
+      delete awaitingName[chatId];
+    } else {
+      const newName = text.trim();
+      if (newName.length < 2 || newName.length > 80) {
+        return bot.sendMessage(chatId, '❌ Название должно быть от 2 до 80 символов. Попробуйте снова:');
+      }
+      const oldName = b.name;
+      b.name = newName;
+      b.isPinned = newName.startsWith('.');
+      delete awaitingName[chatId];
+      return sendMainMenu(chatId, 
+        `✅ Букет переименован:\n\n` +
+        `Было: «${oldName}»\nСтало: «${newName}»\n\n` +
         `Витрина обновится автоматически.`
       );
     }
@@ -496,6 +551,14 @@ bot.on('message', (msg) => {
     if (!shopId) return sendMainMenu(chatId, '❌ Сначала /start');
     const shop = getShop(shopId);
     const { text: t, options } = buildPriceListMessage(shop);
+    return bot.sendMessage(chatId, t, options);
+  }
+
+  if (text === '📝 Переименовать') {
+    const shopId = getShopId(chatId);
+    if (!shopId) return sendMainMenu(chatId, '❌ Сначала /start');
+    const shop = getShop(shopId);
+    const { text: t, options } = buildRenameListMessage(shop);
     return bot.sendMessage(chatId, t, options);
   }
 
@@ -638,6 +701,7 @@ bot.onText(/\/cancel/, (msg) => {
   let cancelled = false;
   if (awaitingUpload[chatId]) { delete awaitingUpload[chatId]; cancelled = true; }
   if (awaitingPrice[chatId]) { delete awaitingPrice[chatId]; cancelled = true; }
+  if (awaitingName[chatId]) { delete awaitingName[chatId]; cancelled = true; }
   if (cancelled) sendMainMenu(chatId, '❌ Отменено.');
 });
 
@@ -923,6 +987,8 @@ bot.on('callback_query', (q) => {
     }
     return;
   }
+
+  // ---- Изменение цены ----
   if (data.startsWith('editprice_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -938,6 +1004,24 @@ bot.on('callback_query', (q) => {
       { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) }
     );
   }
+
+  // ---- Переименование ----
+  if (data.startsWith('rename_')) {
+    const id = parseInt(data.split('_')[1]);
+    const b = shop.bouquets.find(x => x.id === id);
+    if (!b) return bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
+    awaitingName[chatId] = b.id;
+    bot.answerCallbackQuery(q.id);
+    return bot.sendMessage(chatId, 
+      `📝 Переименование\n\n` +
+      `Текущее название: <b>${esc(b.name)}</b>\n\n` +
+      `Напишите новое название букета.\n` +
+      `<i>Совет: если название начинается с точки (например «.Розы»), букет станет закреплённым — будет всегда внизу витрины.\n\n` +
+      `Отмена — /cancel</i>`,
+      { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) }
+    );
+  }
+
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -1012,7 +1096,6 @@ function checkAndNotify() {
 }
 setInterval(checkAndNotify, 10 * 60 * 1000);
 
-// ---------- Редиректы для статистики ----------
 app.get('/go/order/:shopId/:bouquetId', (req, res) => {
   const shop = getShop(req.params.shopId);
   if (!shop) return res.redirect('https://t.me/petalo_rus_bot');
