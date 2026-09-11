@@ -144,7 +144,7 @@ function hoursLeft(b) {
   return Math.round(rem / 3600000);
 }
 
-// Расчёт старой цены для отображения "скидки"
+// ---- Наценка: округление вверх до 100 ----
 function calculateOldPrice(price, percent) {
   const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
   return Math.ceil(price * (1 + pct / 100) / 100) * 100;
@@ -212,9 +212,14 @@ function buildMarkupMessage(shop) {
   const current = shop.settings.markupPercent || 0;
   let text = `💰 <b>Наценка на витрине</b>\n\n`;
   text += `Сейчас: <b>${current}%</b>\n\n`;
-  text += `<i>Этот процент прибавляется к цене букета, и результат показывается на витрине перечёркнутым — как «старая цена» со скидкой.</i>\n\n`;
-  text += `Пример: флорист ввёл <b>1000 ₽</b> — на витрине будет:\n`;
-  text += `<s>${calculateOldPrice(1000, current)} ₽</s> <b>1000 ₽</b>\n\n`;
+  text += `<i>Процент прибавляется к цене букета, и результат показывается на витрине перечёркнутым — как «старая цена» со скидкой. Округление — до 100 ₽ вверх.</i>\n\n`;
+
+  if (current === 0) {
+    text += `При 0% витрина показывает только одну цену — без перечёркивания.\n\n`;
+  } else {
+    text += `Пример: флорист ввёл <b>1000 ₽</b> → на витрине:\n`;
+    text += `<s>${calculateOldPrice(1000, current)} ₽</s> <b>1000 ₽</b>\n\n`;
+  }
   text += `Выберите новый процент:`;
 
   const buttons = [
@@ -490,7 +495,7 @@ bot.on('message', (msg) => {
   const text = msg.text;
   if (!text) return;
 
-  // ---- Ожидание новой цены ----
+  // Ожидание цены
   const priceWaitingBouquetId = awaitingPrice[chatId];
   if (priceWaitingBouquetId) {
     const shopId = getShopId(chatId);
@@ -525,7 +530,7 @@ bot.on('message', (msg) => {
     }
   }
 
-  // ---- Ожидание нового названия ----
+  // Ожидание названия
   const nameWaitingBouquetId = awaitingName[chatId];
   if (nameWaitingBouquetId) {
     const shopId = getShopId(chatId);
@@ -560,7 +565,7 @@ bot.on('message', (msg) => {
     }
   }
 
-  // ---- Ожидание новой наценки ----
+  // Ожидание наценки
   if (awaitingMarkup[chatId]) {
     const shopId = getShopId(chatId);
     const shop = getShop(shopId);
@@ -587,6 +592,13 @@ bot.on('message', (msg) => {
       }
       shop.settings.markupPercent = newPercent;
       delete awaitingMarkup[chatId];
+      if (newPercent === 0) {
+        return sendMainMenu(chatId, 
+          `✅ Наценка обновлена: <b>0%</b>\n\n` +
+          `На витрине теперь показывается только одна цена — без перечёркивания.`,
+          { parse_mode: 'HTML' }
+        );
+      }
       const example = calculateOldPrice(1000, newPercent);
       return sendMainMenu(chatId, 
         `✅ Наценка обновлена: <b>${newPercent}%</b>\n\n` +
@@ -901,6 +913,15 @@ bot.on('callback_query', (q) => {
     }
     shop.settings.markupPercent = percent;
     bot.answerCallbackQuery(q.id, { text: `✅ ${percent}%` });
+
+    if (percent === 0) {
+      return bot.editMessageText(
+        `✅ <b>Наценка: 0%</b>\n\n` +
+        `На витрине теперь показывается только одна цена — без перечёркивания.`,
+        { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } }
+      ).catch(() => {});
+    }
+
     const example = calculateOldPrice(1000, percent);
     return bot.editMessageText(
       `✅ <b>Наценка обновлена: ${percent}%</b>\n\n` +
@@ -1273,8 +1294,7 @@ app.get('/shop/:shopId', (req, res) => {
           <h3 style="margin:12px 0 6px;font-family:sans-serif;">${b.name}</h3>
           ${descHTML}
           <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
-            <span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>
-            &nbsp; ${b.price} ₽
+            ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
           </p>
           ${b.isPinned ? '<span style="background:#f1c40f;padding:2px 10px;border-radius:20px;font-size:12px;">⭐ Закреплён</span><br>' : ''}
           <a href="/go/order/${shop.name}/${b.id}" style="display:block;margin-top:12px;background:#4CAF50;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Заказать</a>
