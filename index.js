@@ -31,7 +31,6 @@ function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ---------- Роли ----------
 function getAdmin(shop, chatId) {
   return shop && shop.admins ? shop.admins.find(a => a.chatId === chatId) : null;
 }
@@ -143,7 +142,6 @@ function hoursLeft(b) {
   return Math.round(rem / 3600000);
 }
 
-// ---------- Клавиатуры ----------
 function getMainKeyboard(shop, chatId) {
   if (!shop) return { remove_keyboard: true };
   const owner = isOwner(shop, chatId);
@@ -201,7 +199,6 @@ function sendMainMenu(chatId, text) {
   bot.sendMessage(chatId, text, { reply_markup: getMainKeyboard(shop, chatId) });
 }
 
-// ---------- /check ----------
 function buildCheckMessage(shop) {
   if (shop.bouquets.length === 0) {
     return { 
@@ -292,14 +289,14 @@ function buildDeleteMessage(shop) {
   if (shop.bouquets.length === 0) return { text: '🌿 Букетов пока нет.', options: {} };
   const sorted = [...shop.bouquets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const keyboard = sorted.slice(0, 30).map(b => {
-    const name = b.name.length > 25 ? b.name.slice(0, 22) + '…' :: b.name;
+    const name = b.name.length > 25 ? b.name.slice(0, 22) + '…' : b.name;
     return [{
       text: `🗑 ${name} — ${b.price} ₽`,
-      callback {_data: `askdel_${b.id}`
+      callback_data: `askdel_${b.id}`
     }];
   });
   return {
-    text: ` parse🗑 Выберите букет для уда_modeления.\n:Всего: ${shop.bouquets '.length}`,
+    text: `🗑 Выберите букет для удаления.\nВсего: ${shop.bouquets.length}`,
     options: { reply_markup: { inline_keyboard: keyboard } }
   };
 }
@@ -327,7 +324,7 @@ function buildTeamMessage(shop, ownerChatId) {
   if (others.length === 0) {
     return {
       text: '👥 <b>Команда магазина</b>\n\nПока только вы. Пригласите флориста через кнопку «🔑 Пригласить флориста».',
-      optionsHTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } }
+      options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } }
     };
   }
   let text = `👥 <b>Команда магазина</b> (${others.length})\n\n`;
@@ -342,13 +339,11 @@ function buildTeamMessage(shop, ownerChatId) {
   return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } } };
 }
 
-// ---------- Статистика ----------
 function buildStatsMessage(shop) {
   const stats = shop.stats || { views: 0, orders: 0, calls: 0 };
   const totalClicks = stats.orders + stats.calls;
   const conversion = stats.views > 0 ? ((totalClicks / stats.views) * 100).toFixed(1) : '0.0';
 
-  // Топ-5 букетов по кликам "Заказать"
   const top = [...shop.bouquets]
     .filter(b => (b.clicks || 0) > 0)
     .sort((a, b) => (b.clicks || 0) - (a.clicks || 0))
@@ -376,7 +371,6 @@ function buildStatsMessage(shop) {
   return text;
 }
 
-// ---------- Привязка ----------
 function attachUserToShop(chatId, shopId, role = 'florist', name = 'Флорист') {
   userToShop[chatId] = shopId;
   const shop = shops[shopId];
@@ -385,7 +379,6 @@ function attachUserToShop(chatId, shopId, role = 'florist', name = 'Флорис
   }
 }
 
-// ---------- Старт ----------
 bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
@@ -434,7 +427,6 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   }
 });
 
-// ---------- Тексты ----------
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
@@ -580,7 +572,6 @@ bot.on('message', (msg) => {
   }
 });
 
-// ---------- Слэш-команды ----------
 bot.onText(/\/register/, (msg) => {
   const chatId = msg.chat.id;
   if (userToShop[chatId]) return bot.sendMessage(chatId, '❌ Вы уже привязаны к магазину.');
@@ -624,7 +615,7 @@ bot.onText(/\/stats/, (msg) => {
   const shop = getShop(shopId);
   if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Статистика доступна владельцу.');
   const text = buildStatsMessage(shop);
-  bot.sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
+  bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
 });
 
 bot.onText(/\/status/, (msg) => {
@@ -635,7 +626,7 @@ bot.onText(/\/status/, (msg) => {
   const owner = isOwner(shop, chatId);
   const days = getRemainingDays(shop);
   const myRole = owner ? '👑 Владелец' : '🌸 Флорист';
-  let txt = `📊 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
+  let txt = `📋 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
   txt += shop.subscription.status === 'trial' ? `Триал: ${days} дней\n` : `Активна: ${days} дней\n`;
   bot.sendMessage(chatId, txt);
 });
@@ -650,7 +641,6 @@ bot.onText(/\/cancel/, (msg) => {
   if (cancelled) sendMainMenu(chatId, '❌ Отменено.');
 });
 
-// ---------- Фото ----------
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   let shopId = getShopId(chatId);
@@ -738,7 +728,6 @@ bot.on('photo', async (msg) => {
   sendMainMenu(chatId, `📸 Фото добавлено. Всего: ${bouquet.photos.length}`);
 });
 
-// ---------- Кнопки ----------
 bot.on('callback_query', (q) => {
   const chatId = q.from.id;
   const data = q.data;
@@ -843,7 +832,6 @@ bot.on('callback_query', (q) => {
     return bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
   }
 
-  // ---- Управление флористами ----
   if (data.startsWith('team_user_')) {
     if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     const targetChatId = parseInt(data.split('_')[2]);
@@ -999,7 +987,6 @@ bot.on('callback_query', (q) => {
   }
 });
 
-// ---------- Уведомления ----------
 function checkAndNotify() {
   const now = Date.now();
   const threeDays = 3 * 24 * 60 * 60 * 1000;
@@ -1046,7 +1033,6 @@ app.get('/go/call/:shopId', (req, res) => {
   return res.redirect(`tel:+${phone}`);
 });
 
-// ---------- Витрина ----------
 app.get('/shop/:shopId', (req, res) => {
   const shop = getShop(req.params.shopId);
   if (!shop) return res.status(404).send('❌ Магазин не найден');
@@ -1057,7 +1043,6 @@ app.get('/shop/:shopId', (req, res) => {
       <body><h1>🌸 ${shop.displayName}</h1><p style="font-size:20px;">Витрина приостановлена.</p></body></html>`);
   }
 
-  // Увеличиваем счётчик просмотров
   if (shop.stats) shop.stats.views++;
 
   let bouquets = shop.bouquets.filter(isConfirmedRecently);
