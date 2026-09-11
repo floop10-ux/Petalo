@@ -22,35 +22,25 @@ const userToShop = {};
 const registrationState = {};
 const lastBouquetByUser = {};
 const awaitingUpload = {};
-const awaitingPrice = {}; // chatId -> bouquetId
+const awaitingPrice = {};
 const inviteIndex = {};
 
 let idCounter = 1;
 
-const MAIN_KEYBOARD = {
-  keyboard: [
-    [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
-    [{ text: '✏️ Изменить цену' }, { text: '🗑 Удалить букет' }],
-    [{ text: '⚙️ Меню' }]
-  ],
-  resize_keyboard: true
-};
-
-const SETTINGS_MENU = {
-  reply_markup: {
-    inline_keyboard: [
-      [{ text: '🔗 Ссылка на витрину', callback_data: 'menu_link' }],
-      [{ text: '🔑 Пригласить флориста', callback_data: 'menu_invite' }],
-      [{ text: '🎨 Логотип', callback_data: 'menu_logo' }, { text: '🖼 Фон витрины', callback_data: 'menu_background' }],
-      [{ text: '📊 Статус магазина', callback_data: 'menu_status' }],
-      [{ text: '💳 Продлить подписку', callback_data: 'menu_renew' }],
-      [{ text: '❌ Закрыть', callback_data: 'menu_close' }]
-    ]
-  }
-};
-
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---------- Роли ----------
+function getAdmin(shop, chatId) {
+  return shop && shop.admins ? shop.admins.find(a => a.chatId === chatId) : null;
+}
+function isOwner(shop, chatId) {
+  const a = getAdmin(shop, chatId);
+  return a && a.role === 'owner';
+}
+function isMember(shop, chatId) {
+  return !!getAdmin(shop, chatId);
 }
 
 function generateInviteCode() {
@@ -111,12 +101,13 @@ function getShop(shopId) { return shops[shopId] || null; }
 function isSubscriptionActive(shop) {
   if (!shop || !shop.subscription) return false;
   const now = Date.now();
-  if (shop.subscription.status === 'trial') return now < new Date(shop.subscription.trialEnd).getTime();
-  if (shop.subscription.status === 'active') return shop.subscription.paidUntil ? now < new Date(shop.subscription.paidUntil).getTime() : false;
+  if (shop.subscription.status === 'trial') return now < new Date0(shop.subscription.trialEnd).;
+getTime();
+  if (shop.subscription.status === 'active') return  shop.subscription.paidUntil ? now < new Date(shop.sub ifscription.paidUntil).get (Time() : false;
   return false;
 }
 
-function getRemainingDays(shop) {
+functionage getRemainingDays(shop) {
   if (!shop || !shop.subscription) return 0;
   const now = Date.now();
   let end;
@@ -140,8 +131,7 @@ function getBouquetStatus(b) {
   if (b.hidden) return 'hidden';
   if (!b.confirmedAt) return 'expired';
   const age = Date.now() - new Date(b.confirmedAt).getTime();
-  const oneDay = 24 * 60 * 60 * 1000;
-  if (age < oneDay) return 'fresh';
+  const oneDay = 24 * 60 * 60 * 100 < oneDay) return 'fresh';
   if (age < 3 * oneDay) return 'stale';
   return 'expired';
 }
@@ -155,6 +145,64 @@ function hoursLeft(b) {
   return Math.round(rem / 3600000);
 }
 
+// ---------- Динамические клавиатуры ----------
+function getMainKeyboard(shop, chatId) {
+  if (!shop) return { remove_keyboard: true };
+  const owner = isOwner(shop, chatId);
+  if (owner) {
+    return {
+      keyboard: [
+        [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
+        [{ text: '✏️ Изменить цену' }, { text: '🗑 Удалить букет' }],
+        [{ text: '⚙️ Меню' }]
+      ],
+      resize_keyboard: true
+    };
+  }
+  return {
+    keyboard: [
+      [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
+      [{ text: '✏️ Изменить цену' }],
+      [{ text: '⚙️ Меню' }]
+    ],
+    resize_keyboard: true
+  };
+}
+
+function getSettingsMenu(shop, chatId) {
+  if (isOwner(shop, chatId)) {
+    return {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔗 Ссылка на витрину', callback_data: 'menu_link' }],
+          [{ text: '🔑 Пригласить флориста', callback_data: 'menu_invite' }],
+          [{ text: '👥 Управление флористами', callback_data: 'menu_team' }],
+          [{ text: '🎨 Логотип', callback_data: 'menu_logo' }, { text: '🖼 Фон витрины', callback_data: 'menu_background' }],
+          [{ text: '📊 Статус магазина', callback_data: 'menu_status' }],
+          [{ text: '💳 Продлить подписку', callback_data: 'menu_renew' }],
+          [{ text: '❌ Закрыть', callback_data: 'menu_close' }]
+        ]
+      }
+    };
+  }
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🔗 Ссылка на витрину', callback_data: 'menu_link' }],
+        [{ text: '📊 Статус магазина', callback_data: 'menu_status' }],
+        [{ text: '❌ Закрыть', callback_data: 'menu_close' }]
+      ]
+    }
+  };
+}
+
+function sendMainMenu(chatId, text) {
+  const shopId = getShopId(chatId);
+  const shop = shopId ? getShop(shopId) : null;
+  bot.sendMessage(chatId, text, { reply_markup: getMainKeyboard(shop, chatId) });
+}
+
+// ---------- /check ----------
 function buildCheckMessage(shop) {
   if (shop.bouquets.length === 0) {
     return { 
@@ -257,7 +305,6 @@ function buildDeleteMessage(shop) {
   };
 }
 
-// ---------- Список для смены цены ----------
 function buildPriceListMessage(shop) {
   if (shop.bouquets.length === 0) {
     return { text: '🌿 Букетов пока нет.', options: {} };
@@ -276,19 +323,41 @@ function buildPriceListMessage(shop) {
   };
 }
 
-function attachUserToShop(chatId, shopId) {
-  userToShop[chatId] = shopId;
-  if (!shops[shopId].admins.includes(chatId)) shops[shopId].admins.push(chatId);
+// ---------- Команда управления командой ----------
+function buildTeamMessage(shop, ownerChatId) {
+  const others = shop.admins.filter(a => a.chatId !== ownerChatId);
+  if (others.length === 0) {
+    return {
+      text: '👥 <b>Команда магазина</b>\n\nПока только вы. Пригласите флориста через кнопку «🔑 Пригласить флориста».',
+      options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } }
+    };
+  }
+  let text = `👥 <b>Команда магазина</b> (${others.length})\n\n`;
+  text += 'Нажмите на флориста, чтобы удалить его доступ.\n\n';
+  const keyboard = [];
+  for (const a of others) {
+    const name = a.name || 'Флорист';
+    text += `🌸 ${esc(name)}\n`;
+    keyboard.push([{ text: `🌸 ${name}`, callback_data: `team_user_${a.chatId}` }]);
+  }
+  keyboard.push([{ text: '↩️ Назад', callback_data: 'menu_back' }]);
+  return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } } };
 }
 
-function sendMainMenu(chatId, text) {
-  bot.sendMessage(chatId, text, { reply_markup: MAIN_KEYBOARD });
+// ---------- Привязка пользователя ----------
+function attachUserToShop(chatId, shopId, role = 'florist', name = 'Флорист') {
+  userToShop[chatId] = shopId;
+  const shop = shops[shopId];
+  if (!shop.admins.find(a => a.chatId === chatId)) {
+    shop.admins.push({ chatId, role, name, joinedAt: new Date().toISOString() });
+  }
 }
 
 // ---------- Старт ----------
 bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
+  const userName = msg.from.first_name || 'Флорист';
 
   if (param && param.startsWith('inv_')) {
     const inviteCode = param.replace('inv_', '').toUpperCase();
@@ -297,42 +366,53 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
       if (userToShop[chatId] && userToShop[chatId] !== shopId) {
         return sendMainMenu(chatId, `❌ Вы уже привязаны к другому магазину.`);
       }
-      attachUserToShop(chatId, shopId);
+      attachUserToShop(chatId, shopId, 'florist', userName);
       const shop = shops[shopId];
-      return sendMainMenu(chatId, `🎉 Добро пожаловать в «${shop.displayName}»!\n\nИспользуйте кнопки внизу 👇`);
+      return sendMainMenu(chatId, 
+        `🎉 Добро пожаловать в команду «${shop.displayName}»!\n\n` +
+        `📷 Добавляйте букеты — просто отправьте фото с подписью "Название цена".\n` +
+        `✅ Подтверждайте наличие через кнопку «Что в наличии?».\n\n` +
+        `Команды — в меню внизу 👇`
+      );
     } else {
-      return sendMainMenu(chatId, '❌ Приглашение недействительно.');
+      return bot.sendMessage(chatId, '❌ Приглашение недействительно.');
     }
   }
 
   let shopId = getShopId(chatId);
   if (!shopId && shops[PRESET_SHOP.shopId] && shops[PRESET_SHOP.shopId].admins.length === 0) {
-    attachUserToShop(chatId, PRESET_SHOP.shopId);
+    attachUserToShop(chatId, PRESET_SHOP.shopId, 'owner', userName);
     shopId = PRESET_SHOP.shopId;
   }
 
   if (shopId) {
     const shop = getShop(shopId);
-    sendMainMenu(chatId, 
-      `🌸 «${shop.displayName}»\n\n` +
-      `📷 Добавить букет — отправить фото с подписью\n` +
-      `✅ Что в наличии — отметить актуальные\n` +
-      `✏️ Изменить цену — обновить стоимость\n` +
-      `🗑 Удалить — убрать букет совсем\n` +
-      `⚙️ Меню — все настройки`
-    );
+    const owner = isOwner(shop, chatId);
+    let txt = `🌸 «${shop.displayName}»\n\n`;
+    if (owner) {
+      txt += `👑 Вы — владелец.\n\n`;
+    } else {
+      txt += `🌸 Вы — флорист.\n\n`;
+    }
+    txt += `📷 Добавить букет — отправить фото с подписью\n`;
+    txt += `✅ Что в наличии — отметить актуальные\n`;
+    txt += `✏️ Изменить цену — обновить стоимость\n`;
+    if (owner) txt += `🗑 Удалить —Id убрать букет совсем);
+\n`;
+    txt += `⚙️ Меню — настройки`;
+    sendMainMenu(chatId, txt);
   } else {
-    sendMainMenu(chatId, '🌸 Petalo — витрина для цветочных магазинов.\n\n/register — создать свой магазин');
+    bot.sendMessage(chatId, '🌸 Petalo — витрина для цветочных магазинов.\n\n/register — создать свой магазин');
   }
 });
 
-// ---------- Тексты ----------
+// ---------- Тексты (главное меню) ----------
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
   if (!text) return;
 
-  // --- Смена цены (ожидание числа) ---
+  // --- Ожидание новой цены ---
   const priceWaitingBouquetId = awaitingPrice[chatId];
   if (priceWaitingBouquetId) {
     const shopId = getShopId(chatId);
@@ -344,16 +424,13 @@ bot.on('message', (msg) => {
       return sendMainMenu(chatId, '❌ Букет не найден.');
     }
 
-    // Если это команда — отменяем
     if (text.startsWith('/')) {
       if (text === '/cancel') {
         delete awaitingPrice[chatId];
         return sendMainMenu(chatId, '❌ Изменение цены отменено.');
       }
-      // Иначе продолжаем проверку других команд ниже — но сначала сбросим ожидание
       delete awaitingPrice[chatId];
     } else {
-      // Парсим цену
       const cleaned = text.replace(/[^\d.,]/g, '').replace(',', '.');
       const newPrice = parseFloat(cleaned);
       if (isNaN(newPrice) || newPrice <= 0) {
@@ -407,6 +484,9 @@ bot.on('message', (msg) => {
     const shopId = getShopId(chatId);
     if (!shopId) return sendMainMenu(chatId, '❌ Сначала /start');
     const shop = getShop(shopId);
+    if (!isOwner(shop, chatId)) {
+      return sendMainMenu(chatId, '🚫 Удалять букеты может только владелец.');
+    }
     const { text: t, options } = buildDeleteMessage(shop);
     return bot.sendMessage(chatId, t, options);
   }
@@ -414,7 +494,7 @@ bot.on('message', (msg) => {
   if (text === '⚙️ Меню') {
     const shopId = getShopId(chatId);
     if (!shopId) return sendMainMenu(chatId, '❌ Сначала /start');
-    return bot.sendMessage(chatId, '⚙️ Меню магазина:', SETTINGS_MENU);
+    const shop = getShop(shop    return bot.sendMessage(chatId, '⚙️ Меню магазина:', getSettingsMenu(shop, chatId));
   }
 
   const state = registrationState[chatId];
@@ -451,6 +531,7 @@ bot.on('message', (msg) => {
     trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
     const newInvite = generateInviteCode();
     inviteIndex[newInvite] = state.data.shopId;
+    const userName = msg.from.first_name || 'Владелец';
     shops[state.data.shopId] = {
       name: state.data.shopId,
       displayName: state.data.displayName,
@@ -460,7 +541,7 @@ bot.on('message', (msg) => {
       telegramUsername: PRESET_SHOP.telegramUsername,
       inviteCode: newInvite,
       bouquets: [],
-      admins: [chatId],
+      admins: [{ chatId: chatId, role: 'owner', name: userName, joinedAt: now.toISOString() }],
       subscription: { status: 'trial', trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(), paidUntil: null },
       settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent, aiEnabled: true }
     };
@@ -483,6 +564,7 @@ bot.onText(/\/invite/, (msg) => {
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ Сначала /start');
   const shop = getShop(shopId);
+  if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Только владелец может приглашать.');
   const link = `https://t.me/petalo_rus_bot?start=inv_${shop.inviteCode}`;
   bot.sendMessage(chatId, `🔑 Ссылка для флористов:\n\n${link}`);
 });
@@ -501,6 +583,7 @@ bot.onText(/\/delete/, (msg) => {
   const shopId = getShopId(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ /start');
   const shop = getShop(shopId);
+  if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Только владелец может удалять.');
   const { text, options } = buildDeleteMessage(shop);
   bot.sendMessage(chatId, text, options);
 });
@@ -511,7 +594,7 @@ bot.onText(/\/status/, (msg) => {
   if (!shopId) return bot.sendMessage(chatId, '❌');
   const shop = getShop(shopId);
   const days = getRemainingDays(shop);
-  let txt = `📊 ${shop.displayName}\n👥 Флористов: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
+  let txt = `📊 ${shop.displayName}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n`;
   txt += shop.subscription.status === 'trial' ? `Триал: ${days} дней\n` : `Активна: ${days} дней\n`;
   bot.sendMessage(chatId, txt);
 });
@@ -602,7 +685,7 @@ bot.on('photo', async (msg) => {
     }
     replyText += `\n\n💡 Ещё фото? Отправьте без подписи.`;
 
-    return bot.sendMessage(chatId, replyText, { parse_mode: 'HTML', reply_markup: MAIN_KEYBOARD });
+    return bot.sendMessage(chatId, replyText, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
 
   const lastId = lastBouquetByUser[chatId];
@@ -620,17 +703,49 @@ bot.on('callback_query', (q) => {
   const shopId = getShopId(chatId);
   if (!shopId) return bot.answerCallbackQuery(q.id, { text: 'Ошибка' });
   const shop = getShop(shopId);
+  const owner = isOwner(shop, chatId);
 
+  // ---- Меню: только для владельца ----
   if (data === 'menu_link') {
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${shopId}`);
   }
+  if (data === 'menu_status') {
+    const days = getRemainingDays(shop);
+    const aiStatus = shop.settings.aiEnabled !== false ? '✅' : '❌';
+    const myRole = owner ? '👑 Владелец' : '🌸 Флорист';
+    let txt = `📊 Статус\n\n🏪 ${shop.displayName}\n👤 Вы: ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n📅 ${shop.subscription.status === 'trial' ? 'Триал' : 'Подписка'}: ${days} дней\n🤖 ИИ: ${aiStatus}`;
+    bot.answerCallbackQuery(q.id);
+    const kb = owner 
+      ? { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } 
+      : { inline_keyboard: [[{ text: '❌ Закрыть', callback_data: 'menu_close' }]] };
+    return bot.sendMessage(chatId, txt, { reply_markup: kb });
+  }
+  if (data === 'menu_close') {
+    bot.answerCallbackQuery(q.id);
+    return bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+  }
+
+  // ---- Только для владельца ----
+  if (data === 'menu_back') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    bot.answerCallbackQuery(q.id);
+    return bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...getSettingsMenu(shop, chatId) }).catch(() => {});
+  }
   if (data === 'menu_invite') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     const link = `https://t.me/petalo_rus_bot?start=inv_${shop.inviteCode}`;
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, `🔑 Ссылка-приглашение:\n\n${link}`);
   }
+  if (data === 'menu_team') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    bot.answerCallbackQuery(q.id);
+    const { text, options } = buildTeamMessage(shop, chatId);
+    return bot.sendMessage(chatId, text, options);
+  }
   if (data === 'menu_logo') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, 
       shop.settings.logo ? '🎨 Логотип установлен.' : '🎨 Логотип не установлен.',
@@ -642,6 +757,7 @@ bot.on('callback_query', (q) => {
     );
   }
   if (data === 'menu_background') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, 
       shop.settings.background ? '🖼 Фон установлен.' : '🖼 Фон не установлен.',
@@ -652,47 +768,86 @@ bot.on('callback_query', (q) => {
       ]}}
     );
   }
-  if (data === 'menu_status') {
-    const days = getRemainingDays(shop);
-    const aiStatus = shop.settings.aiEnabled !== false ? '✅ включены' : '❌ выключены';
-    let txt = `📊 Статус\n\n🏪 ${shop.displayName}\n👥 Флористов: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n📅 ${shop.subscription.status === 'trial' ? 'Триал' : 'Подписка'}: ${days} дней\n🤖 ИИ-описания: ${aiStatus}`;
-    bot.answerCallbackQuery(q.id);
-    return bot.sendMessage(chatId, txt, { reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
-  }
   if (data === 'menu_renew') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, '💳 Для продления: @floop10', { reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
   }
-  if (data === 'menu_close') {
-    bot.answerCallbackQuery(q.id);
-    return bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-  }
-  if (data === 'menu_back') {
-    bot.answerCallbackQuery(q.id);
-    return bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...SETTINGS_MENU }).catch(() => {});
-  }
   if (data === 'setlogo_now') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     awaitingUpload[chatId] = 'logo';
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, '📷 Отправьте фото — установлю как логотип.\n(/cancel — отмена)');
   }
   if (data === 'setbg_now') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     awaitingUpload[chatId] = 'background';
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, '📷 Отправьте фото — установлю как фон.\n(/cancel — отмена)');
   }
   if (data === 'resetlogo_now') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     shop.settings.logo = null;
     bot.answerCallbackQuery(q.id, { text: '✅ Логотип убран' });
     return bot.editMessageText('✅ Логотип убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
   }
   if (data === 'resetbg_now') {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     shop.settings.background = null;
     bot.answerCallbackQuery(q.id, { text: '✅ Фон убран' });
     return bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
   }
 
-  // ---- Подтверждение ----
+  // ---- Управление флористом (kick) ----
+  if (data.startsWith('team_user_')) {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    const targetChatId = parseInt(data.split('_')[2]);
+    const target = shop.admins.find(a => a.chatId === targetChatId);
+    if (!target) return bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
+    bot.answerCallbackQuery(q.id);
+    return bot.sendMessage(chatId,
+      `🌸 <b>${esc(target.name || 'Флорист')}</b>\n\n` +
+      `Присоединился: ${new Date(target.joinedAt).toLocaleDateString()}\n\n` +
+      `Что сделать?`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+        [{ text: '🗑 Удалить доступ', callback_data: `kick_${targetChatId}` }],
+        [{ text: '↩️ Назад', callback_data: 'menu_team' }]
+      ]}}
+    );
+  }
+  if (data.startsWith('kick_')) {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    const targetChatId = parseInt(data.split('_')[1]);
+    const target = shop.admins.find(a => a.chatId === targetChatId);
+    if (!target) return bot.answerCallbackQuery(q.id, { text: '❌ Уже удалён' });
+    bot.answerCallbackQuery(q.id);
+    return bot.sendMessage(chatId,
+      `⚠️ Удалить доступ для <b>${esc(target.name || 'Флориста')}</b>?\n\nЭтот человек больше не сможет управлять витриной.`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+        [{ text: '🗑 Да, удалить', callback_data: `confirmkick_${targetChatId}` }],
+        [{ text: '↩️ Отмена', callback_data: 'menu_team' }]
+      ]}}
+    );
+  }
+  if (data.startsWith('confirmkick_')) {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
+    const targetChatId = parseInt(data.split('_')[1]);
+    const idx = shop.admins.findIndex(a => a.chatId === targetChatId);
+    if (idx === -1) return bot.answerCallbackQuery(q.id, { text: '❌ Уже удалён' });
+    const name = shop.admins[idx].name || 'Флорист';
+    shop.admins.splice(idx, 1);
+    delete userToShop[targetChatId];
+    bot.answerCallbackQuery(q.id, { text: '🗑 Доступ удалён' });
+    bot.editMessageText(`✅ Доступ для «${name}» удалён.`, { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
+    // Уведомим бывшего флориста
+    bot.sendMessage(targetChatId, 
+      `🚫 Ваш доступ к витрине «${shop.displayName}» удалён владельцем.\n\n` +
+      `Если это ошибка — свяжитесь с руководителем.`
+    ).catch(() => {});
+    return;
+  }
+
+  // ---- Подтверждение / убрать / вернуть ----
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -708,8 +863,6 @@ bot.on('callback_query', (q) => {
     }
     return;
   }
-
-  // ---- Убрать ----
   if (data.startsWith('hide_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -724,8 +877,6 @@ bot.on('callback_query', (q) => {
     }
     return;
   }
-
-  // ---- Вернуть ----
   if (data.startsWith('show_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -742,7 +893,7 @@ bot.on('callback_query', (q) => {
     return;
   }
 
-  // ---- Изменение цены: выбрали букет ----
+  // ---- Смена цены ----
   if (data.startsWith('editprice_')) {
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
@@ -755,7 +906,7 @@ bot.on('callback_query', (q) => {
       `Текущая цена: <b>${b.price} ₽</b>\n\n` +
       `Напишите новую цену числом.\n` +
       `<i>Отмена — /cancel</i>`,
-      { parse_mode: 'HTML', reply_markup: MAIN_KEYBOARD }
+      { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) }
     );
   }
 
@@ -774,7 +925,9 @@ bot.on('callback_query', (q) => {
     return;
   }
 
+  // ---- Удаление: только владелец ----
   if (data.startsWith('askdel_')) {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     const id = parseInt(data.split('_')[1]);
     const b = shop.bouquets.find(x => x.id === id);
     if (!b) return bot.answerCallbackQuery(q.id, { text: '❌ Не найден' });
@@ -788,6 +941,7 @@ bot.on('callback_query', (q) => {
     );
   }
   if (data.startsWith('confirmdel_')) {
+    if (!owner) return bot.answerCallbackQuery(q.id, { text: '🚫 Только владелец' });
     const id = parseInt(data.split('_')[1]);
     const idx = shop.bouquets.findIndex(x => x.id === id);
     if (idx === -1) {
