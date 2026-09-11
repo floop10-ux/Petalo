@@ -58,6 +58,30 @@ function generateInviteCode() {
   return code;
 }
 
+// ---------- Генерация описания через ИИ (Pollinations, бесплатно) ----------
+async function generateDescription(name, price) {
+  if (typeof fetch !== 'function') return null;
+  try {
+    const prompt = `Сгенерируй короткое (1-2 предложения) красивое описание для букета на витрине цветочного магазина. Название: "${name}". Цена: ${price} руб. Пиши тепло, продающе, без кавычек, без вводных слов. Пример стиля: "Нежные розы в крафтовой упаковке — идеальный подарок для любимой. Подчеркнут ваши чувства."`;
+    const url = 'https://text.pollinations.ai/' + encodeURIComponent(prompt);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 9000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    let text = (await res.text()).trim();
+    // Чистим от кавычек и мусора
+    text = text.replace(/^["«"']+|["»"']+$/g, '').trim();
+    // Если слишком длинно — обрезаем
+    if (text.length > 220) text = text.slice(0, 220) + '…';
+    if (text.length < 10) return null;
+    return text;
+  } catch (e) {
+    console.error('AI error:', e.message);
+    return null;
+  }
+}
+
 function initPresetShop() {
   const now = new Date();
   const trialEnd = new Date(now);
@@ -76,7 +100,7 @@ function initPresetShop() {
     bouquets: [],
     admins: [],
     subscription: { status: 'trial', trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(), paidUntil: null },
-    settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent }
+    settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent, aiEnabled: true }
   };
   console.log(`✅ Магазин "${PRESET_SHOP.shopId}" создан. Invite: ${inviteCode}`);
 }
@@ -130,7 +154,6 @@ function hoursLeft(b) {
   return Math.round(rem / 3600000);
 }
 
-// ---------- Сборка /check ----------
 function buildCheckMessage(shop) {
   if (shop.bouquets.length === 0) {
     return { 
@@ -148,9 +171,8 @@ function buildCheckMessage(shop) {
     else if (s === 'pinned') pinned.push(b);
   }
 
-  // Сортируем свежие — новые сверху
   fresh.sort((a,b) => new Date(b.confirmedAt) - new Date(a.confirmedAt));
-  stale.sort((a,b) => new Date(a.confirmedAt) - new Date(b.confirmedAt)); // те, что скоро исчезнут — вверху
+  stale.sort((a,b) => new Date(a.confirmedAt) - new Date(b.confirmedAt));
 
   let text = '✅ <b>Что есть в наличии?</b>\n';
   text += '<i>Нажмите на букет, чтобы подтвердить или вернуть.</i>';
@@ -287,6 +309,7 @@ bot.on('message', (msg) => {
       '2️⃣ Отправьте фото сюда\n' +
       '3️⃣ В подписи напишите: Название и цена\n\n' +
       'Пример: «Розы в крафте 4500»\n\n' +
+      '🤖 Бот сам сгенерирует красивое описание для витрины.\n\n' +
       '💡 Ещё фото? Отправьте их следом без подписи.'
     );
   }
@@ -359,7 +382,7 @@ bot.on('message', (msg) => {
       bouquets: [],
       admins: [chatId],
       subscription: { status: 'trial', trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(), paidUntil: null },
-      settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent }
+      settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent, aiEnabled: true }
     };
     userToShop[chatId] = state.data.shopId;
     delete registrationState[chatId];
@@ -465,20 +488,42 @@ bot.on('photo', async (msg) => {
       if (!isNaN(num) && num > 0) { price = num; name = words.slice(0, i).join(' '); break; }
     }
     if (price === 0 || name === '') return sendMainMenu(chatId, '❌ Укажите цену в конце. Пример: "Розы 4500"');
+
+    const finalName = name.trim();
+
+    // ---- Сначала сообщим, что добавляем ----
+    bot.sendMessage(chatId, '⏳ Добавляю букет и генерирую описание…');
+
+    // ---- Генерируем описание через ИИ (если включено) ----
+    let description = null;
+    if (shop.settings.aiEnabled !== false) {
+      description = await generateDescription(finalName, price);
+    }
+
     const bouquet = {
       id: idCounter++,
-      name: name.trim(),
+      name: finalName,
       price: price,
+      description: description,
       photos: [filePath],
       createdAt: new Date().toISOString(),
       confirmedAt: new Date().toISOString(),
-      isPinned: name.trim().startsWith('.'),
+      isPinned: finalName.startsWith('.'),
       chatId: chatId,
       reminded: false
     };
     shop.bouquets.push(bouquet);
     lastBouquetByUser[chatId] = bouquet.id;
-    return sendMainMenu(chatId, `✅ Букет «${bouquet.name}» добавлен! ${bouquet.price} ₽\n\n💡 Ещё фото? Отправьте без подписи.`);
+
+    let replyText = `✅ Букет «${finalName}» добавлен! ${price} ₽`;
+    if (description) {
+      replyText += `\n\n✨ Описание: ${description}`;
+    } else {
+      replyText += `\n\n<i>(описание не сгенерировано)</i>`;
+    }
+    replyText += `\n\n💡 Ещё фото? Отправьте без подписи.`;
+
+    return bot.sendMessage(chatId, replyText, { parse_mode: 'HTML', reply_markup: MAIN_KEYBOARD });
   }
 
   const lastId = lastBouquetByUser[chatId];
@@ -530,7 +575,8 @@ bot.on('callback_query', (q) => {
   }
   if (data === 'menu_status') {
     const days = getRemainingDays(shop);
-    let txt = `📊 Статус\n\n🏪 ${shop.displayName}\n👥 Флористов: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n📅 ${shop.subscription.status === 'trial' ? 'Триал' : 'Подписка'}: ${days} дней`;
+    const aiStatus = shop.settings.aiEnabled !== false ? '✅ включены' : '❌ выключены';
+    let txt = `📊 Статус\n\n🏪 ${shop.displayName}\n👥 Флористов: ${shop.admins.length}\n📦 Букетов: ${shop.bouquets.length}\n📅 ${shop.subscription.status === 'trial' ? 'Триал' : 'Подписка'}: ${days} дней\n🤖 ИИ-описания: ${aiStatus}`;
     bot.answerCallbackQuery(q.id);
     return bot.sendMessage(chatId, txt, { reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
   }
@@ -603,7 +649,7 @@ bot.on('callback_query', (q) => {
       `🗑 Удалить букет «${b.name}» (${b.price} ₽)?\n\nЭто действие нельзя отменить.`,
       { reply_markup: { inline_keyboard: [
         [{ text: '🗑 Да, удалить', callback_data: `confirmdel_${b.id}` }],
-        [{ text: '↩️ Отмена', callback_data: `canceldel` }]
+        [{ text: '↩️ Отмена', callback_data: 'canceldel' }]
       ]}}
     );
   }
@@ -691,10 +737,14 @@ app.get('/shop/:shopId', (req, res) => {
         `;
       }
       const oldPrice = Math.ceil(b.price * (1 + shop.settings.markupPercent / 100) / 100) * 100;
+      const descHTML = b.description 
+        ? `<p style="font-size:13px;color:#777;font-style:italic;margin:4px 0 8px;line-height:1.4;">${b.description}</p>` 
+        : '';
       cards += `
         <div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;">
           ${galleryHTML}
           <h3 style="margin:12px 0 6px;font-family:sans-serif;">${b.name}</h3>
+          ${descHTML}
           <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
             <span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>
             &nbsp; ${b.price} ₽
