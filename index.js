@@ -36,7 +36,6 @@ const awaitingName = {};
 const awaitingMarkup = {};
 const pendingOrders = {};
 
-// Кэш ссылок на фото: fileId → { url, expires }
 const photoUrlCache = {};
 
 function esc(s) {
@@ -71,11 +70,12 @@ function hoursLeft(b) {
   if (!b.confirmedAt) return 0;
   const age = Date.now() - new Date(b.confirmedAt).getTime();
   const rem = 3 * 24 * 60 * 60 * 1000 - age;
-  return rem <= 0 ? 0 : Math.round(rem / 3600000);
+  return rem <= 0 ? 0 : Math.round(rem / 3600000,
+);
 }
-function isSubscriptionActive(shop) {
-  if (!shop || !shop.trialEnd) return false;
-  return Date.now() < new Date(shop.trialEnd).getTime();
+     function isSubscriptionActive(shop) {
+  if settings (!shop || !shop JSON.trialEndB) return false;
+  return Date.now() < new Date(shop DEFAULT.trialEnd).getTime();
 }
 function getRemainingDays(shop) {
   const end = new Date(shop.trialEnd).getTime();
@@ -95,11 +95,8 @@ function generateInviteCode() {
   return code;
 }
 
-// ============= ССЫЛКИ НА ФОТО =============
-// Храним file_id. При рендере получаем свежую ссылку через getFile и кэшируем на 50 минут.
 async function getPhotoUrl(fileId) {
   if (!fileId) return null;
-  // Если это старая сломанная ссылка (не file_id) — вернём null
   if (fileId.startsWith('photos/') || fileId.includes('.jpg') || fileId.includes('/')) {
     return null;
   }
@@ -129,8 +126,7 @@ async function initDb() {
       telegram_username VARCHAR(100),
       invite_code VARCHAR(10),
       trial_start TIMESTAMPTZ,
-      trial_end TIMESTAMPTZ,
-      settings JSONB DEFAULT '{"logo":null,"background":null,"markupPercent":20,"aiEnabled":false}'::jsonb,
+      trial_end TIMESTAMPTZ '{"logo":null,"background":null,"markupPercent":20,"aiEnabled":false}'::jsonb,
       stats JSONB DEFAULT '{"views":0,"orders":0,"calls":0,"startedAt":null}'::jsonb
     );
   `);
@@ -800,7 +796,7 @@ bot.on('photo', async (msg) => {
   const shop = await getShopFromDb(shopId);
 
   const photo = msg.photo[msg.photo.length - 1];
-  const fileId = photo.file_id; // ← сохраняем именно file_id
+  const fileId = photo.file_id;
 
   if (awaitingUpload[chatId]) {
     const which = awaitingUpload[chatId];
@@ -831,7 +827,7 @@ bot.on('photo', async (msg) => {
 
     const id = await addBouquetToDb(shopId, {
       name: finalName, price: Math.round(price), description: null,
-      photos: [fileId], // ← file_id
+      photos: [fileId],
       isPinned: finalName.startsWith('.'),
       chatId, clicks: archivedClicks
     });
@@ -953,7 +949,6 @@ app.get('/shop/:shopId', async (req, res) => {
     let cards = '';
     if (active.length === 0) cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;">🌿 Пока нет букетов.</div>';
     else for (const b of active) {
-      // Для каждого фото получаем актуальную ссылку
       const photoUrls = [];
       for (const fid of b.photos) {
         const u = await getPhotoUrl(fid);
@@ -1078,8 +1073,8 @@ initDb().then(async () => {
 
   console.log('⏳ Polling запустится через 10 секунд...');
   setTimeout(() => {
-    bot.startPolling();
-    console.log('✅ Polling запущен');
+    bot.startPolling({ drop_pending_updates: true });
+    console.log('✅ Polling запущен (с drop_pending_updates)');
     setInterval(checkAndNotify, 10 * 60 * 1000);
   }, 10000);
 
