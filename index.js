@@ -6,13 +6,18 @@ require('dotenv').config();
 const app = express();
 const token = process.env.BOT_TOKEN;
 
-const bot = new TelegramBot(token, {
-  polling: {
-    interval: 2000,
-    autoStart: false,
-    params: { drop_pending_updates: true }
-  }
-});
+// === WEBHOOK: Telegram сам присылает обновления, конфликтов нет ===
+const bot = new TelegramBot(token, { webHook: true });
+
+// Регистрируем URL, на который Telegram будет слать обновления
+const WEBHOOK_PATH = `/bot${token}`;
+const BASE_URL = process.env.RENDER_EXTERNAL_URL || 'https://petalo.onrender.com';
+bot.setWebHook(`${BASE_URL}${WEBHOOK_PATH}`, { drop_pending_updates: true })
+  .then(() => console.log(`✅ Webhook установлен: ${BASE_URL}${WEBHOOK_PATH}`))
+  .catch(err => console.error('❌ Ошибка установки webhook:', err.message));
+
+// Подключаем обработчик к Express
+app.use(bot.webHookCallback(WEBHOOK_PATH));
 
 const BOT_USERNAME = 'petalo_rus_bot';
 
@@ -26,6 +31,8 @@ const PRESET_SHOP = {
   markupPercent: 20,
   trialMonths: 3
 };
+
+// ... (все остальные переменные и функции — те же, что были в предыдущем файле)
 
 const userToShop = {};
 const registrationState = {};
@@ -1018,16 +1025,11 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
   }
 
+  // Запускаем проверку уведомлений
+  setInterval(checkAndNotify, 10 * 60 * 1000);
+
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`🚀 Petalo на порту ${PORT}`);
-    console.log('⏳ Polling запустится через 60 секунд...');
-    setTimeout(() => {
-      bot.startPolling();
-      console.log('✅ Polling запущен');
-      setInterval(checkAndNotify, 10 * 60 * 1000);
-    }, 60000);
-  });
+  app.listen(PORT, () => console.log(`🚀 Petalo на порту ${PORT} (webhook)`));
 }).catch(err => {
   console.error('❌ Ошибка инициализации:', err);
   process.exit(1);
