@@ -6,19 +6,13 @@ require('dotenv').config();
 const app = express();
 const token = process.env.BOT_TOKEN;
 
-// Без опций — иначе webHookCallback недоступен
-const bot = new TelegramBot(token);
-
-const WEBHOOK_PATH = `/bot${token}`;
-const BASE_URL = process.env.RENDER_EXTERNAL_URL || 'https://petalo.onrender.com';
-
-// Подключаем Express-обработчик для webhook
-app.use(bot.webHookCallback(WEBHOOK_PATH));
-
-// Регистрируем URL, на который Telegram будет слать обновления
-bot.setWebHook(`${BASE_URL}${WEBHOOK_PATH}`, { drop_pending_updates: true })
-  .then(() => console.log(`✅ Webhook установлен: ${BASE_URL}${WEBHOOK_PATH}`))
-  .catch(err => console.error('❌ Ошибка установки webhook:', err.message));
+const bot = new TelegramBot(token, {
+  polling: {
+    interval: 2000,
+    autoStart: false,
+    params: { drop_pending_updates: true }
+  }
+});
 
 const BOT_USERNAME = 'petalo_rus_bot';
 
@@ -1024,10 +1018,25 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
   }
 
-  setInterval(checkAndNotify, 10 * 60 * 1000);
+  // ВАЖНО: сначала удаляем возможный webhook (если остался от прошлой попытки),
+  // потом запускаем polling. Это снимает 409 Conflict навсегда.
+  console.log('🧹 Удаляем возможный webhook...');
+  try {
+    await bot.deleteWebHook();
+    console.log('✅ Webhook удалён');
+  } catch (e) {
+    console.log('ℹ️ Webhook не установлен, продолжаем');
+  }
+
+  console.log('⏳ Polling запустится через 10 секунд...');
+  setTimeout(() => {
+    bot.startPolling();
+    console.log('✅ Polling запущен');
+    setInterval(checkAndNotify, 10 * 60 * 1000);
+  }, 10000);
 
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`🚀 Petalo на порту ${PORT} (webhook)`));
+  app.listen(PORT, () => console.log(`🚀 Petalo на порту ${PORT}`));
 }).catch(err => {
   console.error('❌ Ошибка инициализации:', err);
   process.exit(1);
