@@ -6,18 +6,19 @@ require('dotenv').config();
 const app = express();
 const token = process.env.BOT_TOKEN;
 
-// === WEBHOOK: Telegram сам присылает обновления, конфликтов нет ===
-const bot = new TelegramBot(token, { webHook: true });
+// Без опций — иначе webHookCallback недоступен
+const bot = new TelegramBot(token);
 
-// Регистрируем URL, на который Telegram будет слать обновления
 const WEBHOOK_PATH = `/bot${token}`;
 const BASE_URL = process.env.RENDER_EXTERNAL_URL || 'https://petalo.onrender.com';
+
+// Подключаем Express-обработчик для webhook
+app.use(bot.webHookCallback(WEBHOOK_PATH));
+
+// Регистрируем URL, на который Telegram будет слать обновления
 bot.setWebHook(`${BASE_URL}${WEBHOOK_PATH}`, { drop_pending_updates: true })
   .then(() => console.log(`✅ Webhook установлен: ${BASE_URL}${WEBHOOK_PATH}`))
   .catch(err => console.error('❌ Ошибка установки webhook:', err.message));
-
-// Подключаем обработчик к Express
-app.use(bot.webHookCallback(WEBHOOK_PATH));
 
 const BOT_USERNAME = 'petalo_rus_bot';
 
@@ -31,8 +32,6 @@ const PRESET_SHOP = {
   markupPercent: 20,
   trialMonths: 3
 };
-
-// ... (все остальные переменные и функции — те же, что были в предыдущем файле)
 
 const userToShop = {};
 const registrationState = {};
@@ -1025,7 +1024,6 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
   }
 
-  // Запускаем проверку уведомлений
   setInterval(checkAndNotify, 10 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
