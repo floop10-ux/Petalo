@@ -1021,12 +1021,12 @@ initDb().then(async () => {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`🚀 Petalo на порту ${PORT}`);
-    console.log('⏳ Polling запустится через 15 секунд...');
+    console.log('⏳ Polling запустится через 60 секунд...');
     setTimeout(() => {
       bot.startPolling();
       console.log('✅ Polling запущен');
       setInterval(checkAndNotify, 10 * 60 * 1000);
-    }, 15000);
+    }, 60000);
   });
 }).catch(err => {
   console.error('❌ Ошибка инициализации:', err);
