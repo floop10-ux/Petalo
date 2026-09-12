@@ -36,6 +36,9 @@ const awaitingName = {};
 const awaitingMarkup = {};
 const pendingOrders = {};
 
+// Кэш ссылок на фото: fileId → { url, expires }
+const photoUrlCache = {};
+
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -90,6 +93,27 @@ function generateInviteCode() {
   let code = '';
   for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
   return code;
+}
+
+// ============= ССЫЛКИ НА ФОТО =============
+// Храним file_id. При рендере получаем свежую ссылку через getFile и кэшируем на 50 минут.
+async function getPhotoUrl(fileId) {
+  if (!fileId) return null;
+  // Если это старая сломанная ссылка (не file_id) — вернём null
+  if (fileId.startsWith('photos/') || fileId.includes('.jpg') || fileId.includes('/')) {
+    return null;
+  }
+  const cached = photoUrlCache[fileId];
+  if (cached && cached.expires > Date.now()) return cached.url;
+  try {
+    const fileInfo = await bot.getFile(fileId);
+    const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
+    photoUrlCache[fileId] = { url, expires: Date.now() + 50 * 60 * 1000 };
+    return url;
+  } catch (e) {
+    console.error('Ошибка getFile для', fileId, ':', e.message);
+    return null;
+  }
 }
 
 // ============= БД =============
@@ -367,15 +391,25 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     if (!b) return bot.sendMessage(chatId, '❌ Букет уже удалён с витрины.');
     if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Магазин сейчас не принимает заказы.');
     pendingOrders[chatId] = { shopId, bouquetId };
-    const photoUrl = `https://api.telegram.org/file/bot${token}/${b.photos[0]}`;
+    const photoUrl = await getPhotoUrl(b.photos[0]);
     const caption = `🌸 <b>${esc(shop.displayName)}</b>\n\nВы хотите заказать букет:\n\n🔢 <b>№${b.id}</b>\n💐 ${esc(b.name)}\n💰 <b>${b.price} ₽</b>\n\n<i>Нажмите «Подтвердить заказ» — продавец получит вашу заявку и напишет вам.</i>`;
-    return bot.sendPhoto(chatId, photoUrl, {
-      caption, parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: [
-        [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
-        [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
-      ] }
-    });
+    if (photoUrl) {
+      return bot.sendPhoto(chatId, photoUrl, {
+        caption, parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [
+          [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
+          [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
+        ] }
+      });
+    } else {
+      return bot.sendMessage(chatId, caption, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [
+          [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
+          [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
+        ] }
+      });
+    }
   }
 
   if (param && param.startsWith('inv_')) {
@@ -446,7 +480,7 @@ bot.on('callback_query', async (q) => {
     }
     const owner = getOwner(shop);
     if (owner) {
-      const photoUrl = `https://api.telegram.org/file/bot${token}/${b.photos[0]}`;
+      const photoUrl = await getPhotoUrl(b.photos[0]);
       const clientName = q.from.first_name || 'Клиент';
       const clientUsername = q.from.username;
       let ownerText = `🌸 <b>Новый заказ!</b>\n\n🔢 Букет <b>№${b.id}</b>\n💐 ${esc(b.name)}\n💰 <b>${b.price} ₽</b>\n\n👤 Клиент: <b>${esc(clientName)}</b>`;
@@ -454,7 +488,11 @@ bot.on('callback_query', async (q) => {
       const buttons = [];
       if (clientUsername) buttons.push([{ text: '📩 Написать клиенту', url: `https://t.me/${clientUsername}` }]);
       buttons.push([{ text: '✅ Понятно', callback_data: 'owner_ack_order' }]);
-      bot.sendPhoto(owner.chatId, photoUrl, { caption: ownerText, parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
+      if (photoUrl) {
+        bot.sendPhoto(owner.chatId, photoUrl, { caption: ownerText, parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
+      } else {
+        bot.sendMessage(owner.chatId, ownerText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
+      }
     }
     await updateBouquetField(b.id, 'clicks', (b.clicks || 0) + 1);
     await incrementShopStat(pending.shopId, 'orders');
@@ -762,13 +800,11 @@ bot.on('photo', async (msg) => {
   const shop = await getShopFromDb(shopId);
 
   const photo = msg.photo[msg.photo.length - 1];
-  let filePath = '';
-  try { const fi = await bot.getFile(photo.file_id); filePath = fi.file_path; }
-  catch (e) { return bot.sendMessage(chatId, '❌ Ошибка фото.'); }
+  const fileId = photo.file_id; // ← сохраняем именно file_id
 
   if (awaitingUpload[chatId]) {
     const which = awaitingUpload[chatId];
-    shop.settings[which] = filePath;
+    shop.settings[which] = fileId;
     await saveShopSettings(shopId, shop.settings);
     delete awaitingUpload[chatId];
     return bot.sendMessage(chatId, `✅ ${which === 'logo' ? 'Логотип' : 'Фон'} установлен!`, { reply_markup: getMainKeyboard(shop, chatId) });
@@ -795,7 +831,8 @@ bot.on('photo', async (msg) => {
 
     const id = await addBouquetToDb(shopId, {
       name: finalName, price: Math.round(price), description: null,
-      photos: [filePath], isPinned: finalName.startsWith('.'),
+      photos: [fileId], // ← file_id
+      isPinned: finalName.startsWith('.'),
       chatId, clicks: archivedClicks
     });
     lastBouquetByUser[chatId] = id;
@@ -811,7 +848,7 @@ bot.on('photo', async (msg) => {
   const b = await getBouquetById(shopId, lastId);
   if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
   const photos = b.photos || [];
-  photos.push(filePath);
+  photos.push(fileId);
   await updateBouquetField(lastId, 'photos', JSON.stringify(photos));
   return bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${photos.length}`, { reply_markup: getMainKeyboard(shop, chatId) });
 });
@@ -916,15 +953,26 @@ app.get('/shop/:shopId', async (req, res) => {
     let cards = '';
     if (active.length === 0) cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;">🌿 Пока нет букетов.</div>';
     else for (const b of active) {
-      const photoUrl = `https://api.telegram.org/file/bot${token}/${b.photos[0]}`;
-      const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
-      let gallery = `<img src="${photoUrl}" style="width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;">`;
-      if (b.photos.length > 1) {
-        const slides = b.photos.map(p => `<img src="https://api.telegram.org/file/bot${token}/${p}" style="height:220px;width:auto;border-radius:12px;flex-shrink:0;">`).join('');
+      // Для каждого фото получаем актуальную ссылку
+      const photoUrls = [];
+      for (const fid of b.photos) {
+        const u = await getPhotoUrl(fid);
+        if (u) photoUrls.push(u);
+      }
+
+      let gallery = '';
+      if (photoUrls.length === 0) {
+        gallery = `<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:40px;">📷</div>`;
+      } else if (photoUrls.length === 1) {
+        gallery = `<img src="${photoUrls[0]}" style="width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;">`;
+      } else {
+        const slides = photoUrls.map(p => `<img src="${p}" style="height:220px;width:auto;border-radius:12px;flex-shrink:0;">`).join('');
         gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;">${slides}</div>`;
       }
+
+      const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
       cards += `<div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
-        <div style="position:absolute;top:24px;right:24px;background:rgba(44,62,80,0.85);color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;">№${b.id}</div>
+        <div style="position:absolute;top:24px;right:24px;background:rgba(44,62,80,0.85);color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;z-index:10;">№${b.id}</div>
         ${gallery}
         <h3 style="margin:12px 0 6px;">${b.name}</h3>
         <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
@@ -934,10 +982,12 @@ app.get('/shop/:shopId', async (req, res) => {
         ${shop.phone ? `<a href="/go/call/${shop.shopId}" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;">📞 Позвонить</a>` : ''}
       </div>`;
     }
-    const logoUrl = shop.settings.logo ? `https://api.telegram.org/file/bot${token}/${shop.settings.logo}` : null;
-    const bgUrl = shop.settings.background ? `https://api.telegram.org/file/bot${token}/${shop.settings.background}` : null;
+
+    const logoUrl = shop.settings.logo ? await getPhotoUrl(shop.settings.logo) : null;
+    const bgUrl = shop.settings.background ? await getPhotoUrl(shop.settings.background) : null;
     const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-attachment:fixed;` : `background:#fafaf8;`;
     const headerHTML = logoUrl ? `<img src="${logoUrl}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
+
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${shop.displayName} — Petalo</title>
       <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
       <body><div class="container">${headerHTML}<h1>${shop.displayName}</h1><div style="color:#555;font-size:14px;margin-bottom:20px;">${shop.address ? `📍 ${shop.address}` : ''} ${shop.hours ? `· 🕐 ${shop.hours}` : ''}</div>${cards}</div></body></html>`);
@@ -1018,8 +1068,6 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
   }
 
-  // ВАЖНО: сначала удаляем возможный webhook (если остался от прошлой попытки),
-  // потом запускаем polling. Это снимает 409 Conflict навсегда.
   console.log('🧹 Удаляем возможный webhook...');
   try {
     await bot.deleteWebHook();
