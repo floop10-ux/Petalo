@@ -41,20 +41,26 @@ const photoUrlCache = {};
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
 function normalizeName(name) {
   return String(name || '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
+
 function calculateOldPrice(price, percent) {
   const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
   return Math.ceil(price * (1 + pct / 100) / 100) * 100;
 }
+
 function isConfirmedRecently(b) {
-  if (b.deleted || b.hidden) return false;
+  if (!b) return false;
+  if (b.deleted) return false;
+  if (b.hidden) return false;
   if (b.isPinned) return true;
   if (!b.confirmedAt) return false;
   const age = Date.now() - new Date(b.confirmedAt).getTime();
   return age < 3 * 24 * 60 * 60 * 1000;
 }
+
 function getBouquetStatus(b) {
   if (b.deleted) return 'deleted';
   if (b.isPinned) return 'pinned';
@@ -66,28 +72,37 @@ function getBouquetStatus(b) {
   if (age < 3 * oneDay) return 'stale';
   return 'expired';
 }
+
 function hoursLeft(b) {
   if (!b.confirmedAt) return 0;
   const age = Date.now() - new Date(b.confirmedAt).getTime();
   const rem = 3 * 24 * 60 * 60 * 1000 - age;
-  return rem <= 0 ? 0 : Math.round(rem / 3600000,
-);
+  return rem <= 0 ? 0 : Math.round(rem / 3600000);
 }
-     function isSubscriptionActive(shop) {
-  if settings (!shop || !shop JSON.trialEndB) return false;
-  return Date.now() < new Date(shop DEFAULT.trialEnd).getTime();
+
+function isSubscriptionActive(shop) {
+  if (!shop) return false;
+  if (!shop.trialEnd) return false;
+  return Date.now() < new Date(shop.trialEnd).getTime();
 }
+
 function getRemainingDays(shop) {
+  if (!shop || !shop.trialEnd) return 0;
   const end = new Date(shop.trialEnd).getTime();
   const diff = end - Date.now();
   return diff <= 0 ? 0 : Math.ceil(diff / (24 * 60 * 60 * 1000));
 }
+
 function isOwner(shop, chatId) {
+  if (!shop || !shop.admins) return false;
   return shop.admins.some(a => a.chatId === chatId && a.role === 'owner');
 }
+
 function getOwner(shop) {
+  if (!shop || !shop.admins) return null;
   return shop.admins.find(a => a.role === 'owner');
 }
+
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -126,7 +141,8 @@ async function initDb() {
       telegram_username VARCHAR(100),
       invite_code VARCHAR(10),
       trial_start TIMESTAMPTZ,
-      trial_end TIMESTAMPTZ '{"logo":null,"background":null,"markupPercent":20,"aiEnabled":false}'::jsonb,
+      trial_end TIMESTAMPTZ,
+      settings JSONB DEFAULT '{"logo":null,"background":null,"markupPercent":20,"aiEnabled":false}'::jsonb,
       stats JSONB DEFAULT '{"views":0,"orders":0,"calls":0,"startedAt":null}'::jsonb
     );
   `);
