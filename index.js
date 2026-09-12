@@ -6,8 +6,6 @@ require('dotenv').config();
 const app = express();
 const token = process.env.BOT_TOKEN;
 
-// === БОТ: запускаем polling только через 15 секунд после старта сервера,
-//     чтобы старый инстанс успел умереть и не было конфликта ===
 const bot = new TelegramBot(token, {
   polling: {
     interval: 2000,
@@ -189,7 +187,7 @@ async function saveShopSettings(shopId, settings) {
 
 async function incrementShopStat(shopId, field) {
   await pool.query(
-    `UPDATE shops SET stats = jsonb_set(stats, '{${field}}', COALESCE((stats->>'${field}')::int, 0) + 1) WHERE shop_id = $1`,
+    `UPDATE shops SET stats = stats || jsonb_build_object('${field}', COALESCE((stats->>'${field}')::int, 0) + 1) WHERE shop_id = $1`,
     [shopId]
   );
 }
@@ -433,7 +431,6 @@ bot.on('callback_query', async (q) => {
   const chatId = q.from.id;
   const data = q.data;
 
-  // ВАЖНО: сразу отвечаем Telegram, чтобы кнопка не «зависала»
   bot.answerCallbackQuery(q.id).catch(() => {});
 
   if (data === 'confirm_order') {
@@ -1028,7 +1025,6 @@ initDb().then(async () => {
     setTimeout(() => {
       bot.startPolling();
       console.log('✅ Polling запущен');
-      // Уведомления запускаем только после polling
       setInterval(checkAndNotify, 10 * 60 * 1000);
     }, 15000);
   });
