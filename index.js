@@ -9,8 +9,7 @@ const token = process.env.BOT_TOKEN;
 const bot = new TelegramBot(token, {
   polling: {
     interval: 2000,
-    autoStart: false,
-    params: { drop_pending_updates: true }
+    autoStart: false
   }
 });
 
@@ -1089,8 +1088,8 @@ initDb().then(async () => {
 
   console.log('⏳ Polling запустится через 10 секунд...');
   setTimeout(() => {
-    bot.startPolling({ drop_pending_updates: true });
-    console.log('✅ Polling запущен (с drop_pending_updates)');
+    bot.startPolling();
+    console.log('✅ Polling запущен');
     setInterval(checkAndNotify, 10 * 60 * 1000);
   }, 10000);
 
