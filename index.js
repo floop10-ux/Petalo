@@ -6,12 +6,12 @@ require('dotenv').config();
 const app = express();
 const token = process.env.BOT_TOKEN;
 
-const bot = new TelegramBot(token, {
-  polling: {
-    interval: 2000,
-    autoStart: false
-  }
-});
+// Бот без polling
+const bot = new TelegramBot(token);
+
+// Подключаем обработчик webhook к Express
+const WEBHOOK_PATH = `/bot${token}`;
+app.use(bot.webHookCallback(WEBHOOK_PATH));
 
 const BOT_USERNAME = 'petalo_rus_bot';
 
@@ -122,7 +122,6 @@ async function getPhotoUrl(fileId) {
     photoUrlCache[fileId] = { url, expires: Date.now() + 50 * 60 * 1000 };
     return url;
   } catch (e) {
-    console.error('Ошибка getFile для', fileId, ':', e.message);
     return null;
   }
 }
@@ -411,6 +410,14 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
           [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
         ] }
+      }).catch(() => {
+        bot.sendMessage(chatId, caption, {
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: [
+            [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
+            [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
+          ] }
+        });
       });
     } else {
       return bot.sendMessage(chatId, caption, {
@@ -500,7 +507,9 @@ bot.on('callback_query', async (q) => {
       if (clientUsername) buttons.push([{ text: '📩 Написать клиенту', url: `https://t.me/${clientUsername}` }]);
       buttons.push([{ text: '✅ Понятно', callback_data: 'owner_ack_order' }]);
       if (photoUrl) {
-        bot.sendPhoto(owner.chatId, photoUrl, { caption: ownerText, parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
+        bot.sendPhoto(owner.chatId, photoUrl, { caption: ownerText, parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {
+          bot.sendMessage(owner.chatId, ownerText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
+        });
       } else {
         bot.sendMessage(owner.chatId, ownerText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
       }
@@ -1002,7 +1011,7 @@ app.get('/shop/:shopId', async (req, res) => {
       <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
       <body><div class="container">${headerHTML}<h1>${shop.displayName}</h1><div style="color:#555;font-size:14px;margin-bottom:20px;">${shop.address ? `📍 ${shop.address}` : ''} ${shop.hours ? `· 🕐 ${shop.hours}` : ''}</div>${cards}</div></body></html>`);
   } catch (e) {
-    console.error(e);
+    console.error('Ошибка витрины');
     res.status(500).send('Ошибка');
   }
 });
@@ -1048,7 +1057,7 @@ async function checkAndNotify() {
         }
       }
     }
-  } catch (e) { console.error('Notify error:', e.message); }
+  } catch (e) { console.error('Notify error'); }
 }
 
 // ============= ЗАПУСК =============
@@ -1078,24 +1087,23 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
   }
 
-  console.log('🧹 Удаляем возможный webhook...');
+  // Устанавливаем webhook
+  const WEBHOOK_URL = `https://petalo.onrender.com${WEBHOOK_PATH}`;
+  console.log('🔗 Устанавливаем webhook...');
   try {
     await bot.deleteWebHook();
-    console.log('✅ Webhook удалён');
+    await bot.setWebHook(WEBHOOK_URL, { drop_pending_updates: true });
+    console.log(`✅ Webhook установлен: ${WEBHOOK_URL}`);
   } catch (e) {
-    console.log('ℹ️ Webhook не установлен, продолжаем');
+    console.error('❌ Ошибка установки webhook');
   }
 
-  console.log('⏳ Polling запустится через 10 секунд...');
-  setTimeout(() => {
-    bot.startPolling();
-    console.log('✅ Polling запущен');
-    setInterval(checkAndNotify, 10 * 60 * 1000);
-  }, 10000);
+  // Проверка уведомлений каждые 10 минут
+  setInterval(checkAndNotify, 10 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`🚀 Petalo на порту ${PORT}`));
+  app.listen(PORT, () => console.log(`🚀 Petalo на порту ${PORT} (webhook)`));
 }).catch(err => {
-  console.error('❌ Ошибка инициализации:', err);
+  console.error('❌ Ошибка инициализации:', err.message);
   process.exit(1);
 });
