@@ -6,12 +6,21 @@ require('dotenv').config();
 const app = express();
 const token = process.env.BOT_TOKEN;
 
+app.use(express.json());
+
 // Бот без polling
 const bot = new TelegramBot(token);
 
-// Подключаем обработчик webhook к Express
+// Приём обновлений от Telegram (без webHookCallback)
 const WEBHOOK_PATH = `/bot${token}`;
-app.use(bot.webHookCallback(WEBHOOK_PATH));
+app.post(WEBHOOK_PATH, (req, res) => {
+  try {
+    bot.processUpdate(req.body);
+  } catch (e) {
+    console.error('Ошибка webhook');
+  }
+  res.sendStatus(200);
+});
 
 const BOT_USERNAME = 'petalo_rus_bot';
 
