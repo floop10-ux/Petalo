@@ -8,17 +8,11 @@ const token = process.env.BOT_TOKEN;
 
 app.use(express.json());
 
-// Бот без polling
 const bot = new TelegramBot(token);
 
-// Приём обновлений от Telegram (без webHookCallback)
 const WEBHOOK_PATH = `/bot${token}`;
 app.post(WEBHOOK_PATH, (req, res) => {
-  try {
-    bot.processUpdate(req.body);
-  } catch (e) {
-    console.error('Ошибка webhook');
-  }
+  try { bot.processUpdate(req.body); } catch (e) { console.error('Ошибка webhook'); }
   res.sendStatus(200);
 });
 
@@ -31,6 +25,8 @@ const PRESET_SHOP = {
   hours: 'Пн-Вс 10:30-21:00',
   phone: '+7 962 402-51-75',
   telegramUsername: 'KupidonAdm',
+  whatsappPhone: '+7 962 402-51-75',
+  maxUsername: '',
   markupPercent: 20,
   trialMonths: 3
 };
@@ -42,23 +38,18 @@ const awaitingUpload = {};
 const awaitingPrice = {};
 const awaitingName = {};
 const awaitingMarkup = {};
-const pendingOrders = {};
-
 const photoUrlCache = {};
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-
 function normalizeName(name) {
   return String(name || '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
-
 function calculateOldPrice(price, percent) {
   const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
   return Math.ceil(price * (1 + pct / 100) / 100) * 100;
 }
-
 function isConfirmedRecently(b) {
   if (!b) return false;
   if (b.deleted) return false;
@@ -68,7 +59,6 @@ function isConfirmedRecently(b) {
   const age = Date.now() - new Date(b.confirmedAt).getTime();
   return age < 3 * 24 * 60 * 60 * 1000;
 }
-
 function getBouquetStatus(b) {
   if (b.deleted) return 'deleted';
   if (b.isPinned) return 'pinned';
@@ -80,49 +70,39 @@ function getBouquetStatus(b) {
   if (age < 3 * oneDay) return 'stale';
   return 'expired';
 }
-
 function hoursLeft(b) {
   if (!b.confirmedAt) return 0;
   const age = Date.now() - new Date(b.confirmedAt).getTime();
   const rem = 3 * 24 * 60 * 60 * 1000 - age;
   return rem <= 0 ? 0 : Math.round(rem / 3600000);
 }
-
 function isSubscriptionActive(shop) {
-  if (!shop) return false;
-  if (!shop.trialEnd) return false;
+  if (!shop || !shop.trialEnd) return false;
   return Date.now() < new Date(shop.trialEnd).getTime();
 }
-
 function getRemainingDays(shop) {
   if (!shop || !shop.trialEnd) return 0;
   const end = new Date(shop.trialEnd).getTime();
   const diff = end - Date.now();
   return diff <= 0 ? 0 : Math.ceil(diff / (24 * 60 * 60 * 1000));
 }
-
 function isOwner(shop, chatId) {
   if (!shop || !shop.admins) return false;
   return shop.admins.some(a => a.chatId === chatId && a.role === 'owner');
 }
-
 function getOwner(shop) {
   if (!shop || !shop.admins) return null;
   return shop.admins.find(a => a.role === 'owner');
 }
-
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
   return code;
 }
-
 async function getPhotoUrl(fileId) {
   if (!fileId) return null;
-  if (fileId.startsWith('photos/') || fileId.includes('.jpg') || fileId.includes('/')) {
-    return null;
-  }
+  if (fileId.startsWith('photos/') || fileId.includes('.jpg') || fileId.includes('/')) return null;
   const cached = photoUrlCache[fileId];
   if (cached && cached.expires > Date.now()) return cached.url;
   try {
@@ -130,9 +110,7 @@ async function getPhotoUrl(fileId) {
     const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
     photoUrlCache[fileId] = { url, expires: Date.now() + 50 * 60 * 1000 };
     return url;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 // ============= БД =============
@@ -153,6 +131,10 @@ async function initDb() {
       stats JSONB DEFAULT '{"views":0,"orders":0,"calls":0,"startedAt":null}'::jsonb
     );
   `);
+  // Добавляем новые поля для мессенджеров (если их ещё нет)
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS whatsapp_phone VARCHAR(50)`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_username VARCHAR(100)`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admins (
       id SERIAL PRIMARY KEY,
@@ -198,28 +180,27 @@ async function getShopFromDb(shopId) {
     hours: s.hours,
     phone: s.phone,
     telegramUsername: s.telegram_username,
+    whatsappPhone: s.whatsapp_phone,
+    maxUsername: s.max_username,
     inviteCode: s.invite_code,
     trialStart: s.trial_start,
     trialEnd: s.trial_end,
     settings: s.settings || { logo: null, background: null, markupPercent: 20, aiEnabled: false },
     stats: s.stats || { views: 0, orders: 0, calls: 0, startedAt: new Date().toISOString() },
     admins: admins.rows.map(a => ({
-      chatId: parseInt(a.chat_id),
-      role: a.role,
-      name: a.name,
-      joinedAt: a.joined_at
+      chatId: parseInt(a.chat_id), role: a.role, name: a.name, joinedAt: a.joined_at
     }))
   };
 }
 
 async function createShopInDb(shop) {
   await pool.query(`
-    INSERT INTO shops (shop_id, name, display_name, address, hours, phone, telegram_username, invite_code, trial_start, trial_end, settings, stats)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    INSERT INTO shops (shop_id, name, display_name, address, hours, phone, telegram_username, whatsapp_phone, max_username, invite_code, trial_start, trial_end, settings, stats)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
   `, [
     shop.shopId, shop.name, shop.displayName, shop.address, shop.hours, shop.phone,
-    shop.telegramUsername, shop.inviteCode,
-    shop.trialStart, shop.trialEnd,
+    shop.telegramUsername, shop.whatsappPhone || null, shop.maxUsername || null,
+    shop.inviteCode, shop.trialStart, shop.trialEnd,
     JSON.stringify(shop.settings), JSON.stringify(shop.stats)
   ]);
 }
@@ -227,25 +208,21 @@ async function createShopInDb(shop) {
 async function saveShopSettings(shopId, settings) {
   await pool.query('UPDATE shops SET settings = $2 WHERE shop_id = $1', [shopId, JSON.stringify(settings)]);
 }
-
 async function incrementShopStat(shopId, field) {
   await pool.query(
     `UPDATE shops SET stats = stats || jsonb_build_object('${field}', COALESCE((stats->>'${field}')::int, 0) + 1) WHERE shop_id = $1`,
     [shopId]
   );
 }
-
 async function addAdminToDb(chatId, shopId, role, name) {
   await pool.query(`
     INSERT INTO admins (chat_id, shop_id, role, name) VALUES ($1,$2,$3,$4)
     ON CONFLICT (chat_id, shop_id) DO NOTHING
   `, [chatId, shopId, role, name]);
 }
-
 async function removeAdminFromDb(chatId, shopId) {
   await pool.query('DELETE FROM admins WHERE chat_id = $1 AND shop_id = $2', [chatId, shopId]);
 }
-
 async function getBouquetsFromDb(shopId, includeDeleted = false) {
   let query = 'SELECT * FROM bouquets WHERE shop_id = $1';
   if (!includeDeleted) query += ' AND deleted = FALSE';
@@ -253,7 +230,6 @@ async function getBouquetsFromDb(shopId, includeDeleted = false) {
   const res = await pool.query(query, [shopId]);
   return res.rows.map(mapBouquet);
 }
-
 async function getBouquetById(shopId, bouquetId) {
   const res = await pool.query(
     'SELECT * FROM bouquets WHERE id = $1 AND shop_id = $2 AND deleted = FALSE',
@@ -262,7 +238,6 @@ async function getBouquetById(shopId, bouquetId) {
   if (res.rows.length === 0) return null;
   return mapBouquet(res.rows[0]);
 }
-
 function mapBouquet(b) {
   return {
     id: b.id, name: b.name, price: b.price, description: b.description,
@@ -271,35 +246,30 @@ function mapBouquet(b) {
     chatId: parseInt(b.chat_id), reminded: b.reminded, clicks: b.clicks
   };
 }
-
 async function addBouquetToDb(shopId, bouquet) {
   const res = await pool.query(`
     INSERT INTO bouquets (shop_id, name, price, description, photos, confirmed_at, is_pinned, chat_id, clicks)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id
   `, [
     shopId, bouquet.name, bouquet.price, bouquet.description,
-    JSON.stringify(bouquet.photos),
-    new Date().toISOString(), bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0
+    JSON.stringify(bouquet.photos), new Date().toISOString(),
+    bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0
   ]);
   return res.rows[0].id;
 }
-
 async function updateBouquetField(id, field, value) {
   await pool.query(`UPDATE bouquets SET ${field} = $2 WHERE id = $1`, [id, value]);
 }
-
 async function updateBouquetFields(id, updates) {
   const keys = Object.keys(updates);
   const values = Object.values(updates);
   const setStr = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
   await pool.query(`UPDATE bouquets SET ${setStr} WHERE id = $1`, [id, ...values]);
 }
-
 async function getShopByInvite(inviteCode) {
   const res = await pool.query('SELECT shop_id FROM shops WHERE invite_code = $1', [inviteCode]);
   return res.rows.length > 0 ? res.rows[0].shop_id : null;
 }
-
 async function findUserShop(chatId) {
   const res = await pool.query('SELECT shop_id FROM admins WHERE chat_id = $1 LIMIT 1', [chatId]);
   return res.rows.length > 0 ? res.rows[0].shop_id : null;
@@ -328,6 +298,7 @@ function getSettingsMenu(shop, chatId) {
       [{ text: '🔗 Ссылка на витрину', callback_data: 'menu_link' }],
       [{ text: '🔑 Пригласить флориста', callback_data: 'menu_invite' }],
       [{ text: '👥 Управление флористами', callback_data: 'menu_team' }],
+      [{ text: '📞 Контакты мессенджеров', callback_data: 'menu_contacts' }],
       [{ text: '📊 Статистика', callback_data: 'menu_stats' }],
       [{ text: '💰 Наценка', callback_data: 'menu_markup' }],
       [{ text: '🎨 Логотип', callback_data: 'menu_logo' }, { text: '🖼 Фон', callback_data: 'menu_background' }],
@@ -400,45 +371,6 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const param = match && match[1] ? match[1].trim() : null;
   const userName = msg.from.first_name || 'Флорист';
 
-  if (param && param.startsWith('order_')) {
-    const parts = param.split('_');
-    const shopId = parts[1];
-    const bouquetId = parseInt(parts[2]);
-    const shop = await getShopFromDb(shopId);
-    if (!shop) return bot.sendMessage(chatId, '❌ Магазин не найден.');
-    const b = await getBouquetById(shopId, bouquetId);
-    if (!b) return bot.sendMessage(chatId, '❌ Букет уже удалён с витрины.');
-    if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Магазин сейчас не принимает заказы.');
-    pendingOrders[chatId] = { shopId, bouquetId };
-    const photoUrl = await getPhotoUrl(b.photos[0]);
-    const caption = `🌸 <b>${esc(shop.displayName)}</b>\n\nВы хотите заказать букет:\n\n🔢 <b>№${b.id}</b>\n💐 ${esc(b.name)}\n💰 <b>${b.price} ₽</b>\n\n<i>Нажмите «Подтвердить заказ» — продавец получит вашу заявку и напишет вам.</i>`;
-    if (photoUrl) {
-      return bot.sendPhoto(chatId, photoUrl, {
-        caption, parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [
-          [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
-          [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
-        ] }
-      }).catch(() => {
-        bot.sendMessage(chatId, caption, {
-          parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: [
-            [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
-            [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
-          ] }
-        });
-      });
-    } else {
-      return bot.sendMessage(chatId, caption, {
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [
-          [{ text: '✅ Подтвердить заказ', callback_data: 'confirm_order' }],
-          [{ text: '❌ Отмена', callback_data: 'cancel_order' }]
-        ] }
-      });
-    }
-  }
-
   if (param && param.startsWith('inv_')) {
     const inviteCode = param.replace('inv_', '').toUpperCase();
     const shopId = await getShopByInvite(inviteCode);
@@ -482,7 +414,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     return bot.sendMessage(chatId, txt, { reply_markup: getMainKeyboard(shop, chatId) });
   } else {
     bot.sendMessage(chatId,
-      '🌸 <b>Petalo</b> — витрина для цветочных магазинов.\n\nЗдесь вы можете заказать букеты у цветочных салонов.\n\nОткройте витрину магазина и нажмите «📩 Заказать» на понравившемся букете.',
+      '🌸 <b>Petalo</b> — витрина для цветочных магазинов.\n\nОткройте витрину магазина и напишите нам в удобном мессенджере.',
       { parse_mode: 'HTML' });
   }
 });
@@ -491,50 +423,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 bot.on('callback_query', async (q) => {
   const chatId = q.from.id;
   const data = q.data;
-
   bot.answerCallbackQuery(q.id).catch(() => {});
-
-  if (data === 'confirm_order') {
-    const pending = pendingOrders[chatId];
-    if (!pending) {
-      return bot.editMessageText('❌ Заказ уже отправлен.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
-    }
-    const shop = await getShopFromDb(pending.shopId);
-    const b = await getBouquetById(pending.shopId, pending.bouquetId);
-    if (!b) {
-      delete pendingOrders[chatId];
-      return bot.editMessageText('❌ Букет недоступен.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
-    }
-    const owner = getOwner(shop);
-    if (owner) {
-      const photoUrl = await getPhotoUrl(b.photos[0]);
-      const clientName = q.from.first_name || 'Клиент';
-      const clientUsername = q.from.username;
-      let ownerText = `🌸 <b>Новый заказ!</b>\n\n🔢 Букет <b>№${b.id}</b>\n💐 ${esc(b.name)}\n💰 <b>${b.price} ₽</b>\n\n👤 Клиент: <b>${esc(clientName)}</b>`;
-      if (clientUsername) ownerText += ` (@${clientUsername})`;
-      const buttons = [];
-      if (clientUsername) buttons.push([{ text: '📩 Написать клиенту', url: `https://t.me/${clientUsername}` }]);
-      buttons.push([{ text: '✅ Понятно', callback_data: 'owner_ack_order' }]);
-      if (photoUrl) {
-        bot.sendPhoto(owner.chatId, photoUrl, { caption: ownerText, parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {
-          bot.sendMessage(owner.chatId, ownerText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
-        });
-      } else {
-        bot.sendMessage(owner.chatId, ownerText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } }).catch(() => {});
-      }
-    }
-    await updateBouquetField(b.id, 'clicks', (b.clicks || 0) + 1);
-    await incrementShopStat(pending.shopId, 'orders');
-    bot.editMessageText(`✅ <b>Заказ отправлен!</b>\n\nБукет №${b.id} «${esc(b.name)}» — ${b.price} ₽\n\nПродавец получил вашу заявку и скоро напишет.`,
-      { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML' }).catch(() => {});
-    delete pendingOrders[chatId];
-    return;
-  }
-  if (data === 'cancel_order') {
-    delete pendingOrders[chatId];
-    return bot.editMessageText('❌ Заказ отменён.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
-  }
-  if (data === 'owner_ack_order') { return; }
 
   const shopId = userToShop[chatId] || await findUserShop(chatId);
   if (!shopId) return;
@@ -551,6 +440,35 @@ bot.on('callback_query', async (q) => {
   if (data === 'menu_back') {
     if (!owner) return;
     return bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...getSettingsMenu(shop, chatId) }).catch(() => {});
+  }
+  if (data === 'menu_contacts') {
+    if (!owner) return;
+    let txt = `📞 <b>Контакты для клиентов</b>\n\n`;
+    txt += `Telegram: ${shop.telegramUsername ? '@' + shop.telegramUsername : '—'}\n`;
+    txt += `WhatsApp: ${shop.whatsappPhone || '—'}\n`;
+    txt += `MAX: ${shop.maxUsername ? '@' + shop.maxUsername : '—'}\n\n`;
+    txt += `Что изменить?`;
+    return bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: '📱 Telegram', callback_data: 'setcontact_telegram' }],
+      [{ text: '💬 WhatsApp', callback_data: 'setcontact_whatsapp' }],
+      [{ text: '🅼 MAX', callback_data: 'setcontact_max' }],
+      [{ text: '↩️ Назад', callback_data: 'menu_back' }]
+    ] } }).catch(() => {});
+  }
+  if (data === 'setcontact_telegram') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'contact_telegram';
+    return bot.sendMessage(chatId, `📱 Введите ваш Telegram-юзернейм (без @).\nПример: <code>KupidonAdm</code>\n\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML' });
+  }
+  if (data === 'setcontact_whatsapp') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'contact_whatsapp';
+    return bot.sendMessage(chatId, `💬 Введите номер WhatsApp.\nПример: <code>+7 962 402-51-75</code>\n\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML' });
+  }
+  if (data === 'setcontact_max') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'contact_max';
+    return bot.sendMessage(chatId, `🅼 Введите ваш MAX-юзернейм (без @).\nПример: <code>kupidon</code>\n\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML' });
   }
   if (data === 'menu_invite') {
     if (!owner) return;
@@ -749,40 +667,30 @@ bot.on('message', async (msg) => {
   if (!text || text.startsWith('/')) return;
 
   const shopId = userToShop[chatId] || await findUserShop(chatId);
+  const awaiting = awaitingUpload[chatId];
 
-  if (awaitingPrice[chatId]) {
-    if (!shopId) { delete awaitingPrice[chatId]; return; }
-    const b = await getBouquetById(shopId, awaitingPrice[chatId]);
-    if (!b) { delete awaitingPrice[chatId]; return bot.sendMessage(chatId, '❌ Букет не найден.'); }
-    const cleaned = text.replace(/[^\d.,]/g, '').replace(',', '.');
-    const newPrice = parseFloat(cleaned);
-    if (isNaN(newPrice) || newPrice <= 0) return bot.sendMessage(chatId, '❌ Введите число.');
-    const oldPrice = b.price;
-    await updateBouquetField(b.id, 'price', Math.round(newPrice));
-    delete awaitingPrice[chatId];
+  // Обработка ввода контактов
+  if (awaiting && shopId) {
     const shop = await getShopFromDb(shopId);
-    return bot.sendMessage(chatId, `✅ Цена обновлена: ${oldPrice} → ${Math.round(newPrice)} ₽`, { reply_markup: getMainKeyboard(shop, chatId) });
-  }
-
-  if (awaitingName[chatId]) {
-    if (!shopId) { delete awaitingName[chatId]; return; }
-    const newName = text.trim();
-    if (newName.length < 2 || newName.length > 80) return bot.sendMessage(chatId, '❌ 2–80 символов.');
-    await updateBouquetFields(awaitingName[chatId], { name: newName, is_pinned: newName.startsWith('.') });
-    delete awaitingName[chatId];
-    const shop = await getShopFromDb(shopId);
-    return bot.sendMessage(chatId, `✅ Переименовано: «${newName}»`, { reply_markup: getMainKeyboard(shop, chatId) });
-  }
-
-  if (awaitingMarkup[chatId]) {
-    if (!shopId) { delete awaitingMarkup[chatId]; return; }
-    const pct = parseInt(text.replace(/[^\d]/g, ''));
-    if (isNaN(pct) || pct < 0 || pct > 200) return bot.sendMessage(chatId, '❌ 0–200.');
-    const shop = await getShopFromDb(shopId);
-    shop.settings.markupPercent = pct;
-    await saveShopSettings(shopId, shop.settings);
-    delete awaitingMarkup[chatId];
-    return bot.sendMessage(chatId, `✅ Наценка: ${pct}%`, { reply_markup: getMainKeyboard(shop, chatId) });
+    if (!shop) return;
+    if (awaiting === 'contact_telegram') {
+      const username = text.trim().replace(/^@/, '');
+      await pool.query('UPDATE shops SET telegram_username = $2 WHERE shop_id = $1', [shopId, username]);
+      delete awaitingUpload[chatId];
+      return bot.sendMessage(chatId, `✅ Telegram сохранён: @${username}`, { reply_markup: getMainKeyboard(shop, chatId) });
+    }
+    if (awaiting === 'contact_whatsapp') {
+      const phone = text.trim();
+      await pool.query('UPDATE shops SET whatsapp_phone = $2 WHERE shop_id = $1', [shopId, phone]);
+      delete awaitingUpload[chatId];
+      return bot.sendMessage(chatId, `✅ WhatsApp сохранён: ${phone}`, { reply_markup: getMainKeyboard(shop, chatId) });
+    }
+    if (awaiting === 'contact_max') {
+      const username = text.trim().replace(/^@/, '');
+      await pool.query('UPDATE shops SET max_username = $2 WHERE shop_id = $1', [shopId, username]);
+      delete awaitingUpload[chatId];
+      return bot.sendMessage(chatId, `✅ MAX сохранён: @${username}`, { reply_markup: getMainKeyboard(shop, chatId) });
+    }
   }
 
   if (!shopId) return;
@@ -831,7 +739,7 @@ bot.on('photo', async (msg) => {
   const photo = msg.photo[msg.photo.length - 1];
   const fileId = photo.file_id;
 
-  if (awaitingUpload[chatId]) {
+  if (awaitingUpload[chatId] && (awaitingUpload[chatId] === 'logo' || awaitingUpload[chatId] === 'background')) {
     const which = awaitingUpload[chatId];
     shop.settings[which] = fileId;
     await saveShopSettings(shopId, shop.settings);
@@ -860,8 +768,7 @@ bot.on('photo', async (msg) => {
 
     const id = await addBouquetToDb(shopId, {
       name: finalName, price: Math.round(price), description: null,
-      photos: [fileId],
-      isPinned: finalName.startsWith('.'),
+      photos: [fileId], isPinned: finalName.startsWith('.'),
       chatId, clicks: archivedClicks
     });
     lastBouquetByUser[chatId] = id;
@@ -899,7 +806,7 @@ bot.onText(/\/register/, async (msg) => {
   const existing = userToShop[chatId] || await findUserShop(chatId);
   if (existing) return bot.sendMessage(chatId, '❌ Уже привязаны к магазину.');
   registrationState[chatId] = { step: 'name', data: {} };
-  bot.sendMessage(chatId, '📝 Шаг 1 из 5.\n\n**Техническое имя** (латиницей, без пробелов).\nПример: `flowers_msk`');
+  bot.sendMessage(chatId, '📝 Шаг 1 из 7.\n\n**Техническое имя** (латиницей, без пробелов).\nПример: `flowers_msk`');
 });
 
 bot.on('message', async (msg) => {
@@ -932,10 +839,26 @@ bot.on('message', async (msg) => {
   if (state.step === 'hours') {
     state.data.hours = text.trim().toLowerCase() === 'нет' ? null : text.trim();
     state.step = 'phone';
-    return bot.sendMessage(chatId, '✅ Шаг 5. Телефон (или "нет").');
+    return bot.sendMessage(chatId, '✅ Шаг 5. Телефон для кнопки «Позвонить» (или "нет").');
   }
   if (state.step === 'phone') {
     state.data.phone = text.trim().toLowerCase() === 'нет' ? null : text.trim();
+    state.step = 'telegram';
+    return bot.sendMessage(chatId, '✅ Шаг 6. Ваш **Telegram-юзернейм** (без @), куда клиенты будут писать.\nПример: <code>KupidonAdm</code>\n(или "нет")', { parse_mode: 'HTML' });
+  }
+  if (state.step === 'telegram') {
+    state.data.telegramUsername = text.trim().toLowerCase() === 'нет' ? null : text.trim().replace(/^@/, '');
+    state.step = 'whatsapp';
+    return bot.sendMessage(chatId, '✅ Шаг 7. Ваш **номер WhatsApp**.\nПример: <code>+7 962 402-51-75</code>\n(или "нет")', { parse_mode: 'HTML' });
+  }
+  if (state.step === 'whatsapp') {
+    state.data.whatsappPhone = text.trim().toLowerCase() === 'нет' ? null : text.trim();
+    state.step = 'max';
+    return bot.sendMessage(chatId, '✅ Шаг 8. Ваш **MAX-юзернейм** (без @).\nПример: <code>kupidon</code>\n(или "нет")', { parse_mode: 'HTML' });
+  }
+  if (state.step === 'max') {
+    state.data.maxUsername = text.trim().toLowerCase() === 'нет' ? null : text.trim().replace(/^@/, '');
+
     const now = new Date();
     const trialEnd = new Date(now);
     trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
@@ -948,7 +871,9 @@ bot.on('message', async (msg) => {
       address: state.data.address,
       hours: state.data.hours,
       phone: state.data.phone,
-      telegramUsername: PRESET_SHOP.telegramUsername,
+      telegramUsername: state.data.telegramUsername,
+      whatsappPhone: state.data.whatsappPhone,
+      maxUsername: state.data.maxUsername,
       inviteCode,
       trialStart: now.toISOString(),
       trialEnd: trialEnd.toISOString(),
@@ -983,22 +908,37 @@ app.get('/shop/:shopId', async (req, res) => {
     if (active.length === 0) cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;">🌿 Пока нет букетов.</div>';
     else for (const b of active) {
       const photoUrls = [];
-      for (const fid of b.photos) {
-        const u = await getPhotoUrl(fid);
-        if (u) photoUrls.push(u);
-      }
-
+      for (const fid of b.photos) { const u = await getPhotoUrl(fid); if (u) photoUrls.push(u); }
       let gallery = '';
-      if (photoUrls.length === 0) {
-        gallery = `<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:40px;">📷</div>`;
-      } else if (photoUrls.length === 1) {
-        gallery = `<img src="${photoUrls[0]}" style="width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;">`;
-      } else {
+      if (photoUrls.length === 0) gallery = `<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:40px;">📷</div>`;
+      else if (photoUrls.length === 1) gallery = `<img src="${photoUrls[0]}" style="width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;">`;
+      else {
         const slides = photoUrls.map(p => `<img src="${p}" style="height:220px;width:auto;border-radius:12px;flex-shrink:0;">`).join('');
         gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;">${slides}</div>`;
       }
 
       const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
+
+      // Заготовка текста для мессенджеров (для WhatsApp/MAX)
+      const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
+      const encodedText = encodeURIComponent(orderText);
+
+      // Кнопки мессенджеров
+      let buttonsHTML = '';
+      if (shop.telegramUsername) {
+        buttonsHTML += `<a href="https://t.me/${shop.telegramUsername}" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Написать в Telegram</a>`;
+      }
+      if (shop.whatsappPhone) {
+        const waPhone = shop.whatsappPhone.replace(/\D/g, '');
+        buttonsHTML += `<a href="https://wa.me/${waPhone}?text=${encodedText}" target="_blank" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">💬 Написать в WhatsApp</a>`;
+      }
+      if (shop.maxUsername) {
+        buttonsHTML += `<a href="https://max.ru/${shop.maxUsername}" target="_blank" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">🅼 Написать в MAX</a>`;
+      }
+      if (shop.phone) {
+        buttonsHTML += `<a href="tel:${shop.phone.replace(/\D/g,'')}" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>`;
+      }
+
       cards += `<div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
         <div style="position:absolute;top:24px;right:24px;background:rgba(44,62,80,0.85);color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;z-index:10;">№${b.id}</div>
         ${gallery}
@@ -1006,8 +946,7 @@ app.get('/shop/:shopId', async (req, res) => {
         <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
           ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
         </p>
-        <a href="/go/order/${shop.shopId}/${b.id}" style="display:block;margin-top:12px;background:#4CAF50;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;">📩 Заказать</a>
-        ${shop.phone ? `<a href="/go/call/${shop.shopId}" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;">📞 Позвонить</a>` : ''}
+        ${buttonsHTML || '<div style="color:#888;padding:10px;">Контакты для связи временно недоступны</div>'}
       </div>`;
     }
 
@@ -1023,28 +962,6 @@ app.get('/shop/:shopId', async (req, res) => {
     console.error('Ошибка витрины');
     res.status(500).send('Ошибка');
   }
-});
-
-app.get('/go/order/:shopId/:bouquetId', async (req, res) => {
-  try {
-    const b = await getBouquetById(req.params.shopId, parseInt(req.params.bouquetId));
-    if (b) {
-      await updateBouquetField(b.id, 'clicks', (b.clicks || 0) + 1);
-      await incrementShopStat(req.params.shopId, 'orders');
-    }
-    return res.redirect(`https://t.me/${BOT_USERNAME}?start=order_${req.params.shopId}_${req.params.bouquetId}`);
-  } catch (e) { return res.redirect(`https://t.me/${BOT_USERNAME}`); }
-});
-
-app.get('/go/call/:shopId', async (req, res) => {
-  try {
-    const shop = await getShopFromDb(req.params.shopId);
-    if (!shop) return res.redirect(`https://t.me/${BOT_USERNAME}`);
-    await incrementShopStat(shop.shopId, 'calls');
-    const phone = (shop.phone || '').replace(/\D/g, '');
-    if (!phone) return res.redirect(`https://t.me/${BOT_USERNAME}`);
-    return res.redirect(`tel:+${phone}`);
-  } catch (e) { return res.redirect(`https://t.me/${BOT_USERNAME}`); }
 });
 
 app.get('/', (req, res) => res.send('<html><body style="font-family:sans-serif;text-align:center;padding:50px;"><h1>🌸 Petalo</h1></body></html>'));
@@ -1085,6 +1002,8 @@ initDb().then(async () => {
       hours: PRESET_SHOP.hours,
       phone: PRESET_SHOP.phone,
       telegramUsername: PRESET_SHOP.telegramUsername,
+      whatsappPhone: PRESET_SHOP.whatsappPhone,
+      maxUsername: PRESET_SHOP.maxUsername,
       inviteCode,
       trialStart: now.toISOString(),
       trialEnd: trialEnd.toISOString(),
@@ -1096,23 +1015,16 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
   }
 
-  // Устанавливаем webhook
   const WEBHOOK_URL = `https://petalo.onrender.com${WEBHOOK_PATH}`;
   console.log('🔗 Устанавливаем webhook...');
   try {
     await bot.deleteWebHook();
     await bot.setWebHook(WEBHOOK_URL, { drop_pending_updates: true });
-    console.log(`✅ Webhook установлен: ${WEBHOOK_URL}`);
-  } catch (e) {
-    console.error('❌ Ошибка установки webhook');
-  }
+    console.log(`✅ Webhook установлен`);
+  } catch (e) { console.error('❌ Ошибка установки webhook'); }
 
-  // Проверка уведомлений каждые 10 минут
   setInterval(checkAndNotify, 10 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`🚀 Petalo на порту ${PORT} (webhook)`));
-}).catch(err => {
-  console.error('❌ Ошибка инициализации:', err.message);
-  process.exit(1);
-});
+}).catch(err => { console.error('❌ Ошибка инициализации:', err.message); process.exit(1); });
