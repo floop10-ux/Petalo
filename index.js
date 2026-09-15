@@ -442,7 +442,46 @@ function buildCheckMessageFromList(shop, active) {
   if (truncated.length > 0) text += `\n\n<i>⚠️ ${truncated.join('; ')}. Полный список — в витрине.</i>`;
 
   return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } } };
-}bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
+}
+
+// === Роут /go — считает клик по кнопке витрины, потом редиректит ===
+app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
+  try {
+    const { shopId, type } = req.params;
+    const bouquetId = parseInt(req.params.bouquetId);
+    if (!bouquetId || isNaN(bouquetId)) return res.status(404).send('Не найдено');
+    const shop = await getShopFromDb(shopId);
+    if (!shop) return res.status(404).send('Не найдено');
+    const b = await getBouquetById(shopId, bouquetId);
+    if (!b) return res.status(404).send('Букет не найден');
+
+    let redirectUrl = null;
+    if (type === 'tg' && shop.telegramUsername) {
+      redirectUrl = `https://t.me/${shop.telegramUsername}`;
+      await incrementShopStat(shopId, 'orders');
+    } else if (type === 'wa' && shop.whatsappPhone) {
+      const waPhone = shop.whatsappPhone.replace(/\D/g, '');
+      const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
+      redirectUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(orderText)}`;
+      await incrementShopStat(shopId, 'orders');
+    } else if (type === 'max' && shop.maxUsername) {
+      redirectUrl = `https://max.ru/${shop.maxUsername}`;
+      await incrementShopStat(shopId, 'orders');
+    } else if (type === 'call' && shop.phone) {
+      redirectUrl = `tel:${shop.phone.replace(/\D/g, '')}`;
+      await incrementShopStat(shopId, 'calls');
+    }
+
+    if (!redirectUrl) return res.status(404).send('Контакт не настроен');
+
+    await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
+
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="0; url=${redirectUrl}"><title>Переход…</title></head><body style="font-family:-apple-system,sans-serif;text-align:center;padding:50px;color:#555;"><p>Переходим к продавцу…</p><p><a href="${redirectUrl}">Нажмите здесь, если не переходит автоматически</a></p></body></html>`);
+  } catch (e) {
+    console.error('Ошибка /go:', e?.message || e);
+    res.status(500).send('Ошибка');
+  }
+});bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
   const userName = msg.from.first_name || 'Флорист';
@@ -593,18 +632,27 @@ bot.on('callback_query', async (q) => {
     }
     const top = Object.values(clickMap).filter(x => x.clicks > 0).sort((a, b) => b.clicks - a.clicks).slice(0, 5);
     const stats = shop.stats;
-    const total = stats.orders + stats.calls;
-    const conv = stats.views > 0 ? ((total / stats.views) * 100).toFixed(1) : '0.0';
-    let txt = `📊 <b>Статистика</b>\n\n👁 Просмотров: <b>${stats.views}</b>\n📩 «Заказать»: <b>${stats.orders}</b>\n📞 «Позвонить»: <b>${stats.calls}</b>\n📈 Конверсия: <b>${conv}%</b>\n`;
+    const orders = stats.orders || 0;
+    const calls = stats.calls || 0;
+    const total = orders + calls;
+
+    let txt = `📊 <b>Статистика</b>\n\n`;
+    txt += `📩 Хотели написать: <b>${orders}</b>\n`;
+    txt += `📞 Хотели позвонить: <b>${calls}</b>\n`;
+    txt += `📈 Всего заявок: <b>${total}</b>\n`;
+    txt += `\n<i>Здесь только реальные клики клиентов. Ваши собственные заходы не считаются.</i>\n`;
+
     if (top.length > 0) {
-      txt += `\n🔥 <b>Топ-5:</b>\n`;
+      txt += `\n🔥 <b>Топ-5 по заявкам:</b>\n`;
       for (let i = 0; i < top.length; i++) {
         const x = top[i];
         const medal = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][i];
         const mark = x.hasActive ? '' : ' (архив)';
         txt += `${medal} ${esc(x.name)} — ${x.clicks}${mark}\n`;
       }
-    } else txt += `\n<i>Пока нет кликов.</i>`;
+    } else {
+      txt += `\n<i>Пока ни одной заявки. Поделитесь ссылкой с клиентами!</i>`;
+    }
     return bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
   }
   if (data === 'menu_markup') {
@@ -1011,7 +1059,6 @@ app.get('/shop/:shopId', async (req, res) => {
     const shop = await getShopFromDb(req.params.shopId);
     if (!shop) return res.status(404).send('❌ Магазин не найден');
     if (!isSubscriptionActive(shop)) return res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:50px;"><h1>🌸 ${esc(shop.displayName)}</h1><p>Витрина приостановлена.</p></body></html>`);
-    await incrementShopStat(shop.shopId, 'views');
 
     const all = await getBouquetsFromDb(shop.shopId);
     const active = all.filter(isConfirmedRecently);
@@ -1035,22 +1082,19 @@ app.get('/shop/:shopId', async (req, res) => {
       }
 
       const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
-      const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
-      const encodedText = encodeURIComponent(orderText);
 
       let buttonsHTML = '';
       if (shop.telegramUsername) {
-        buttonsHTML += `<a href="https://t.me/${esc(shop.telegramUsername)}" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Написать в Telegram</a>`;
+        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/tg" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Написать в Telegram</a>`;
       }
       if (shop.whatsappPhone) {
-        const waPhone = shop.whatsappPhone.replace(/\D/g, '');
-        buttonsHTML += `<a href="https://wa.me/${waPhone}?text=${encodedText}" target="_blank" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">💬 Написать в WhatsApp</a>`;
+        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/wa" target="_blank" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">💬 Написать в WhatsApp</a>`;
       }
       if (shop.maxUsername) {
-        buttonsHTML += `<a href="https://max.ru/${esc(shop.maxUsername)}" target="_blank" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">🅼 Написать в MAX</a>`;
+        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/max" target="_blank" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">🅼 Написать в MAX</a>`;
       }
       if (shop.phone) {
-        buttonsHTML += `<a href="tel:${shop.phone.replace(/\D/g,'')}" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>`;
+        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/call" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>`;
       }
 
       cards += `<div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
