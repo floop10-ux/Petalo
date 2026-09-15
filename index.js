@@ -140,9 +140,6 @@ async function getPhotoUrl(fileId) {
   } catch (e) { return null; }
 }
 
-// Показывает сообщение со списком букетов (полное название + цена)
-// и компактные кнопки с номерами по 4 в ряд.
-// action — префикс callback_data: editprice / rename / askdel
 async function showBouquetList(chatId, shopId, action, headerText) {
   const active = await getBouquetsFromDb(shopId);
   if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
@@ -159,7 +156,6 @@ async function showBouquetList(chatId, shopId, action, headerText) {
   return bot.sendMessage(chatId, listTxt, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
 }
 
-// Отправляем фото букета + подпись + кнопки. Если фото нет — текстом.
 async function sendBouquetPreview(chatId, b, headerText, buttons) {
   const caption = `${headerText}\n\n<b>№${b.id}</b> ${esc(b.name)}\n💰 ${b.price} ₽`;
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
@@ -444,7 +440,6 @@ function buildCheckMessageFromList(shop, active) {
 
   return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } } };
 }
-
 bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
@@ -520,19 +515,19 @@ bot.on('callback_query', async (q) => {
   if (data === 'menu_shopdata') {
     if (!owner) return;
     const { text, options } = buildShopDataMessage(shop);
-    return bot.editMessageText(text, { chat_id: chatIdn, message_id: qПример.message.message_id, ...options }).catch(() => {});
- : }
- <  if (data.startsWith('iedit_shop_')) {
-    if> (!owner) return;
-    constk field = dataup.replace('edit_shop_',idon '');
+    return bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
+  }
+  if (data.startsWith('edit_shop_')) {
+    if (!owner) return;
+    const field = data.replace('edit_shop_', '');
     const prompts = {
-      displayname: { q: '📝 Введите нов</ое <bi>название</b> магазина (как показывать клиентам).\nПример: <i>\>Цветы на Фрунзе</i>',n field: 'display(_name' },
-      addressили:     { q: " '📍 Введите новый <bнет>адрес</b>.\nПример: <i>г. Москва, ул. Фрунзе, 15</i>\n(или "нет", чтобы убрать)', field: 'address' },
+      displayname: { q: '📝 Введите новое <b>название</b> магазина (как показывать клиентам).\nПример: <i>Цветы на Фрунзе</i>', field: 'display_name' },
+      address:     { q: '📍 Введите новый <b>адрес</b>.\nПример: <i>г. Москва, ул. Фрунзе, 15</i>\n(или "нет", чтобы убрать)', field: 'address' },
       hours:       { q: '🕐 Введите новые <b>часы работы</b>.\nПример: <i>Пн-Вс 10:30-21:00</i>\n(или "нет", чтобы убрать)', field: 'hours' },
       phone:       { q: '📞 Введите новый <b>телефон</b> для кнопки «Позвонить».\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'phone' },
       telegram:    { q: '📱 Введите <b>Telegram-юзернейм</b> (без @).\nПример: <i>KupidonAdm</i>\n(или "нет", чтобы убрать)', field: 'telegram_username' },
       whatsapp:    { q: '💬 Введите <b>номер WhatsApp</b>.\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'whatsapp_phone' },
-      max:         { q: '🅼 Введите <b>MAX-юзернейм</b> (без @).\", чтобы убрать)', field: 'max_username' }
+      max:         { q: '🅼 Введите <b>MAX-юзернейм</b> (без @).\nПример: <i>kupidon</i>\n(или "нет", чтобы убрать)', field: 'max_username' }
     };
     const p = prompts[field];
     if (!p) return;
@@ -691,7 +686,6 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, '🌿 Продлено.');
   }
 
-  // --- Изменить цену ---
   if (data.startsWith('editprice_ok_')) {
     const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
@@ -713,7 +707,6 @@ bot.on('callback_query', async (q) => {
     ]);
   }
 
-  // --- Переименовать ---
   if (data.startsWith('rename_ok_')) {
     const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
@@ -735,7 +728,6 @@ bot.on('callback_query', async (q) => {
     ]);
   }
 
-  // --- Удалить ---
   if (data.startsWith('askdel_')) {
     if (!owner) return;
     const id = parseInt(data.split('_')[1]);
