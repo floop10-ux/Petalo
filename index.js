@@ -23,7 +23,7 @@ bot.on('webhook_error', (e) => console.error('⚠️ Webhook error:', e?.message
 
 const WEBHOOK_PATH = `/bot${token}`;
 app.post(WEBHOOK_PATH, (req, res) => {
-  bot.processUpdate(req.body).catch(e => console.error('⚠️ Ошибка обработки апдейта:', e?.message || e));
+  try { bot.processUpdate(req.body); } catch (e) { console.error('⚠️ Ошибка обработки апдейта:', e?.message || e); }
   res.sendStatus(200);
 });
 
