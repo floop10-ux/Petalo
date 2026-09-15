@@ -54,8 +54,6 @@ const photoUrlCache = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
 
-// Кнопки главного меню. Если пользователь нажал одну из них —
-// сбрасываем все «ожидания» (ввод цены, имени, наценки и т.д.)
 const MENU_BUTTONS = [
   '📷 Добавить букет',
   '✅ Что в наличии?',
@@ -71,6 +69,16 @@ function calculateOldPrice(price, percent) {
   const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
   return Math.ceil(price * (1 + pct / 100) / 100) * 100;
 }
+
+// Сокращаем название для кнопки: 12 символов … 12 символов.
+// Если название короткое — оставляем как есть.
+function shortName(name, maxEach) {
+  const n = maxEach || 12;
+  const s = String(name || '');
+  if (s.length <= n * 2 + 1) return s;
+  return s.slice(0, n) + '…' + s.slice(-n);
+}
+
 function isConfirmedRecently(b) {
   if (!b) return false;
   if (b.deleted || b.hidden) return false;
@@ -132,6 +140,20 @@ async function getPhotoUrl(fileId) {
     photoUrlCache[fileId] = { url, expires: Date.now() + 50 * 60 * 1000 };
     return url;
   } catch (e) { return null; }
+}
+
+// Отправляем фото букета + подпись + кнопки. Если фото нет или невалидно — текстом.
+async function sendBouquetPreview(chatId, b, headerText, buttons) {
+  const caption = `${headerText}\n\n<b>№${b.id}</b> ${esc(b.name)}\n💰 ${b.price} ₽`;
+  const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
+  const firstPhoto = (b.photos && b.photos.length > 0) ? b.photos[0] : null;
+  if (firstPhoto && isValidFileId(firstPhoto)) {
+    try {
+      await bot.sendPhoto(chatId, firstPhoto, { caption: caption, parse_mode: 'HTML', reply_markup: opts.reply_markup });
+      return;
+    } catch (e) { /* фолбэк на текст ниже */ }
+  }
+  await bot.sendMessage(chatId, caption, opts).catch(() => {});
 }
 
 async function initDb() {
@@ -366,7 +388,7 @@ function buildCheckMessageFromList(shop, active) {
     text += `\n✅ <b>ЕСТЬ</b> (${fresh.length})\n`;
     for (const b of fresh.slice(0, MAX_BUTTONS_PER_SECTION)) {
       text += `✅ №${b.id} ${esc(b.name)} — ${b.price} ₽\n`;
-      keyboard.push([{ text: `✅ №${b.id} ${b.name.slice(0, 18)}`, callback_data: `confirm_${b.id}` }, { text: '🚫', callback_data: `hide_${b.id}` }]);
+      keyboard.push([{ text: `✅ №${b.id} ${shortName(b.name)}`, callback_data: `confirm_${b.id}` }, { text: '🚫', callback_data: `hide_${b.id}` }]);
     }
     if (fresh.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${fresh.length} в «ЕСТЬ»`);
   }
@@ -375,7 +397,7 @@ function buildCheckMessageFromList(shop, active) {
     for (const b of stale.slice(0, MAX_BUTTONS_PER_SECTION)) {
       const h = hoursLeft(b);
       text += `⏰ №${b.id} ${esc(b.name)} (${h}ч)\n`;
-      keyboard.push([{ text: `⏰ №${b.id} ${b.name.slice(0, 15)} (${h}ч)`, callback_data: `confirm_${b.id}` }, { text: '🚫', callback_data: `hide_${b.id}` }]);
+      keyboard.push([{ text: `⏰ №${b.id} ${shortName(b.name)} (${h}ч)`, callback_data: `confirm_${b.id}` }, { text: '🚫', callback_data: `hide_${b.id}` }]);
     }
     if (stale.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${stale.length} в «СКОРО ИСЧЕЗНУТ»`);
   }
@@ -383,7 +405,7 @@ function buildCheckMessageFromList(shop, active) {
     text += `\n🚫 <b>УБРАНЫ</b> (${hidden.length})\n`;
     for (const b of hidden.slice(0, MAX_BUTTONS_PER_SECTION)) {
       text += `🚫 №${b.id} ${esc(b.name)}\n`;
-      keyboard.push([{ text: `↩️ №${b.id} ${b.name.slice(0, 15)}`, callback_data: `show_${b.id}` }]);
+      keyboard.push([{ text: `↩️ №${b.id} ${shortName(b.name)}`, callback_data: `show_${b.id}` }]);
     }
     if (hidden.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${hidden.length} в «УБРАНЫ»`);
   }
@@ -391,7 +413,7 @@ function buildCheckMessageFromList(shop, active) {
     text += `\n❌ <b>ИСТЁК</b> (${expired.length})\n`;
     for (const b of expired.slice(0, MAX_BUTTONS_PER_SECTION)) {
       text += `❌ №${b.id} ${esc(b.name)}\n`;
-      keyboard.push([{ text: `↩️ №${b.id} ${b.name.slice(0, 15)}`, callback_data: `confirm_${b.id}` }]);
+      keyboard.push([{ text: `↩️ №${b.id} ${shortName(b.name)}`, callback_data: `confirm_${b.id}` }]);
     }
     if (expired.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${expired.length} в «ИСТЁК»`);
   }
@@ -651,29 +673,59 @@ bot.on('callback_query', async (q) => {
     await updateBouquetFields(id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
     return bot.sendMessage(chatId, '🌿 Продлено.');
   }
-  if (data.startsWith('editprice_')) {
-    const id = parseInt(data.split('_')[1]);
+
+  // --- Изменить цену: шаг 1 — показываем фото и спрашиваем ---
+  if (data.startsWith('editprice_ok_')) {
+    const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
     if (!b) return;
     awaitingPrice[chatId] = b.id;
-    return bot.sendMessage(chatId, `✏️ Букет <b>№${b.id} ${esc(b.name)}</b>\nТекущая цена: <b>${b.price} ₽</b>\n\nНапишите новую цену.\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+    return bot.sendMessage(chatId, `✏️ Напишите новую цену для букета <b>№${b.id}</b> (${esc(b.name)}).\nТекущая: <b>${b.price} ₽</b>\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+  }
+  if (data.startsWith('editprice_no_')) {
+    return; // просто закрываем, ничего не делаем
+  }
+  if (data.startsWith('editprice_')) {
+    const id = parseInt(data.split('_')[1]);
+    const b = await getBouquetById(shopId, id);
+    if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
+    return sendBouquetPreview(chatId, b, '✏️ <b>Изменить цену?</b>', [
+      [{ text: '✅ Да, менять цену', callback_data: `editprice_ok_${b.id}` }],
+      [{ text: '↩️ Нет, назад', callback_data: `editprice_no_${b.id}` }]
+    ]);
+  }
+
+  // --- Переименовать: шаг 1 — показываем фото и спрашиваем ---
+  if (data.startsWith('rename_ok_')) {
+    const id = parseInt(data.split('_')[2]);
+    const b = await getBouquetById(shopId, id);
+    if (!b) return;
+    awaitingName[chatId] = b.id;
+    return bot.sendMessage(chatId, `📝 Напишите новое название для букета <b>№${b.id}</b>.\nТекущее: <b>${esc(b.name)}</b>\n<i>Точка в начале — закрепить. Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+  }
+  if (data.startsWith('rename_no_')) {
+    return;
   }
   if (data.startsWith('rename_')) {
     const id = parseInt(data.split('_')[1]);
     const b = await getBouquetById(shopId, id);
-    if (!b) return;
-    awaitingName[chatId] = b.id;
-    return bot.sendMessage(chatId, `📝 Букет №${b.id}\nТекущее: <b>${esc(b.name)}</b>\n\nНапишите новое название.\n<i>Точка в начале — закрепить. Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+    if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
+    return sendBouquetPreview(chatId, b, '📝 <b>Переименовать этот букет?</b>', [
+      [{ text: '✅ Да, менять название', callback_data: `rename_ok_${b.id}` }],
+      [{ text: '↩️ Нет, назад', callback_data: `rename_no_${b.id}` }]
+    ]);
   }
+
+  // --- Удалить: показываем фото и спрашиваем ---
   if (data.startsWith('askdel_')) {
     if (!owner) return;
     const id = parseInt(data.split('_')[1]);
     const b = await getBouquetById(shopId, id);
     if (!b) return;
-    return bot.sendMessage(chatId, `🗑 Удалить букет №${b.id} «${b.name}»?`, { reply_markup: { inline_keyboard: [
-      [{ text: '🗑 Да', callback_data: `confirmdel_${b.id}` }],
+    return sendBouquetPreview(chatId, b, '🗑 <b>Удалить этот букет?</b>', [
+      [{ text: '🗑 Да, удалить', callback_data: `confirmdel_${b.id}` }],
       [{ text: '↩️ Отмена', callback_data: 'canceldel' }]
-    ] } });
+    ]);
   }
   if (data.startsWith('confirmdel_')) {
     if (!owner) return;
@@ -689,8 +741,6 @@ bot.on('message', async (msg) => {
   const text = msg.text;
   if (!text || text.startsWith('/')) return;
 
-  // Если нажата кнопка главного меню — сбрасываем все ожидания ввода.
-  // Это позволяет выйти из режима «введите цену/имя/наценку» без /cancel.
   if (MENU_BUTTONS.includes(text)) {
     delete awaitingPrice[chatId];
     delete awaitingName[chatId];
@@ -775,21 +825,21 @@ bot.on('message', async (msg) => {
   if (text === '✏️ Изменить цену') {
     const active = await getBouquetsFromDb(shopId);
     if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
-    const kb = active.slice(0, 30).map(b => [{ text: `✏️ №${b.id} ${b.name.slice(0, 20)} — ${b.price} ₽`, callback_data: `editprice_${b.id}` }]);
-    return bot.sendMessage(chatId, '✏️ Какой букет?', { reply_markup: { inline_keyboard: kb } });
+    const kb = active.slice(0, 30).map(b => [{ text: `✏️ №${b.id} ${shortName(b.name)} — ${b.price} ₽`, callback_data: `editprice_${b.id}` }]);
+    return bot.sendMessage(chatId, '✏️ Какой букет? Нажмите на нужный:', { reply_markup: { inline_keyboard: kb } });
   }
   if (text === '📝 Переименовать') {
     const active = await getBouquetsFromDb(shopId);
     if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
-    const kb = active.slice(0, 30).map(b => [{ text: `📝 №${b.id} ${b.name.slice(0, 25)}`, callback_data: `rename_${b.id}` }]);
-    return bot.sendMessage(chatId, '📝 Какой букет?', { reply_markup: { inline_keyboard: kb } });
+    const kb = active.slice(0, 30).map(b => [{ text: `📝 №${b.id} ${shortName(b.name)} — ${b.price} ₽`, callback_data: `rename_${b.id}` }]);
+    return bot.sendMessage(chatId, '📝 Какой букет? Нажмите на нужный:', { reply_markup: { inline_keyboard: kb } });
   }
   if (text === '🗑 Удалить букет') {
     if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Только владелец.');
     const active = await getBouquetsFromDb(shopId);
     if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
-    const kb = active.slice(0, 30).map(b => [{ text: `🗑 №${b.id} ${b.name.slice(0, 20)} — ${b.price} ₽`, callback_data: `askdel_${b.id}` }]);
-    return bot.sendMessage(chatId, '🗑 Какой удалить?', { reply_markup: { inline_keyboard: kb } });
+    const kb = active.slice(0, 30).map(b => [{ text: `🗑 №${b.id} ${shortName(b.name)} — ${b.price} ₽`, callback_data: `askdel_${b.id}` }]);
+    return bot.sendMessage(chatId, '🗑 Какой удалить? Нажмите на нужный:', { reply_markup: { inline_keyboard: kb } });
   }
   if (text === '⚙️ Меню') return bot.sendMessage(chatId, '⚙️ Меню магазина:', getSettingsMenu(shop, chatId));
 });
