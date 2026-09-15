@@ -54,6 +54,17 @@ const photoUrlCache = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
 
+// Кнопки главного меню. Если пользователь нажал одну из них —
+// сбрасываем все «ожидания» (ввод цены, имени, наценки и т.д.)
+const MENU_BUTTONS = [
+  '📷 Добавить букет',
+  '✅ Что в наличии?',
+  '✏️ Изменить цену',
+  '📝 Переименовать',
+  '🗑 Удалить букет',
+  '⚙️ Меню'
+];
+
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function normalizeName(name) { return String(name || '').toLowerCase().trim().replace(/\s+/g, ' '); }
 function calculateOldPrice(price, percent) {
@@ -678,6 +689,16 @@ bot.on('message', async (msg) => {
   const text = msg.text;
   if (!text || text.startsWith('/')) return;
 
+  // Если нажата кнопка главного меню — сбрасываем все ожидания ввода.
+  // Это позволяет выйти из режима «введите цену/имя/наценку» без /cancel.
+  if (MENU_BUTTONS.includes(text)) {
+    delete awaitingPrice[chatId];
+    delete awaitingName[chatId];
+    delete awaitingMarkup[chatId];
+    delete awaitingInput[chatId];
+    delete awaitingUpload[chatId];
+  }
+
   const shopId = userToShop[chatId] || await findUserShop(chatId);
 
   const input = awaitingInput[chatId];
@@ -712,7 +733,7 @@ bot.on('message', async (msg) => {
     const b = await getBouquetById(shopId, awaitingPrice[chatId]);
     if (!b) { delete awaitingPrice[chatId]; return bot.sendMessage(chatId, '❌ Букет не найден.'); }
     const newPrice = parseFloat(text.replace(/[^\d.,]/g, '').replace(',', '.'));
-    if (isNaN(newPrice) || newPrice <= 0) return bot.sendMessage(chatId, '❌ Введите число.');
+    if (isNaN(newPrice) || newPrice <= 0) return bot.sendMessage(chatId, '❌ Введите число. Или нажмите любую кнопку меню, чтобы выйти.');
     const oldPrice = b.price;
     await updateBouquetField(b.id, 'price', Math.round(newPrice));
     delete awaitingPrice[chatId];
@@ -723,7 +744,7 @@ bot.on('message', async (msg) => {
   if (awaitingName[chatId]) {
     if (!shopId) { delete awaitingName[chatId]; return; }
     const newName = text.trim();
-    if (newName.length < 2 || newName.length > 80) return bot.sendMessage(chatId, '❌ 2–80 символов.');
+    if (newName.length < 2 || newName.length > 80) return bot.sendMessage(chatId, '❌ 2–80 символов. Или нажмите любую кнопку меню, чтобы выйти.');
     await updateBouquetFields(awaitingName[chatId], { name: newName, is_pinned: newName.startsWith('.') });
     delete awaitingName[chatId];
     const shop = await getShopFromDb(shopId);
@@ -733,7 +754,7 @@ bot.on('message', async (msg) => {
   if (awaitingMarkup[chatId]) {
     if (!shopId) { delete awaitingMarkup[chatId]; return; }
     const pct = parseInt(text.replace(/[^\d]/g, ''));
-    if (isNaN(pct) || pct < 0 || pct > 200) return bot.sendMessage(chatId, '❌ 0–200.');
+    if (isNaN(pct) || pct < 0 || pct > 200) return bot.sendMessage(chatId, '❌ 0–200. Или нажмите любую кнопку меню, чтобы выйти.');
     const shop = await getShopFromDb(shopId);
     shop.settings.markupPercent = pct;
     await saveShopSettings(shopId, shop.settings);
