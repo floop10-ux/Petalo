@@ -53,7 +53,7 @@ const awaitingMarkup = {};
 const photoUrlCache = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
-const MAX_LIST_ITEMS = 40;
+const MAX_LIST_ITEMS = 25;
 
 const MENU_BUTTONS = [
   '📷 Добавить букет',
@@ -146,9 +146,9 @@ async function showBouquetList(chatId, shopId, action, headerText) {
   const shown = active.slice(0, MAX_LIST_ITEMS);
   let listTxt = `${headerText}\n\n`;
   for (const b of shown) {
-    listTxt += `<b>№${b.id}</b> — ${esc(b.name)} — <b>${b.price} ₽</b>\n`;
+    listTxt += `<b>№${b.id}</b> — ${esc(b.name)} — <b>${b.price} ₽</b>\n\n`;
   }
-  if (active.length > shown.length) listTxt += `\n<i>Показаны первые ${shown.length} из ${active.length}.</i>`;
+  if (active.length > shown.length) listTxt += `<i>Показаны первые ${shown.length} из ${active.length}.</i>`;
   const kb = [];
   for (let i = 0; i < shown.length; i += 4) {
     kb.push(shown.slice(i, i + 4).map(b => ({ text: `№${b.id}`, callback_data: `${action}_${b.id}` })));
@@ -439,8 +439,7 @@ function buildCheckMessageFromList(shop, active) {
   if (truncated.length > 0) text += `\n\n<i>⚠️ ${truncated.join('; ')}. Полный список — в витрине.</i>`;
 
   return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } } };
-}
-bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
+}bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
   const userName = msg.from.first_name || 'Флорист';
