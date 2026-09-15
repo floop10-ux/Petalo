@@ -143,6 +143,7 @@ async function getPhotoUrl(fileId) {
 async function showBouquetList(chatId, shopId, action, headerText) {
   const active = await getBouquetsFromDb(shopId);
   if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
+  active.sort((a, b) => a.id - b.id);
   const shown = active.slice(0, MAX_LIST_ITEMS);
   let listTxt = `${headerText}\n\n`;
   for (const b of shown) {
@@ -382,6 +383,7 @@ function buildShopDataMessage(shop) {
 
 function buildCheckMessageFromList(shop, active) {
   if (active.length === 0) return { text: '🌿 Нет букетов.', options: { parse_mode: 'HTML' } };
+  active.sort((a, b) => a.id - b.id);
   const fresh = [], stale = [], expired = [], hidden = [], pinned = [];
   for (const b of active) {
     const s = getBouquetStatus(b);
@@ -391,8 +393,6 @@ function buildCheckMessageFromList(shop, active) {
     else if (s === 'hidden') hidden.push(b);
     else if (s === 'pinned') pinned.push(b);
   }
-  fresh.sort((a, b) => new Date(b.confirmedAt) - new Date(a.confirmedAt));
-  stale.sort((a, b) => new Date(a.confirmedAt) - new Date(b.confirmedAt));
 
   const rows = [];
   const truncated = [];
@@ -444,7 +444,6 @@ function buildCheckMessageFromList(shop, active) {
   return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } } };
 }
 
-// === Роут /go — считает клик по кнопке витрины, потом редиректит ===
 app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
   try {
     const { shopId, type } = req.params;
