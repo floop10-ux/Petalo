@@ -393,52 +393,55 @@ function buildCheckMessageFromList(shop, active) {
   }
   fresh.sort((a, b) => new Date(b.confirmedAt) - new Date(a.confirmedAt));
   stale.sort((a, b) => new Date(a.confirmedAt) - new Date(b.confirmedAt));
-  let text = '✅ <b>Что есть в наличии?</b>\n';
-  const keyboard = [];
+
+  const rows = [];
   const truncated = [];
+  const header = (label) => rows.push([{ text: label, callback_data: 'noop' }]);
 
   if (fresh.length > 0) {
-    text += `\n✅ <b>ЕСТЬ</b> (${fresh.length})\n`;
+    header(`— ✅ ЕСТЬ (${fresh.length}) —`);
     for (const b of fresh.slice(0, MAX_BUTTONS_PER_SECTION)) {
-      text += `✅ №${b.id} ${esc(b.name)} — ${b.price} ₽\n`;
-      keyboard.push([{ text: `✅ №${b.id} ${shortName(b.name)}`, callback_data: `confirm_${b.id}` }, { text: '🚫', callback_data: `hide_${b.id}` }]);
+      rows.push([{ text: `✅ №${b.id} ${shortName(b.name, 14)}`, callback_data: `confirm_${b.id}` }]);
+      rows.push([{ text: `🚫 Убрать №${b.id} — ${b.price} ₽`, callback_data: `hide_${b.id}` }]);
     }
-    if (fresh.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${fresh.length} в «ЕСТЬ»`);
+    if (fresh.length > MAX_BUTTONS_PER_SECTION) truncated.push(`первые ${MAX_BUTTONS_PER_SECTION} из ${fresh.length} в «ЕСТЬ»`);
   }
   if (stale.length > 0) {
-    text += `\n⏰ <b>СКОРО ИСЧЕЗНУТ</b> (${stale.length})\n`;
+    header(`— ⏰ СКОРО ИСЧЕЗНУТ (${stale.length}) —`);
     for (const b of stale.slice(0, MAX_BUTTONS_PER_SECTION)) {
       const h = hoursLeft(b);
-      text += `⏰ №${b.id} ${esc(b.name)} (${h}ч)\n`;
-      keyboard.push([{ text: `⏰ №${b.id} ${shortName(b.name)} (${h}ч)`, callback_data: `confirm_${b.id}` }, { text: '🚫', callback_data: `hide_${b.id}` }]);
+      rows.push([{ text: `✅ №${b.id} ${shortName(b.name, 14)} (${h}ч)`, callback_data: `confirm_${b.id}` }]);
+      rows.push([{ text: `🚫 Убрать №${b.id} — ${b.price} ₽`, callback_data: `hide_${b.id}` }]);
     }
-    if (stale.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${stale.length} в «СКОРО ИСЧЕЗНУТ»`);
+    if (stale.length > MAX_BUTTONS_PER_SECTION) truncated.push(`первые ${MAX_BUTTONS_PER_SECTION} из ${stale.length} в «СКОРО ИСЧЕЗНУТ»`);
   }
   if (hidden.length > 0) {
-    text += `\n🚫 <b>УБРАНЫ</b> (${hidden.length})\n`;
+    header(`— 🚫 УБРАНЫ (${hidden.length}) —`);
     for (const b of hidden.slice(0, MAX_BUTTONS_PER_SECTION)) {
-      text += `🚫 №${b.id} ${esc(b.name)}\n`;
-      keyboard.push([{ text: `↩️ №${b.id} ${shortName(b.name)}`, callback_data: `show_${b.id}` }]);
+      rows.push([{ text: `↩️ №${b.id} ${shortName(b.name, 14)}`, callback_data: `show_${b.id}` }]);
     }
-    if (hidden.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${hidden.length} в «УБРАНЫ»`);
+    if (hidden.length > MAX_BUTTONS_PER_SECTION) truncated.push(`первые ${MAX_BUTTONS_PER_SECTION} из ${hidden.length} в «УБРАНЫ»`);
   }
   if (expired.length > 0) {
-    text += `\n❌ <b>ИСТЁК</b> (${expired.length})\n`;
+    header(`— ❌ ИСТЁК (${expired.length}) —`);
     for (const b of expired.slice(0, MAX_BUTTONS_PER_SECTION)) {
-      text += `❌ №${b.id} ${esc(b.name)}\n`;
-      keyboard.push([{ text: `↩️ №${b.id} ${shortName(b.name)}`, callback_data: `confirm_${b.id}` }]);
+      rows.push([{ text: `↩️ №${b.id} ${shortName(b.name, 14)}`, callback_data: `confirm_${b.id}` }]);
     }
-    if (expired.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${expired.length} в «ИСТЁК»`);
+    if (expired.length > MAX_BUTTONS_PER_SECTION) truncated.push(`первые ${MAX_BUTTONS_PER_SECTION} из ${expired.length} в «ИСТЁК»`);
   }
   if (pinned.length > 0) {
-    text += `\n⭐ <b>ЗАКРЕПЛЕНЫ</b> (${pinned.length})\n`;
-    for (const b of pinned.slice(0, MAX_BUTTONS_PER_SECTION)) text += `⭐ №${b.id} ${esc(b.name)}\n`;
-    if (pinned.length > MAX_BUTTONS_PER_SECTION) truncated.push(`показаны первые ${MAX_BUTTONS_PER_SECTION} из ${pinned.length} в «ЗАКРЕПЛЕНЫ»`);
+    header(`— ⭐ ЗАКРЕПЛЕНЫ (${pinned.length}) —`);
+    for (const b of pinned.slice(0, MAX_BUTTONS_PER_SECTION)) {
+      rows.push([{ text: `⭐ №${b.id} ${shortName(b.name, 14)} — ${b.price} ₽`, callback_data: 'noop' }]);
+    }
+    if (pinned.length > MAX_BUTTONS_PER_SECTION) truncated.push(`первые ${MAX_BUTTONS_PER_SECTION} из ${pinned.length} в «ЗАКРЕПЛЕНЫ»`);
   }
 
+  let text = '✅ <b>Что есть в наличии?</b>\n';
+  text += 'Нажмите <b>✅</b> чтобы подтвердить букет, или <b>🚫</b> чтобы убрать.';
   if (truncated.length > 0) text += `\n\n<i>⚠️ ${truncated.join('; ')}. Полный список — в витрине.</i>`;
 
-  return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } } };
+  return { text, options: { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } } };
 }bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
@@ -505,6 +508,7 @@ bot.on('callback_query', async (q) => {
   if (!shop) return;
   const owner = isOwner(shop, chatId);
 
+  if (data === 'noop') return;
   if (data === 'menu_link') return bot.sendMessage(chatId, `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${shopId}`);
   if (data === 'menu_close') return bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
   if (data === 'menu_back') {
