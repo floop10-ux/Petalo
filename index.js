@@ -53,6 +53,7 @@ const awaitingMarkup = {};
 const photoUrlCache = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
+const MAX_LIST_ITEMS = 40;
 
 const MENU_BUTTONS = [
   '📷 Добавить букет',
@@ -69,9 +70,6 @@ function calculateOldPrice(price, percent) {
   const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
   return Math.ceil(price * (1 + pct / 100) / 100) * 100;
 }
-
-// Сокращаем название для кнопки: 12 символов … 12 символов.
-// Если название короткое — оставляем как есть.
 function shortName(name, maxEach) {
   const n = maxEach || 12;
   const s = String(name || '');
@@ -142,7 +140,26 @@ async function getPhotoUrl(fileId) {
   } catch (e) { return null; }
 }
 
-// Отправляем фото букета + подпись + кнопки. Если фото нет или невалидно — текстом.
+// Показывает сообщение со списком букетов (полное название + цена)
+// и компактные кнопки с номерами по 4 в ряд.
+// action — префикс callback_data: editprice / rename / askdel
+async function showBouquetList(chatId, shopId, action, headerText) {
+  const active = await getBouquetsFromDb(shopId);
+  if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
+  const shown = active.slice(0, MAX_LIST_ITEMS);
+  let listTxt = `${headerText}\n\n`;
+  for (const b of shown) {
+    listTxt += `<b>№${b.id}</b> — ${esc(b.name)} — <b>${b.price} ₽</b>\n`;
+  }
+  if (active.length > shown.length) listTxt += `\n<i>Показаны первые ${shown.length} из ${active.length}.</i>`;
+  const kb = [];
+  for (let i = 0; i < shown.length; i += 4) {
+    kb.push(shown.slice(i, i + 4).map(b => ({ text: `№${b.id}`, callback_data: `${action}_${b.id}` })));
+  }
+  return bot.sendMessage(chatId, listTxt, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+}
+
+// Отправляем фото букета + подпись + кнопки. Если фото нет — текстом.
 async function sendBouquetPreview(chatId, b, headerText, buttons) {
   const caption = `${headerText}\n\n<b>№${b.id}</b> ${esc(b.name)}\n💰 ${b.price} ₽`;
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
@@ -151,7 +168,7 @@ async function sendBouquetPreview(chatId, b, headerText, buttons) {
     try {
       await bot.sendPhoto(chatId, firstPhoto, { caption: caption, parse_mode: 'HTML', reply_markup: opts.reply_markup });
       return;
-    } catch (e) { /* фолбэк на текст ниже */ }
+    } catch (e) { /* фолбэк на текст */ }
   }
   await bot.sendMessage(chatId, caption, opts).catch(() => {});
 }
@@ -503,19 +520,19 @@ bot.on('callback_query', async (q) => {
   if (data === 'menu_shopdata') {
     if (!owner) return;
     const { text, options } = buildShopDataMessage(shop);
-    return bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
-  }
-  if (data.startsWith('edit_shop_')) {
-    if (!owner) return;
-    const field = data.replace('edit_shop_', '');
+    return bot.editMessageText(text, { chat_id: chatIdn, message_id: qПример.message.message_id, ...options }).catch(() => {});
+ : }
+ <  if (data.startsWith('iedit_shop_')) {
+    if> (!owner) return;
+    constk field = dataup.replace('edit_shop_',idon '');
     const prompts = {
-      displayname: { q: '📝 Введите новое <b>название</b> магазина (как показывать клиентам).\nПример: <i>Цветы на Фрунзе</i>', field: 'display_name' },
-      address:     { q: '📍 Введите новый <b>адрес</b>.\nПример: <i>г. Москва, ул. Фрунзе, 15</i>\n(или "нет", чтобы убрать)', field: 'address' },
+      displayname: { q: '📝 Введите нов</ое <bi>название</b> магазина (как показывать клиентам).\nПример: <i>\>Цветы на Фрунзе</i>',n field: 'display(_name' },
+      addressили:     { q: " '📍 Введите новый <bнет>адрес</b>.\nПример: <i>г. Москва, ул. Фрунзе, 15</i>\n(или "нет", чтобы убрать)', field: 'address' },
       hours:       { q: '🕐 Введите новые <b>часы работы</b>.\nПример: <i>Пн-Вс 10:30-21:00</i>\n(или "нет", чтобы убрать)', field: 'hours' },
       phone:       { q: '📞 Введите новый <b>телефон</b> для кнопки «Позвонить».\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'phone' },
       telegram:    { q: '📱 Введите <b>Telegram-юзернейм</b> (без @).\nПример: <i>KupidonAdm</i>\n(или "нет", чтобы убрать)', field: 'telegram_username' },
       whatsapp:    { q: '💬 Введите <b>номер WhatsApp</b>.\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'whatsapp_phone' },
-      max:         { q: '🅼 Введите <b>MAX-юзернейм</b> (без @).\nПример: <i>kupidon</i>\n(или "нет", чтобы убрать)', field: 'max_username' }
+      max:         { q: '🅼 Введите <b>MAX-юзернейм</b> (без @).\", чтобы убрать)', field: 'max_username' }
     };
     const p = prompts[field];
     if (!p) return;
@@ -674,7 +691,7 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, '🌿 Продлено.');
   }
 
-  // --- Изменить цену: шаг 1 — показываем фото и спрашиваем ---
+  // --- Изменить цену ---
   if (data.startsWith('editprice_ok_')) {
     const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
@@ -683,7 +700,8 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, `✏️ Напишите новую цену для букета <b>№${b.id}</b> (${esc(b.name)}).\nТекущая: <b>${b.price} ₽</b>\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
   if (data.startsWith('editprice_no_')) {
-    return; // просто закрываем, ничего не делаем
+    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    return showBouquetList(chatId, shopId, 'editprice', '✏️ <b>Какой букет изменить цену?</b>\nНажмите на кнопку с номером.');
   }
   if (data.startsWith('editprice_')) {
     const id = parseInt(data.split('_')[1]);
@@ -691,11 +709,11 @@ bot.on('callback_query', async (q) => {
     if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
     return sendBouquetPreview(chatId, b, '✏️ <b>Изменить цену?</b>', [
       [{ text: '✅ Да, менять цену', callback_data: `editprice_ok_${b.id}` }],
-      [{ text: '↩️ Нет, назад', callback_data: `editprice_no_${b.id}` }]
+      [{ text: '↩️ Нет, к списку', callback_data: `editprice_no_${b.id}` }]
     ]);
   }
 
-  // --- Переименовать: шаг 1 — показываем фото и спрашиваем ---
+  // --- Переименовать ---
   if (data.startsWith('rename_ok_')) {
     const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
@@ -704,7 +722,8 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, `📝 Напишите новое название для букета <b>№${b.id}</b>.\nТекущее: <b>${esc(b.name)}</b>\n<i>Точка в начале — закрепить. Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
   if (data.startsWith('rename_no_')) {
-    return;
+    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    return showBouquetList(chatId, shopId, 'rename', '📝 <b>Какой букет переименовать?</b>\nНажмите на кнопку с номером.');
   }
   if (data.startsWith('rename_')) {
     const id = parseInt(data.split('_')[1]);
@@ -712,11 +731,11 @@ bot.on('callback_query', async (q) => {
     if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
     return sendBouquetPreview(chatId, b, '📝 <b>Переименовать этот букет?</b>', [
       [{ text: '✅ Да, менять название', callback_data: `rename_ok_${b.id}` }],
-      [{ text: '↩️ Нет, назад', callback_data: `rename_no_${b.id}` }]
+      [{ text: '↩️ Нет, к списку', callback_data: `rename_no_${b.id}` }]
     ]);
   }
 
-  // --- Удалить: показываем фото и спрашиваем ---
+  // --- Удалить ---
   if (data.startsWith('askdel_')) {
     if (!owner) return;
     const id = parseInt(data.split('_')[1]);
@@ -724,7 +743,7 @@ bot.on('callback_query', async (q) => {
     if (!b) return;
     return sendBouquetPreview(chatId, b, '🗑 <b>Удалить этот букет?</b>', [
       [{ text: '🗑 Да, удалить', callback_data: `confirmdel_${b.id}` }],
-      [{ text: '↩️ Отмена', callback_data: 'canceldel' }]
+      [{ text: '↩️ Нет, к списку', callback_data: 'canceldel' }]
     ]);
   }
   if (data.startsWith('confirmdel_')) {
@@ -733,7 +752,10 @@ bot.on('callback_query', async (q) => {
     await updateBouquetField(id, 'deleted', true);
     return bot.editMessageText('✅ Букет удалён с витрины.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
   }
-  if (data === 'canceldel') return bot.editMessageText('❌ Отменено.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
+  if (data === 'canceldel') {
+    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.');
+  }
 });
 
 bot.on('message', async (msg) => {
@@ -823,23 +845,14 @@ bot.on('message', async (msg) => {
     return bot.sendMessage(chatId, t, options);
   }
   if (text === '✏️ Изменить цену') {
-    const active = await getBouquetsFromDb(shopId);
-    if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
-    const kb = active.slice(0, 30).map(b => [{ text: `✏️ №${b.id} ${shortName(b.name)} — ${b.price} ₽`, callback_data: `editprice_${b.id}` }]);
-    return bot.sendMessage(chatId, '✏️ Какой букет? Нажмите на нужный:', { reply_markup: { inline_keyboard: kb } });
+    return showBouquetList(chatId, shopId, 'editprice', '✏️ <b>Какой букет изменить цену?</b>\nНажмите на кнопку с номером.');
   }
   if (text === '📝 Переименовать') {
-    const active = await getBouquetsFromDb(shopId);
-    if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
-    const kb = active.slice(0, 30).map(b => [{ text: `📝 №${b.id} ${shortName(b.name)} — ${b.price} ₽`, callback_data: `rename_${b.id}` }]);
-    return bot.sendMessage(chatId, '📝 Какой букет? Нажмите на нужный:', { reply_markup: { inline_keyboard: kb } });
+    return showBouquetList(chatId, shopId, 'rename', '📝 <b>Какой букет переименовать?</b>\nНажмите на кнопку с номером.');
   }
   if (text === '🗑 Удалить букет') {
     if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Только владелец.');
-    const active = await getBouquetsFromDb(shopId);
-    if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
-    const kb = active.slice(0, 30).map(b => [{ text: `🗑 №${b.id} ${shortName(b.name)} — ${b.price} ₽`, callback_data: `askdel_${b.id}` }]);
-    return bot.sendMessage(chatId, '🗑 Какой удалить? Нажмите на нужный:', { reply_markup: { inline_keyboard: kb } });
+    return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.');
   }
   if (text === '⚙️ Меню') return bot.sendMessage(chatId, '⚙️ Меню магазина:', getSettingsMenu(shop, chatId));
 });
