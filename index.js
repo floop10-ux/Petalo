@@ -142,13 +142,11 @@ async function getPhotoUrl(fileId) {
   } catch (e) { return null; }
 }
 
-// Оценка времени проверки: ~15 сек на букет, округление вверх до минут
 function estimateCheckMinutes(count) {
   const sec = count * 15;
   return Math.max(1, Math.ceil(sec / 60));
 }
 
-// Какие букеты попадают в проверку (на витрине): fresh + stale + pinned
 async function getCheckableBouquets(shopId) {
   const all = await getBouquetsFromDb(shopId);
   return all.filter(b => {
@@ -157,7 +155,6 @@ async function getCheckableBouquets(shopId) {
   });
 }
 
-// Экран старта сессии
 async function buildCheckStartScreen(shopId) {
   const bouquets = await getCheckableBouquets(shopId);
   const count = bouquets.length;
@@ -192,7 +189,6 @@ async function buildCheckStartScreen(shopId) {
   };
 }
 
-// Склонение слов (букет/букета/букетов)
 function plural(n, one, few, many) {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -202,24 +198,39 @@ function plural(n, one, few, many) {
   return many;
 }
 
-// Текст списка сессии
 function buildCheckListText(session) {
   const total = session.bouquets.length;
   const done = Object.keys(session.checked).length;
   let txt = `✅ <b>Проверка наличия</b>\n`;
   txt += `Проверено <b>${done}</b> из <b>${total}</b>\n\n`;
-  txt += `<i>Нажмите на букет, чтобы увидеть фото и решить.\nПройденные помечены ✓ (есть) или 🚫 (убрано).</i>`;
+  txt += `<i>Работайте снизу списка: непроверенные букеты — под проверенными. После решения букет переезжает наверх.</i>`;
   return txt;
 }
 
-// Клавиатура списка сессии
+// Клавиатура сессии:
+// 1) Сверху — проверенные (в порядке session.order, свежий первым)
+// 2) Снизу — непроверенные (в порядке возрастания номера)
+// 3) В самом низу — кнопка «Завершить»
 function buildCheckListKeyboard(session) {
   const rows = [];
-  const sorted = session.bouquets.slice().sort((a, b) => a.id - b.id);
-  for (const b of sorted) {
-    const mark = session.checked[b.id] === 'yes' ? '✓ ' : (session.checked[b.id] === 'no' ? '🚫 ' : '');
-    rows.push([{ text: `${mark}№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
+
+  // 1. Проверенные — сверху
+  for (const id of session.order) {
+    const b = session.bouquets.find(x => x.id === id);
+    if (!b) continue;
+    const mark = session.checked[id] === 'yes' ? '✓' : '🚫';
+    rows.push([{ text: `${mark} №${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
   }
+
+  // 2. Непроверенные — снизу, по возрастанию номера
+  const unchecked = session.bouquets
+    .filter(b => !session.checked[b.id])
+    .sort((a, b) => a.id - b.id);
+  for (const b of unchecked) {
+    rows.push([{ text: `№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
+  }
+
+  // 3. Завершить — в самом низу
   rows.push([{ text: '⏹ Завершить проверку', callback_data: 'check_finish' }]);
   return rows;
 }
@@ -759,10 +770,12 @@ bot.on('callback_query', async (q) => {
       return bot.editMessageText(`⚠️ Слишком много букетов для одной проверки (${bouquets.length}).`,
         { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
     }
+    // order — массив проверенных id, свежие первыми (сверху списка)
     checkSessions[chatId] = {
       shopId,
       bouquets,
       checked: {},
+      order: [],
       listMessageId: q.message.message_id
     };
     const session = checkSessions[chatId];
@@ -788,12 +801,13 @@ bot.on('callback_query', async (q) => {
     if (!session) return bot.sendMessage(chatId, '⚠️ Сессия проверки прервана. Начните заново.');
     const id = parseInt(data.split('_')[2]);
     const b = session.bouquets.find(x => x.id === id);
-    if (!b) {
-      // Букета больше нет в сессии — обновим список
-      return bot.sendMessage(chatId, '⚠️ Букет больше не в списке.');
-    }
+    if (!b) return bot.sendMessage(chatId, '⚠️ Букет больше не в списке.');
     session.currentBouquetId = id;
-    return sendBouquetPreview(chatId, b, `📷 <b>Проверка наличия</b>`, [
+    const already = session.checked[id];
+    const headerText = already
+      ? `📷 <b>Проверка (уже отмечен)</b>`
+      : `📷 <b>Проверка наличия</b>`;
+    return sendBouquetPreview(chatId, b, headerText, [
       [{ text: '✅ Есть', callback_data: `check_yes_${b.id}` }],
       [{ text: '🚫 Убрать', callback_data: `check_no_${b.id}` }],
       [{ text: '↩️ К списку', callback_data: 'check_back' }]
@@ -801,10 +815,7 @@ bot.on('callback_query', async (q) => {
   }
 
   if (data === 'check_back') {
-    const session = checkSessions[chatId];
-    if (!session) return;
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    // Просто напомним, что список — выше
     return bot.sendMessage(chatId, '👆 Вернуться к списку — выше. Нажмите на любой букет.');
   }
 
@@ -815,6 +826,8 @@ bot.on('callback_query', async (q) => {
     if (!session.bouquets.find(x => x.id === id)) return;
     await updateBouquetFields(id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
     session.checked[id] = 'yes';
+    // Свежий проверенный — наверх (в начало массива order)
+    session.order = [id, ...session.order.filter(x => x !== id)];
     session.currentBouquetId = null;
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return refreshCheckList(chatId, session);
@@ -827,6 +840,7 @@ bot.on('callback_query', async (q) => {
     if (!session.bouquets.find(x => x.id === id)) return;
     await updateBouquetField(id, 'hidden', true);
     session.checked[id] = 'no';
+    session.order = [id, ...session.order.filter(x => x !== id)];
     session.currentBouquetId = null;
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return refreshCheckList(chatId, session);
@@ -919,11 +933,9 @@ bot.on('callback_query', async (q) => {
   }
 });
 
-// Обновляет сообщение-список в сессии проверки
 async function refreshCheckList(chatId, session) {
   const total = session.bouquets.length;
   const done = Object.keys(session.checked).length;
-  // Если всё пройдено — поздравляем и закрываем сессию
   if (done >= total) {
     delete checkSessions[chatId];
     try {
@@ -940,7 +952,6 @@ async function refreshCheckList(chatId, session) {
   try {
     await bot.editMessageText(txt, { chat_id: chatId, message_id: session.listMessageId, parse_mode: 'HTML', reply_markup: kb });
   } catch (e) {
-    // Если редактирование упало — отправим новое сообщение
     try {
       const msg = await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: kb });
       session.listMessageId = msg.message_id;
