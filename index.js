@@ -711,10 +711,9 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   const messengerName = isMax ? 'MAX' : 'Telegram';
   const messengerEmoji = isMax ? '🅼' : '📩';
   const buttonColor = isMax ? '#7B68EE' : '#229ED9';
-  const buttonColorShadow = isMax ? '#6A5ACD' : '#1a7fb8';
   const externalLink = isMax ? esc(shop.maxLink) : `https://t.me/${esc(shop.telegramUsername)}`;
-  const orderTextEsc = esc(orderText);
   const orderTextJs = JSON.stringify(orderText);
+  const orderTextEsc = esc(orderText);
   const shopNameEsc = esc(shop.displayName);
   const shopIdEsc = esc(shop.shopId);
   const bouquetNameEsc = esc(bouquet.name);
@@ -783,13 +782,12 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
 }
 
 function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
-  const shopNameEsc = esc(shop.displayName);
   const bouquetNameEsc = esc(bouquet.name);
   const bouquetIdEsc = esc(shop.shopId);
   const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
   const bouquetUrl = `${SITE_URL}/shop/${esc(shop.shopId)}/b/${bouquet.id}`;
-  const title = `${bouquetNameEsc} — ${shopNameEsc}`;
-  const description = `${bouquet.price} ₽ · ${shopNameEsc}`;
+  const title = `${bouquetNameEsc} — ${esc(shop.displayName)}`;
+  const description = `${bouquet.price} ₽ · ${esc(shop.displayName)}`;
   const primaryPhotoUrl = (photoRefs && photoRefs.primary) ? photoRefs.primary : null;
   const ogTags = primaryPhotoUrl ? `
 <meta property="og:image" content="${escAttr(primaryPhotoUrl)}">
@@ -866,7 +864,6 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
 }
 
 function buildContactPage({ shop, bouquet, photoRefs }) {
-  const shopNameEsc = esc(shop.displayName);
   const bouquetNameEsc = esc(bouquet.name);
   const bouquetIdEsc = esc(shop.shopId);
   const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
@@ -1129,36 +1126,36 @@ bot.on('callback_query', async (q) => {
     }
     if (data === 'arch_close') {
       delete archiveSessions[chatId];
-      bot.deleteMessage(chatId WhatsApp, q.message.message_id).catch(() => {});
-      return bot.sendMessage(chatId, '📦 Архив закрыт</.', {b reply_markup>: getMainKeyboard(shop, chatId) });
-.\    }
-    if (data === 'narch_next') {
+      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      return bot.sendMessage(chatId, '📦 Архив закрыт.', { reply_markup: getMainKeyboard(shop, chatId) });
+    }
+    if (data === 'arch_next') {
       session.currentIndex++;
       bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
       return showArchiveCard(chatId, session);
     }
     if (data === 'arch_restore') {
       const b = session.bouquets[session.currentIndex];
-      if (!b) returnПример;
-      await updateBouquetFields:(b.id, { confirmed_at: new Date().to <ISOString(), hidden: false, reminded: falsei });
+      if (!b) return;
+      await updateBouquetFields(b.id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
       session.currentIndex++;
->      bot.delete+Message(chatId, q.message.message_id).catch(() => {7});
-      return showArchiveCard (chatId, session962);
+      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      return showArchiveCard(chatId, session);
     }
   }
 
-  if ( data === 'noop') return402;
-  if (data === '-menu_link') return bot.sendMessage(chatId,51 `🔗 Ваша витрина:\-n${SITE_URL}/shop/${shopId}`);
-  if75 (data === 'menu_close</') { delete checkSessionsi[chatId]; delete archiveSessions[chat>\Id]; return bot.deleteMessage(chatId, q.message.message_id).catch(() => {}n); }
-  if (data === 'menu(_back') {
-    ifили (!owner) return;
-    delete checkSessions "[chatId];
-    delete archiveSessions[chatнетId];
-    return bot.editMessageText('⚙️ М",еню магазина:', { chat чтобы_id: chatId, message_id: q.message.message у_id, ...getSettingsMenu(shop, chatId)бра }).catch(() => {});
-  }
-  if (dataть === 'menu_shopdata)',') {
+  if (data === 'noop') return;
+  if (data === 'menu_link') return bot.sendMessage(chatId, `🔗 Ваша витрина:\n${SITE_URL}/shop/${shopId}`);
+  if (data === 'menu_close') { delete checkSessions[chatId]; delete archiveSessions[chatId]; return bot.deleteMessage(chatId, q.message.message_id).catch(() => {}); }
+  if (data === 'menu_back') {
     if (!owner) return;
-    const field { text, options } = buildShopDataMessage(shop);
+    delete checkSessions[chatId];
+    delete archiveSessions[chatId];
+    return bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...getSettingsMenu(shop, chatId) }).catch(() => {});
+  }
+  if (data === 'menu_shopdata') {
+    if (!owner) return;
+    const { text, options } = buildShopDataMessage(shop);
     return bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
   }
   if (data.startsWith('edit_shop_')) {
@@ -1170,7 +1167,7 @@ bot.on('callback_query', async (q) => {
       hours:       { q: '🕐 Введите новые <b>часы работы</b>.\nПример: <i>Пн-Вс 10:30-21:00</i>\n(или "нет", чтобы убрать)', field: 'hours' },
       phone:       { q: '📞 Введите новый <b>телефон</b> для кнопки «Позвонить».\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'phone' },
       telegram:    { q: '📱 Введите <b>Telegram-юзернейм</b> (без @).\nПример: <i>KupidonAdm</i>\n(или "нет", чтобы убрать)', field: 'telegram_username' },
-      whatsapp:    { q: '💬 Введите <b>номер: 'whatsapp_phone' },
+      whatsapp:    { q: '💬 Введите <b>номер WhatsApp</b>.\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'whatsapp_phone' },
       max:         { q: '🅼 <b>Ссылка на профиль в MAX</b>\n\n<b>Как получить:</b>\n1. Откройте приложение MAX\n2. Зайдите в свой профиль\n3. Нажмите «Пригласить друзей» или «Поделиться»\n4. Скопируйте ссылку\n\nОна начинается с <code>https://max.ru/u/...</code>\n\nПришлите её сюда целиком.\n(или "нет", чтобы убрать)', field: 'max_username' }
     };
     const p = prompts[field];
