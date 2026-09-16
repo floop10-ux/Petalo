@@ -80,6 +80,7 @@ const archiveSessions = {};
 const MAX_BUTTONS_PER_SECTION = 20;
 const MAX_LIST_ITEMS = 25;
 const MAX_SESSION_BOUQUETS = 80;
+const TWO_COLUMNS_THRESHOLD = 12;
 
 const MENU_BUTTONS = [
   '📷 Добавить букет',
@@ -612,7 +613,7 @@ function getMainKeyboard(shop, chatId) {
   return { keyboard: [
     [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
     [{ text: '✏️ Изменить цену' }, { text: '📝 Переименовать' }],
-    [{ text: '⚙️ Меню' }]
+    [{ text: '📦 Архив' }, { text: '⚙️ Меню' }]
   ], resize_keyboard: true };
 }
 
@@ -935,7 +936,7 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     txt += `✏️ Изменить цену — обновить стоимость\n`;
     txt += `📝 Переименовать — изменить название\n`;
     if (owner) txt += `🗑 Удалить — убрать букет совсем\n`;
-    if (owner) txt += `📦 Архив — вернуть ушедшие букеты\n`;
+    txt += `📦 Архив — вернуть ушедшие букеты\n`;
     txt += `⚙️ Меню — настройки`;
     return bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   } else {
@@ -1439,7 +1440,6 @@ bot.on('message', async (msg) => {
     return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.');
   }
   if (text === '📦 Архив') {
-    if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Только владелец.');
     const arch = await getArchivedBouquets(shopId);
     if (arch.length === 0) return bot.sendMessage(chatId, '📦 В архиве пусто — все букеты на витрине.', { reply_markup: getMainKeyboard(shop, chatId) });
     archiveSessions[chatId] = { bouquets: arch, currentIndex: 0 };
@@ -1708,9 +1708,18 @@ app.get('/shop/:shopId', async (req, res) => {
         ${sortPill('↓ Сначала дешевле', 'asc')}${sortPill('↑ Сначала дороже', 'desc')}
       </div>`;
 
+    // === Логика 2 колонок: если букетов > 12 — сетка 2 колонки на мобильном ===
+    const useTwoColumns = active.length > TWO_COLUMNS_THRESHOLD;
+    const gridStyle = useTwoColumns
+      ? 'display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:760px;margin:0 auto;'
+      : 'display:flex;flex-wrap:wrap;justify-content:center;';
+    const cardExtraStyle = useTwoColumns
+      ? 'width:100%;box-sizing:border-box;'
+      : 'max-width:300px;';
+
     let cards = '';
     if (active.length === 0) {
-      cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;">🌿 По этому фильтру букетов нет.</div>';
+      cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;grid-column:1/-1;">🌿 По этому фильтру букетов нет.</div>';
     } else {
       for (const b of active) {
         const photoUrls = [];
@@ -1728,32 +1737,38 @@ app.get('/shop/:shopId', async (req, res) => {
 
         let buttonsHTML = '';
         if (shop.telegramUsername) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/tg" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Написать в Telegram</a>`;
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/tg" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">📩 Telegram</a>`;
         }
         if (shop.whatsappPhone) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/wa" target="_blank" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">💬 Написать в WhatsApp</a>`;
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/wa" target="_blank" style="display:block;margin-top:6px;background:#25D366;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">💬 WhatsApp</a>`;
         }
         if (shop.maxLink) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/max" target="_blank" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">🅼 Написать в MAX</a>`;
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/max" target="_blank" style="display:block;margin-top:6px;background:#7B68EE;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">🅼 MAX</a>`;
         }
         if (shop.phone) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/call" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>`;
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/call" style="display:block;margin-top:6px;background:#3498db;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">📞 Позвонить</a>`;
         }
 
         const bouquetUrlJs = JSON.stringify(bouquetUrl);
         const bouquetNameJs = JSON.stringify(b.name);
         const bouquetPriceJs = b.price;
 
-        cards += `<div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
-          <div style="position:absolute;top:24px;right:24px;background:rgba(44,62,80,0.85);color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;z-index:10;">№${b.id}</div>
+        const titleFontSize = useTwoColumns ? '15px' : '18px';
+        const priceFontSize = useTwoColumns ? '18px' : '22px';
+        const oldPriceFontSize = useTwoColumns ? '14px' : '18px';
+        const cardPadding = useTwoColumns ? '10px' : '16px';
+        const cardMargin = useTwoColumns ? '0' : '12px';
+
+        cards += `<div style="border:1px solid #eee;border-radius:16px;padding:${cardPadding};margin:${cardMargin};${cardExtraStyle}background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
+          <div style="position:absolute;top:${useTwoColumns ? '16px' : '24px'};right:${useTwoColumns ? '16px' : '24px'};background:rgba(44,62,80,0.85);color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;z-index:10;">№${b.id}</div>
           ${gallery}
-          <h3 style="margin:12px 0 6px;">${esc(b.name)}</h3>
-          <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
-            ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
+          <h3 style="margin:10px 0 4px;font-size:${titleFontSize};line-height:1.25;">${esc(b.name)}</h3>
+          <p style="font-size:${priceFontSize};font-weight:bold;color:#2c3e50;margin:4px 0;">
+            ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:${oldPriceFontSize};">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
           </p>
-          ${buttonsHTML || '<div style="color:#888;padding:10px;">Контакты для связи временно недоступны</div>'}
-          <div style="margin-top:10px;">
-            <a href="#" onclick='shareBouquet(event, ${bouquetUrlJs}, ${bouquetNameJs}, ${bouquetPriceJs}); return false;' style="display:inline-block;color:#888;font-size:13px;text-decoration:none;padding:6px 12px;border-radius:16px;background:#f5f5f5;">📤 Поделиться</a>
+          ${buttonsHTML || '<div style="color:#888;padding:10px;font-size:13px;">Контакты временно недоступны</div>'}
+          <div style="margin-top:8px;">
+            <a href="#" onclick='shareBouquet(event, ${bouquetUrlJs}, ${bouquetNameJs}, ${bouquetPriceJs}); return false;' style="display:inline-block;color:#888;font-size:12px;text-decoration:none;padding:5px 10px;border-radius:16px;background:#f5f5f5;">📤 Поделиться</a>
           </div>
         </div>`;
       }
@@ -1766,7 +1781,7 @@ app.get('/shop/:shopId', async (req, res) => {
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
       <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
-      <body><div class="container">${headerHTML}<h1>${esc(shop.displayName)}</h1><div style="color:#555;font-size:14px;margin-bottom:10px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>${filtersHTML}${cards}</div>
+      <body><div class="container">${headerHTML}<h1>${esc(shop.displayName)}</h1><div style="color:#555;font-size:14px;margin-bottom:10px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>${filtersHTML}<div style="${gridStyle}">${cards}</div></div>
       <script>
         function shareBouquet(e, url, name, price) {
           if (e) { e.preventDefault(); }
