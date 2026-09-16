@@ -37,7 +37,7 @@ const PRESET_SHOP = {
   phone: '+7 962 402-51-75',
   telegramUsername: 'KupidonAdm',
   whatsappPhone: '+7 962 402-51-75',
-  maxUsername: '',
+  maxLink: 'https://max.ru/u/f9LHodD0cOJlhEYownGN37InfSoqm2WiY7c7F38Yd1UEtSvBWADCLBqRny8',
   markupPercent: 20,
   trialMonths: 3
 };
@@ -276,7 +276,7 @@ async function initDb() {
     );
   `);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS whatsapp_phone VARCHAR(50)`);
-  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_username VARCHAR(100)`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_username VARCHAR(255)`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admins (
@@ -323,7 +323,7 @@ async function getShopFromDb(shopId) {
     shopId: s.shop_id, name: s.name, displayName: s.display_name,
     address: s.address, hours: s.hours, phone: s.phone,
     telegramUsername: s.telegram_username,
-    whatsappPhone: s.whatsapp_phone, maxUsername: s.max_username,
+    whatsappPhone: s.whatsapp_phone, maxLink: s.max_username,
     inviteCode: s.invite_code, trialStart: s.trial_start, trialEnd: s.trial_end,
     settings: s.settings || { logo: null, background: null, markupPercent: 20, aiEnabled: false },
     stats: s.stats || { views: 0, orders: 0, calls: 0, startedAt: new Date().toISOString() },
@@ -337,7 +337,7 @@ async function createShopInDb(shop) {
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
   `, [
     shop.shopId, shop.name, shop.displayName, shop.address, shop.hours, shop.phone,
-    shop.telegramUsername, shop.whatsappPhone || null, shop.maxUsername || null,
+    shop.telegramUsername, shop.whatsappPhone || null, shop.maxLink || null,
     shop.inviteCode, shop.trialStart, shop.trialEnd,
     JSON.stringify(shop.settings), JSON.stringify(shop.stats)
   ]);
@@ -447,7 +447,7 @@ function buildShopDataMessage(shop) {
   txt += `📞 Телефон: ${shop.phone ? esc(shop.phone) : '<i>не указан</i>'}\n\n`;
   txt += `📱 Telegram: ${shop.telegramUsername ? '@' + esc(shop.telegramUsername) : '<i>не указан</i>'}\n`;
   txt += `💬 WhatsApp: ${shop.whatsappPhone ? esc(shop.whatsappPhone) : '<i>не указан</i>'}\n`;
-  txt += `🅼 MAX: ${shop.maxUsername ? '@' + esc(shop.maxUsername) : '<i>не указан</i>'}\n\n`;
+  txt += `🅼 MAX: ${shop.maxLink ? '✅ установлена' : '<i>не указана</i>'}\n\n`;
   txt += `<i>Что изменить?</i>`;
   return {
     text: txt,
@@ -488,8 +488,8 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
       const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
       redirectUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(orderText)}`;
       await incrementShopStat(shopId, 'orders');
-    } else if (type === 'max' && shop.maxUsername) {
-      redirectUrl = `https://max.ru/${shop.maxUsername}`;
+    } else if (type === 'max' && shop.maxLink) {
+      redirectUrl = shop.maxLink;
       await incrementShopStat(shopId, 'orders');
     } else if (type === 'call' && shop.phone) {
       redirectUrl = `tel:${shop.phone.replace(/\D/g, '')}`;
@@ -596,7 +596,7 @@ bot.on('callback_query', async (q) => {
       phone:       { q: '📞 Введите новый <b>телефон</b> для кнопки «Позвонить».\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'phone' },
       telegram:    { q: '📱 Введите <b>Telegram-юзернейм</b> (без @).\nПример: <i>KupidonAdm</i>\n(или "нет", чтобы убрать)', field: 'telegram_username' },
       whatsapp:    { q: '💬 Введите <b>номер WhatsApp</b>.\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'whatsapp_phone' },
-      max:         { q: '🅼 Введите <b>MAX-юзернейм</b> (без @).\nПример: <i>kupidon</i>\n(или "нет", чтобы убрать)', field: 'max_username' }
+      max:         { q: '🅼 <b>Ссылка на профиль в MAX</b>\n\n<b>Как получить:</b>\n1. Откройте приложение MAX\n2. Зайдите в свой профиль\n3. Нажмите «Пригласить друзей» или «Поделиться»\n4. Скопируйте ссылку\n\nОна начинается с <code>https://max.ru/u/...</code>\n\nПришлите её сюда целиком.\n(или "нет", чтобы убрать)', field: 'max_username' }
     };
     const p = prompts[field];
     if (!p) return;
@@ -964,7 +964,12 @@ bot.on('message', async (msg) => {
     if (value.toLowerCase() === 'нет') value = null;
 
     if (input.field === 'telegram_username' && value) value = value.replace(/^@/, '').toLowerCase();
-    if (input.field === 'max_username' && value) value = value.replace(/^@/, '').toLowerCase();
+    if (input.field === 'max_username' && value) {
+      // Валидация ссылки MAX
+      if (!/^https?:\/\/max\.ru\//.test(value)) {
+        return bot.sendMessage(chatId, '❌ Ссылка должна начинаться с <code>https://max.ru/u/...</code>\n\nПопробуйте ещё раз или нажмите /cancel.', { parse_mode: 'HTML' });
+      }
+    }
 
     if (input.field === 'display_name' && value) {
       if (value.length < 2 || value.length > 60) return bot.sendMessage(chatId, '❌ 2–60 символов.');
@@ -1163,10 +1168,18 @@ bot.on('message', async (msg) => {
   if (state.step === 'whatsapp') {
     state.data.whatsappPhone = text.trim().toLowerCase() === 'нет' ? null : text.trim();
     state.step = 'max';
-    return bot.sendMessage(chatId, '✅ Шаг 8. <b>MAX-юзернейм</b> (без @).\nПример: <code>kupidon</code>\n(или "нет")', { parse_mode: 'HTML' });
+    return bot.sendMessage(chatId, '✅ Шаг 8. 🅼 <b>Ссылка на профиль в MAX</b>\n\n<b>Как получить:</b>\n1. Откройте приложение MAX\n2. Зайдите в свой профиль\n3. Нажмите «Пригласить друзей» или «Поделиться»\n4. Скопируйте ссылку\n\nОна начинается с <code>https://max.ru/u/...</code>\n\nПришлите её сюда целиком.\n(или "нет")', { parse_mode: 'HTML' });
   }
   if (state.step === 'max') {
-    state.data.maxUsername = text.trim().toLowerCase() === 'нет' ? null : text.trim().replace(/^@/, '').toLowerCase();
+    if (text.trim().toLowerCase() === 'нет') {
+      state.data.maxLink = null;
+    } else {
+      const v = text.trim();
+      if (!/^https?:\/\/max\.ru\//.test(v)) {
+        return bot.sendMessage(chatId, '❌ Ссылка должна начинаться с <code>https://max.ru/u/...</code>\n\nПопробуйте ещё раз или напишите "нет".', { parse_mode: 'HTML' });
+      }
+      state.data.maxLink = v;
+    }
 
     const now = new Date();
     const trialEnd = new Date(now);
@@ -1179,7 +1192,7 @@ bot.on('message', async (msg) => {
       hours: state.data.hours, phone: state.data.phone,
       telegramUsername: state.data.telegramUsername,
       whatsappPhone: state.data.whatsappPhone,
-      maxUsername: state.data.maxUsername,
+      maxLink: state.data.maxLink,
       inviteCode, trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(),
       settings: { logo: null, background: null, markupPercent: 20, aiEnabled: false },
       stats: { views: 0, orders: 0, calls: 0, startedAt: now.toISOString() }
@@ -1277,7 +1290,7 @@ app.get('/shop/:shopId', async (req, res) => {
         if (shop.whatsappPhone) {
           buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/wa" target="_blank" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">💬 Написать в WhatsApp</a>`;
         }
-        if (shop.maxUsername) {
+        if (shop.maxLink) {
           buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/max" target="_blank" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">🅼 Написать в MAX</a>`;
         }
         if (shop.phone) {
@@ -1340,7 +1353,7 @@ initDb().then(async () => {
       hours: PRESET_SHOP.hours, phone: PRESET_SHOP.phone,
       telegramUsername: PRESET_SHOP.telegramUsername,
       whatsappPhone: PRESET_SHOP.whatsappPhone,
-      maxUsername: PRESET_SHOP.maxUsername,
+      maxLink: PRESET_SHOP.maxLink,
       inviteCode, trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(),
       settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent, aiEnabled: false },
       stats: { views: 0, orders: 0, calls: 0, startedAt: now.toISOString() }
@@ -1348,6 +1361,11 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} создан`);
   } else {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
+    // Если maxLink ещё не установлен у существующего магазина — вшиваем
+    if (!existing.maxLink) {
+      await updateShopField(PRESET_SHOP.shopId, 'max_username', PRESET_SHOP.maxLink);
+      console.log(`✅ MAX-ссылка для ${PRESET_SHOP.shopId} установлена`);
+    }
   }
 
   const WEBHOOK_URL = `https://petalo.onrender.com${WEBHOOK_PATH}`;
