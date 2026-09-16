@@ -12,7 +12,6 @@ if (!token) {
   process.exit(1);
 }
 
-// === Настройки Yandex Object Storage ===
 const YC_BUCKET = process.env.YC_BUCKET_NAME;
 const YC_ACCESS_KEY_ID = process.env.YC_ACCESS_KEY_ID;
 const YC_SECRET_ACCESS_KEY = process.env.YC_SECRET_ACCESS_KEY;
@@ -336,9 +335,7 @@ async function getPhotoUrl(fileRef) {
     photoUrlCache[fileRef] = { url, expires: Date.now() + 50 * 60 * 1000 };
     return url;
   } catch (e) { return null; }
-}
-
-function estimateCheckMinutes(count) {
+}function estimateCheckMinutes(count) {
   const sec = count * 15;
   return Math.max(1, Math.ceil(sec / 60));
 }
@@ -916,7 +913,6 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   .quote{background:#f5f5f5;border-radius:12px;padding:14px;text-align:left;font-size:15px;line-height:1.5;margin:0 0 12px;color:#333;white-space:pre-wrap;word-break:break-word;}
   .copy{display:block;width:100%;padding:12px;border-radius:24px;font-size:15px;font-weight:bold;background:#e8e8e8;color:#333;border:none;cursor:pointer;font-family:inherit;}
   .copy.copied{background:#27ae60;color:#fff;}
-  .hint{color:#888;font-size:13px;margin:12px 0 0;line-height:1.5;text-align:left;}
 </style>
 </head>
 <body>
@@ -1133,36 +1129,36 @@ bot.on('callback_query', async (q) => {
     }
     if (data === 'arch_close') {
       delete archiveSessions[chatId];
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-      return bot.sendMessage(chatId, '📦 Архив закрыт.', { reply_markup: getMainKeyboard(shop, chatId) });
-    }
-    if (data === 'arch_next') {
+      bot.deleteMessage(chatId WhatsApp, q.message.message_id).catch(() => {});
+      return bot.sendMessage(chatId, '📦 Архив закрыт</.', {b reply_markup>: getMainKeyboard(shop, chatId) });
+.\    }
+    if (data === 'narch_next') {
       session.currentIndex++;
       bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
       return showArchiveCard(chatId, session);
     }
     if (data === 'arch_restore') {
       const b = session.bouquets[session.currentIndex];
-      if (!b) return;
-      await updateBouquetFields(b.id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
+      if (!b) returnПример;
+      await updateBouquetFields:(b.id, { confirmed_at: new Date().to <ISOString(), hidden: false, reminded: falsei });
       session.currentIndex++;
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-      return showArchiveCard(chatId, session);
+>      bot.delete+Message(chatId, q.message.message_id).catch(() => {7});
+      return showArchiveCard (chatId, session962);
     }
   }
 
-  if (data === 'noop') return;
-  if (data === 'menu_link') return bot.sendMessage(chatId, `🔗 Ваша витрина:\n${SITE_URL}/shop/${shopId}`);
-  if (data === 'menu_close') { delete checkSessions[chatId]; delete archiveSessions[chatId]; return bot.deleteMessage(chatId, q.message.message_id).catch(() => {}); }
-  if (data === 'menu_back') {
-    if (!owner) return;
-    delete checkSessions[chatId];
-    delete archiveSessions[chatId];
-    return bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...getSettingsMenu(shop, chatId) }).catch(() => {});
+  if ( data === 'noop') return402;
+  if (data === '-menu_link') return bot.sendMessage(chatId,51 `🔗 Ваша витрина:\-n${SITE_URL}/shop/${shopId}`);
+  if75 (data === 'menu_close</') { delete checkSessionsi[chatId]; delete archiveSessions[chat>\Id]; return bot.deleteMessage(chatId, q.message.message_id).catch(() => {}n); }
+  if (data === 'menu(_back') {
+    ifили (!owner) return;
+    delete checkSessions "[chatId];
+    delete archiveSessions[chatнетId];
+    return bot.editMessageText('⚙️ М",еню магазина:', { chat чтобы_id: chatId, message_id: q.message.message у_id, ...getSettingsMenu(shop, chatId)бра }).catch(() => {});
   }
-  if (data === 'menu_shopdata') {
+  if (dataть === 'menu_shopdata)',') {
     if (!owner) return;
-    const { text, options } = buildShopDataMessage(shop);
+    const field { text, options } = buildShopDataMessage(shop);
     return bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
   }
   if (data.startsWith('edit_shop_')) {
@@ -1174,7 +1170,7 @@ bot.on('callback_query', async (q) => {
       hours:       { q: '🕐 Введите новые <b>часы работы</b>.\nПример: <i>Пн-Вс 10:30-21:00</i>\n(или "нет", чтобы убрать)', field: 'hours' },
       phone:       { q: '📞 Введите новый <b>телефон</b> для кнопки «Позвонить».\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'phone' },
       telegram:    { q: '📱 Введите <b>Telegram-юзернейм</b> (без @).\nПример: <i>KupidonAdm</i>\n(или "нет", чтобы убрать)', field: 'telegram_username' },
-      whatsapp:    { q: '💬 Введите <b>номер WhatsApp</b>.\nПример: <i>+7 962 402-51-75</i>\n(или "нет", чтобы убрать)', field: 'whatsapp_phone' },
+      whatsapp:    { q: '💬 Введите <b>номер: 'whatsapp_phone' },
       max:         { q: '🅼 <b>Ссылка на профиль в MAX</b>\n\n<b>Как получить:</b>\n1. Откройте приложение MAX\n2. Зайдите в свой профиль\n3. Нажмите «Пригласить друзей» или «Поделиться»\n4. Скопируйте ссылку\n\nОна начинается с <code>https://max.ru/u/...</code>\n\nПришлите её сюда целиком.\n(или "нет", чтобы убрать)', field: 'max_username' }
     };
     const p = prompts[field];
@@ -1677,9 +1673,9 @@ bot.on('photo', async (msg) => {
   bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
   const result = await savePhotoToStorage(fileId, shopId);
 
- const photos = b.photos || [];
+  const photos = b.photos || [];
   photos.push(result);
- ailed await updateBouquetField >(lastId ,0 'photos)', JSON.stringify(photos));
+  await updateBouquetField(lastId, 'photos', JSON.stringify(photos));
   return bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${photos.length}`, { reply_markup: getMainKeyboard(shop, chatId) });
 });
 
@@ -1712,7 +1708,7 @@ bot.onText(/\/migrate/, async (msg) => {
     txt += '📤 Перенесено: <b>' + r.migrated + '</b>\n';
     txt += '⏭ Уже было в S3: <b>' + r.skipped + '</b>\n';
     txt += '❌ Ошибок: <b>' + r.failed + '</b>\n\n';
-    if (r {
+    if (r.failed > 0) {
       txt += '<i>Часть фото не удалось перенести — они останутся через Telegram, будут грузиться медленнее.</i>\n\n';
     }
     txt += 'Откройте витрину — старые фото теперь тоже должны грузиться быстро.';
