@@ -158,7 +158,6 @@ function isValidFileId(fileId) {
   return /^[A-Za-z0-9_\-]{20,}$/.test(fileId);
 }
 
-// Загрузка фото из Telegram
 async function downloadTelegramFile(fileId) {
   const fileInfo = await bot.getFile(fileId);
   const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
@@ -168,7 +167,6 @@ async function downloadTelegramFile(fileId) {
   return buf;
 }
 
-// Загрузка файла в Yandex S3
 async function uploadToS3(buffer, key) {
   if (!s3) throw new Error('S3 disabled');
   const cmd = new PutObjectCommand({
@@ -181,8 +179,6 @@ async function uploadToS3(buffer, key) {
   return `https://${YC_BUCKET}.storage.yandexcloud.net/${key}`;
 }
 
-// Сохраняет фото: возвращает {s3, tg} или {tg}
-// s3 — ссылка на Yandex, tg — исходный file_id для fallback (VPN)
 async function savePhotoToStorage(telegramFileId, shopId) {
   if (!S3_ENABLED) {
     return { tg: telegramFileId };
@@ -200,8 +196,6 @@ async function savePhotoToStorage(telegramFileId, shopId) {
   }
 }
 
-// Универсальная функция: возвращает primary и fallback URL для одного photo
-// Работает со строками (старый формат) и объектами {s3, tg}
 function getPhotoRefs(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
@@ -223,7 +217,6 @@ function getPhotoRefs(photo) {
   return { primary: null, fallback: null };
 }
 
-// Возвращает ссылку для Telegram sendPhoto (fileId или URL)
 function getTelegramPhotoRef(photo) {
   if (!photo) return null;
   if (typeof photo === 'string') {
@@ -238,7 +231,6 @@ function getTelegramPhotoRef(photo) {
   return null;
 }
 
-// Общая функция для рендера одного <img> с onerror fallback
 function renderImgTag(refs, style) {
   if (!refs.primary) return null;
   const p = escAttr(refs.primary);
@@ -250,7 +242,6 @@ function renderImgTag(refs, style) {
   return `<img src="${p}"${st ? ` style="${st}"` : ''}>`;
 }
 
-// Миграция старых фото из Telegram в Yandex S3 (с сохранением tg)
 async function migratePhotosToS3(shopId) {
   const result = { migrated: 0, skipped: 0, failed: 0 };
   if (!S3_ENABLED) return result;
@@ -327,7 +318,6 @@ async function migratePhotosToS3(shopId) {
   return result;
 }
 
-// Получает актуальный URL для логотипа/фона (может быть строкой или объектом)
 async function getPhotoUrl(fileRef) {
   if (!fileRef) return null;
   if (typeof fileRef === 'object') {
@@ -879,8 +869,105 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
 </html>`;
 }
 
+// === Страница контактов (вариант В) ===
+function buildContactPage({ shop, bouquet, photoRefs }) {
+  const shopNameEsc = esc(shop.displayName);
+  const bouquetNameEsc = esc(bouquet.name);
+  const bouquetIdEsc = esc(shop.shopId);
+  const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
+  const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${bouquet.id} «${bouquet.name}» — ${bouquet.price} ₽.`;
+  const orderTextJs = JSON.stringify(orderText);
+  const orderTextEsc = esc(orderText);
+
+  const mainPhotoHtml = (photoRefs && photoRefs.primary)
+    ? renderImgTag(photoRefs, 'width:100%;max-width:420px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,0.1);')
+    : `<div style="width:100%;max-width:420px;aspect-ratio:1/1;background:#f0f0f0;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:60px;margin:0 auto;">📷</div>`;
+
+  const priceHtml = oldPrice > bouquet.price
+    ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:20px;">${oldPrice} ₽</span>&nbsp; ${bouquet.price} ₽`
+    : `${bouquet.price} ₽`;
+
+  const btnBase = 'display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:16px;border-radius:30px;font-size:17px;font-weight:bold;text-decoration:none;border:none;cursor:pointer;margin-top:10px;box-sizing:border-box;font-family:inherit;color:#fff;';
+  let contactsHTML = '';
+  if (shop.whatsappPhone) {
+    contactsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/wa" style="${btnBase}background:#25D366;">💬 WhatsApp</a>`;
+  }
+  if (shop.telegramUsername) {
+    contactsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/tg" style="${btnBase}background:#229ED9;">📩 Telegram</a>`;
+  }
+  if (shop.maxLink) {
+    contactsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/max" style="${btnBase}background:#7B68EE;">🅼 MAX</a>`;
+  }
+  if (shop.phone) {
+    contactsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/call" style="${btnBase}background:#3498db;">📞 Позвонить</a>`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Связаться — ${bouquetNameEsc}</title>
+<style>
+  body{font-family:-apple-system,sans-serif;margin:0;padding:20px;background:#fafaf8;text-align:center;color:#2c3e50;}
+  .container{max-width:500px;margin:0 auto;padding:12px 0;}
+  .back{display:inline-block;margin-bottom:16px;color:#888;text-decoration:none;font-size:14px;}
+  h1{font-size:20px;margin:14px 0 6px;line-height:1.3;}
+  .price{font-size:24px;font-weight:bold;margin:6px 0 16px;color:#2c3e50;}
+  .card{background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,0.06);margin:16px 0;}
+  .quote{background:#f5f5f5;border-radius:12px;padding:14px;text-align:left;font-size:15px;line-height:1.5;margin:0 0 12px;color:#333;white-space:pre-wrap;word-break:break-word;}
+  .copy{display:block;width:100%;padding:12px;border-radius:24px;font-size:15px;font-weight:bold;background:#e8e8e8;color:#333;border:none;cursor:pointer;font-family:inherit;}
+  .copy.copied{background:#27ae60;color:#fff;}
+  .hint{color:#888;font-size:13px;margin:12px 0 0;line-height:1.5;text-align:left;}
+</style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/shop/${bouquetIdEsc}">← К витрине</a>
+
+    <div>${mainPhotoHtml}</div>
+    <h1>${bouquetNameEsc}</h1>
+    <div class="price">${priceHtml}</div>
+
+    <div class="card">
+      <div style="font-size:16px;font-weight:bold;color:#2c3e50;margin-bottom:12px;">Как связаться с флористом?</div>
+      ${contactsHTML || '<div style="color:#888;padding:10px;">Контакты временно недоступны</div>'}
+    </div>
+
+    <div class="card" style="text-align:left;">
+      <div style="font-size:14px;color:#555;margin-bottom:10px;">
+        💡 Можно скопировать готовый текст заказа и вставить в чат:
+      </div>
+      <div class="quote">${orderTextEsc}</div>
+      <button class="copy" id="copyBtn" onclick="copyOrder()">📋 Скопировать текст</button>
+    </div>
+  </div>
+  <script>
+    function copyOrder() {
+      var text = ${orderTextJs};
+      var btn = document.getElementById('copyBtn');
+      function done() {
+        btn.textContent = '✅ Скопировано!';
+        btn.classList.add('copied');
+        setTimeout(function(){ btn.textContent = '📋 Скопировать текст'; btn.classList.remove('copied'); }, 2500);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function(){ fallbackCopy(text, done); });
+      } else { fallbackCopy(text, done); }
+    }
+    function fallbackCopy(text, cb) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy'); cb(); } catch(e) {}
+      document.body.removeChild(ta);
+    }
+  </script>
+</body>
+</html>`;
+}
+
 // === Роут для fallback-фото через Telegram ===
-// Принимает file_id, получает актуальную ссылку у Telegram, редиректит.
 app.get('/photo/tg/:fileId', async (req, res) => {
   try {
     const fileId = req.params.fileId;
@@ -888,12 +975,29 @@ app.get('/photo/tg/:fileId', async (req, res) => {
     const fileInfo = await bot.getFile(fileId);
     if (!fileInfo || !fileInfo.file_path) return res.status(404).send('not found');
     const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
-    // Кешируем ответ у клиента на 40 минут — ссылка живёт ~60 мин
     res.setHeader('Cache-Control', 'public, max-age=2400');
     return res.redirect(302, url);
   } catch (e) {
     console.error('Ошибка /photo/tg:', e?.message || e);
     return res.status(404).send('not found');
+  }
+});
+
+// === Страница контактов ===
+app.get('/contact/:shopId/:bouquetId', async (req, res) => {
+  try {
+    const shop = await getShopFromDb(req.params.shopId);
+    if (!shop) return res.status(404).send('❌ Магазин не найден');
+    const bouquetId = parseInt(req.params.bouquetId);
+    if (!bouquetId || isNaN(bouquetId)) return res.status(404).send('❌ Букет не найден');
+    const b = await getBouquetById(req.params.shopId, bouquetId);
+    if (!b) return res.status(404).send('❌ Букет не найден');
+    const firstPhoto = (b.photos && b.photos.length > 0) ? b.photos[0] : null;
+    const photoRefs = getPhotoRefs(firstPhoto);
+    res.send(buildContactPage({ shop, bouquet: b, photoRefs }));
+  } catch (e) {
+    console.error('Ошибка страницы контактов:', e?.message || e);
+    res.status(500).send('Ошибка');
   }
 });
 
@@ -903,9 +1007,9 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     const bouquetId = parseInt(req.params.bouquetId);
     if (!bouquetId || isNaN(bouquetId)) return res.status(404).send('Не найдено');
     const shop = await getShopFromDb(shopId);
-    if (!shop) return res.status(404).send('Не найденоCE');
-    const b = await(cl geticksBouquetById(shopId, bouquetId);
-,    if (!b) return res.status(404).send('Букет не найден');
+    if (!shop) return res.status(404).send('Не найдено');
+    const b = await getBouquetById(shopId, bouquetId);
+    if (!b) return res.status(404).send('Букет не найден');
     const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
     if (type === 'max' && shop.maxLink) {
       await incrementShopStat(shopId, 'orders');
@@ -914,7 +1018,7 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     }
     if (type === 'tg' && shop.telegramUsername) {
       await incrementShopStat(shopId, 'orders');
-      await pool.query('UPDATE bouquets SET clicks = COALES 0) + 1 WHERE id = $1', [b.id]);
+      await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
       return res.send(buildMessengerOrderPage({ shop, bouquet: b, orderText, messenger: 'tg' }));
     }
     let redirectUrl = null;
@@ -1805,20 +1909,7 @@ app.get('/shop/:shopId', async (req, res) => {
 
         const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
         const bouquetUrl = `${SITE_URL}/shop/${shop.shopId}/b/${b.id}`;
-
-        let buttonsHTML = '';
-        if (shop.telegramUsername) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/tg" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">📩 Telegram</a>`;
-        }
-        if (shop.whatsappPhone) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/wa" target="_blank" style="display:block;margin-top:6px;background:#25D366;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">💬 WhatsApp</a>`;
-        }
-        if (shop.maxLink) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/max" target="_blank" style="display:block;margin-top:6px;background:#7B68EE;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">🅼 MAX</a>`;
-        }
-        if (shop.phone) {
-          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/call" style="display:block;margin-top:6px;background:#3498db;color:#fff;padding:10px 14px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:14px;">📞 Позвонить</a>`;
-        }
+        const contactUrl = `/contact/${shop.shopId}/${b.id}`;
 
         const bouquetUrlJs = JSON.stringify(bouquetUrl);
         const bouquetNameJs = JSON.stringify(b.name);
@@ -1837,7 +1928,7 @@ app.get('/shop/:shopId', async (req, res) => {
           <p style="font-size:${priceFontSize};font-weight:bold;color:#2c3e50;margin:4px 0;">
             ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:${oldPriceFontSize};">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
           </p>
-          ${buttonsHTML || '<div style="color:#888;padding:10px;font-size:13px;">Контакты временно недоступны</div>'}
+          <a href="${contactUrl}" style="display:block;margin-top:10px;background:#e74c3c;color:#fff;padding:12px 16px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:15px;">📞 Связаться</a>
           <div style="margin-top:8px;">
             <a href="#" onclick='shareBouquet(event, ${bouquetUrlJs}, ${bouquetNameJs}, ${bouquetPriceJs}); return false;' style="display:inline-block;color:#888;font-size:12px;text-decoration:none;padding:5px 10px;border-radius:16px;background:#f5f5f5;">📤 Поделиться</a>
           </div>
