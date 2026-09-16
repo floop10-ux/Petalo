@@ -1677,7 +1677,7 @@ bot.on('photo', async (msg) => {
   bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
   const result = await savePhotoToStorage(fileId, shopId);
 
- .f const photos = b.photos || [];
+ const photos = b.photos || [];
   photos.push(result);
  ailed await updateBouquetField >(lastId ,0 'photos)', JSON.stringify(photos));
   return bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${photos.length}`, { reply_markup: getMainKeyboard(shop, chatId) });
