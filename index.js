@@ -1,5 +1,6 @@
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const pool = require('./db');
 require('dotenv').config();
 
@@ -9,6 +10,27 @@ const token = process.env.BOT_TOKEN;
 if (!token) {
   console.error('❌ BOT_TOKEN не задан в переменных окружения Render');
   process.exit(1);
+}
+
+// === Настройки Yandex Object Storage ===
+const YC_BUCKET = process.env.YC_BUCKET_NAME;
+const YC_ACCESS_KEY_ID = process.env.YC_ACCESS_KEY_ID;
+const YC_SECRET_ACCESS_KEY = process.env.YC_SECRET_ACCESS_KEY;
+const S3_ENABLED = !!(YC_BUCKET && YC_ACCESS_KEY_ID && YC_SECRET_ACCESS_KEY);
+
+let s3 = null;
+if (S3_ENABLED) {
+  s3 = new S3Client({
+    region: 'ru-central1',
+    endpoint: 'https://storage.yandexcloud.net',
+    credentials: {
+      accessKeyId: YC_ACCESS_KEY_ID,
+      secretAccessKey: YC_SECRET_ACCESS_KEY
+    }
+  });
+  console.log('✅ S3-клиент инициализирован (bucket: ' + YC_BUCKET + ')');
+} else {
+  console.log('⚠️ Yandex S3 не настроен — фото пойдут через Telegram (медленно без VPN)');
 }
 
 process.on('unhandledRejection', (e) => console.error('⚠️ Unhandled rejection:', e?.message || e));
@@ -132,14 +154,59 @@ function isValidFileId(fileId) {
   if (!fileId || typeof fileId !== 'string') return false;
   return /^[A-Za-z0-9_\-]{20,}$/.test(fileId);
 }
-async function getPhotoUrl(fileId) {
-  if (!isValidFileId(fileId)) return null;
-  const cached = photoUrlCache[fileId];
+
+// Загрузка фото из Telegram
+async function downloadTelegramFile(fileId) {
+  const fileInfo = await bot.getFile(fileId);
+  const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const buf = Buffer.from(await res.arrayBuffer());
+  return buf;
+}
+
+// Загрузка файла в Yandex S3
+async function uploadToS3(buffer, key) {
+  if (!s3) throw new Error('S3 disabled');
+  const cmd = new PutObjectCommand({
+    Bucket: YC_BUCKET,
+    Key: key,
+    Body: buffer,
+    ContentType: 'image/jpeg'
+  });
+  await s3.send(cmd);
+  return `https://${YC_BUCKET}.storage.yandexcloud.net/${key}`;
+}
+
+// Универсальная функция сохранения фото: сначала S3, при неудаче — Telegram file_id
+async function savePhotoToStorage(telegramFileId, shopId) {
+  if (!S3_ENABLED) {
+    return { ref: telegramFileId, usedS3: false };
+  }
+  try {
+    const buffer = await downloadTelegramFile(telegramFileId);
+    const rand = Math.random().toString(36).slice(2, 8);
+    const key = `${shopId}/${Date.now()}_${rand}.jpg`;
+    const url = await uploadToS3(buffer, key);
+    console.log('📤 Фото в S3:', key);
+    return { ref: url, usedS3: true };
+  } catch (e) {
+    console.error('⚠️ Ошибка загрузки в S3:', e?.message || e);
+    return { ref: telegramFileId, usedS3: false };
+  }
+}
+
+// Возвращает URL фото. Понимает и S3-ссылки, и старые Telegram file_id.
+async function getPhotoUrl(fileRef) {
+  if (!fileRef || typeof fileRef !== 'string') return null;
+  if (fileRef.startsWith('https://') || fileRef.startsWith('http://')) return fileRef;
+  if (!isValidFileId(fileRef)) return null;
+  const cached = photoUrlCache[fileRef];
   if (cached && cached.expires > Date.now()) return cached.url;
   try {
-    const fileInfo = await bot.getFile(fileId);
+    const fileInfo = await bot.getFile(fileRef);
     const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
-    photoUrlCache[fileId] = { url, expires: Date.now() + 50 * 60 * 1000 };
+    photoUrlCache[fileRef] = { url, expires: Date.now() + 50 * 60 * 1000 };
     return url;
   } catch (e) { return null; }
 }
@@ -278,7 +345,7 @@ async function initDb() {
     );
   `);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS whatsapp_phone VARCHAR(50)`);
-  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_username VARCHAR(255)`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_username VARCHAR(500)`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admins (
@@ -502,7 +569,6 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   .quote{background:#f5f5f5;border-radius:12px;padding:16px;text-align:left;font-size:16px;line-height:1.5;margin:16px 0;color:#333;white-space:pre-wrap;word-break:break-word;}
   .btn{display:block;width:100%;padding:16px;border-radius:30px;font-size:17px;font-weight:bold;text-decoration:none;border:none;cursor:pointer;margin-top:12px;box-sizing:border-box;font-family:inherit;}
   .btn-copy{background:#3498db;color:#fff;}
-  .btn-copy:active{background:#2980b9;}
   .btn-copy.copied{background:#27ae60;}
   .btn-open{background:${buttonColor};color:#fff;}
   .btn-open:active{background:${buttonColorShadow};}
@@ -543,22 +609,16 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
         }, 2500);
       }
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done).catch(function(){
-          fallbackCopy(text, done);
-        });
-      } else {
-        fallbackCopy(text, done);
-      }
+        navigator.clipboard.writeText(text).then(done).catch(function(){ fallbackCopy(text, done); });
+      } else { fallbackCopy(text, done); }
     }
     function fallbackCopy(text, cb) {
       var ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
       ta.style.left = '-9999px';
-      ta.style.top = '0';
       document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
+      ta.focus(); ta.select();
       try { document.execCommand('copy'); cb(); } catch(e) {}
       document.body.removeChild(ta);
     }
@@ -567,14 +627,12 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
 </html>`;
 }
 
-// Страница одного букета — для красивой развёртки в мессенджерах и для просмотра.
 function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
   const shopNameEsc = esc(shop.displayName);
   const bouquetNameEsc = esc(bouquet.name);
   const bouquetIdEsc = esc(shop.shopId);
   const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
   const bouquetUrl = `${SITE_URL}/shop/${esc(shop.shopId)}/b/${bouquet.id}`;
-
   const title = `${bouquetNameEsc} — ${shopNameEsc}`;
   const description = `${bouquet.price} ₽ · ${shopNameEsc}`;
 
@@ -584,7 +642,6 @@ function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
 <meta property="og:image:height" content="800">
 <meta name="twitter:image" content="${escAttr(photoUrl)}">` : '';
 
-  // Галерея: главное фото большое, остальные миниатюрами
   const mainPhotoHtml = photoUrl
     ? `<img src="${escAttr(photoUrl)}" style="width:100%;max-width:500px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,0.1);" alt="${escAttr(bouquetNameEsc)}">`
     : `<div style="width:100%;max-width:500px;aspect-ratio:1/1;background:#f0f0f0;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:60px;margin:0 auto;">📷</div>`;
@@ -596,7 +653,6 @@ function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
     }</div>`;
   }
 
-  // Кнопки связи
   let buttonsHTML = '';
   if (shop.telegramUsername) {
     buttonsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/tg" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:14px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:16px;">📩 Написать в Telegram</a>`;
@@ -639,7 +695,6 @@ function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
   .price{font-size:28px;font-weight:bold;margin:8px 0 20px;color:#2c3e50;}
   .card{background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,0.06);margin:20px 0;}
   .share{display:inline-block;margin-top:20px;color:#888;text-decoration:none;font-size:14px;padding:10px 16px;border-radius:20px;background:#f0f0f0;}
-  .share:active{background:#e0e0e0;}
 </style>
 </head>
 <body>
@@ -668,12 +723,8 @@ function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
       } else if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(function(){
           alert('Ссылка скопирована — вставьте её в мессенджер');
-        }).catch(function(){
-          prompt('Скопируйте ссылку:', url);
-        });
-      } else {
-        prompt('Скопируйте ссылку:', url);
-      }
+        }).catch(function(){ prompt('Скопируйте ссылку:', url); });
+      } else { prompt('Скопируйте ссылку:', url); }
     }
   </script>
 </body>
@@ -725,7 +776,6 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
   }
 });
 
-// Страница одного букета
 app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
   try {
     const shop = await getShopFromDb(req.params.shopId);
@@ -735,7 +785,6 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     const b = await getBouquetById(req.params.shopId, bouquetId);
     if (!b) return res.status(404).send('❌ Букет не найден');
 
-    // Основное фото и остальные
     const photoUrls = [];
     for (const fid of b.photos) {
       const u = await getPhotoUrl(fid);
@@ -1294,10 +1343,13 @@ bot.on('photo', async (msg) => {
   const photo = msg.photo[msg.photo.length - 1];
   const fileId = photo.file_id;
 
+  // Логотип / фон — грузим в S3
   if (awaitingUpload[chatId]) {
     const which = awaitingUpload[chatId];
     if (which === 'logo' || which === 'background') {
-      shop.settings[which] = fileId;
+      bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
+      const result = await savePhotoToStorage(fileId, shopId);
+      shop.settings[which] = result.ref;
       await saveShopSettings(shopId, shop.settings);
       delete awaitingUpload[chatId];
       return bot.sendMessage(chatId, `✅ ${which === 'logo' ? 'Логотип' : 'Фон'} установлен!`, { reply_markup: getMainKeyboard(shop, chatId) });
@@ -1318,6 +1370,9 @@ bot.on('photo', async (msg) => {
     if (price === 0 || !name) return bot.sendMessage(chatId, '❌ Укажите цену в конце. Пример: "Розы 4500"');
     const finalName = name.trim();
 
+    bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
+    const result = await savePhotoToStorage(fileId, shopId);
+
     const norm = normalizeName(finalName);
     const all = await getBouquetsFromDb(shopId, true);
     let archivedClicks = 0;
@@ -1325,7 +1380,7 @@ bot.on('photo', async (msg) => {
 
     const id = await addBouquetToDb(shopId, {
       name: finalName, price: Math.round(price), description: null,
-      photos: [fileId], isPinned: finalName.startsWith('.'),
+      photos: [result.ref], isPinned: finalName.startsWith('.'),
       chatId, clicks: archivedClicks
     });
     lastBouquetByUser[chatId] = id;
@@ -1340,8 +1395,12 @@ bot.on('photo', async (msg) => {
   if (!lastId) return bot.sendMessage(chatId, '❌ Отправьте фото с подписью.');
   const b = await getBouquetById(shopId, lastId);
   if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
+
+  bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
+  const result = await savePhotoToStorage(fileId, shopId);
+
   const photos = b.photos || [];
-  photos.push(fileId);
+  photos.push(result.ref);
   await updateBouquetField(lastId, 'photos', JSON.stringify(photos));
   return bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${photos.length}`, { reply_markup: getMainKeyboard(shop, chatId) });
 });
@@ -1577,12 +1636,8 @@ app.get('/shop/:shopId', async (req, res) => {
           } else if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(url).then(function(){
               alert('Ссылка скопирована — вставьте её в мессенджер');
-            }).catch(function(){
-              prompt('Скопируйте ссылку:', url);
-            });
-          } else {
-            prompt('Скопируйте ссылку:', url);
-          }
+            }).catch(function(){ prompt('Скопируйте ссылку:', url); });
+          } else { prompt('Скопируйте ссылку:', url); }
         }
       </script>
       </body></html>`);
