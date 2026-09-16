@@ -469,6 +469,104 @@ function buildShopDataMessage(shop) {
   };
 }
 
+// Универсальная промежуточная страница: текст заказа + кнопка «Скопировать» + «Открыть мессенджер».
+// messenger: 'max' или 'tg'
+function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
+  const isMax = messenger === 'max';
+  const messengerName = isMax ? 'MAX' : 'Telegram';
+  const messengerEmoji = isMax ? '🅼' : '📩';
+  const buttonColor = isMax ? '#7B68EE' : '#229ED9';
+  const buttonColorShadow = isMax ? '#6A5ACD' : '#1a7fb8';
+  const externalLink = isMax
+    ? esc(shop.maxLink)
+    : `https://t.me/${esc(shop.telegramUsername)}`;
+
+  const orderTextEsc = esc(orderText);
+  const orderTextJs = JSON.stringify(orderText);
+  const shopNameEsc = esc(shop.displayName);
+  const shopIdEsc = esc(shop.shopId);
+  const bouquetNameEsc = esc(bouquet.name);
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Перейти в ${messengerName} — ${shopNameEsc}</title>
+<style>
+  body{font-family:-apple-system,sans-serif;margin:0;padding:20px;background:#fafaf8;text-align:center;color:#2c3e50;}
+  .container{max-width:500px;margin:0 auto;padding:12px 0;}
+  h1{font-size:22px;margin:8px 0 4px;}
+  .sub{color:#666;font-size:14px;margin-bottom:16px;}
+  .card{background:#fff;border-radius:16px;padding:20px;margin:16px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08);}
+  .quote{background:#f5f5f5;border-radius:12px;padding:16px;text-align:left;font-size:16px;line-height:1.5;margin:16px 0;color:#333;white-space:pre-wrap;word-break:break-word;}
+  .btn{display:block;width:100%;padding:16px;border-radius:30px;font-size:17px;font-weight:bold;text-decoration:none;border:none;cursor:pointer;margin-top:12px;box-sizing:border-box;font-family:inherit;}
+  .btn-copy{background:#3498db;color:#fff;}
+  .btn-copy:active{background:#2980b9;}
+  .btn-copy.copied{background:#27ae60;}
+  .btn-open{background:${buttonColor};color:#fff;}
+  .btn-open:active{background:${buttonColorShadow};}
+  .steps{text-align:left;color:#555;font-size:14px;line-height:1.6;margin:12px 0;}
+  .steps b{color:#2c3e50;}
+  .back{display:inline-block;margin-top:20px;color:#888;text-decoration:none;font-size:14px;}
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>${messengerEmoji} Перейти в ${messengerName}</h1>
+    <div class="sub">Букет №${bouquet.id} — ${bouquetNameEsc} — ${bouquet.price} ₽</div>
+
+    <div class="card">
+      <div class="steps">
+        <b>1.</b> Скопируйте текст ниже<br>
+        <b>2.</b> Нажмите «Открыть ${messengerName}»<br>
+        <b>3.</b> Вставьте текст в чат и отправьте
+      </div>
+      <div class="quote" id="orderText">${orderTextEsc}</div>
+      <button class="btn btn-copy" id="copyBtn" onclick="copyOrder()">📋 Скопировать текст</button>
+      <a class="btn btn-open" href="${externalLink}" target="_blank" rel="noopener">${messengerEmoji} Открыть ${messengerName}</a>
+    </div>
+
+    <a class="back" href="/shop/${shopIdEsc}">← Вернуться на витрину</a>
+  </div>
+
+  <script>
+    function copyOrder() {
+      var text = ${orderTextJs};
+      var btn = document.getElementById('copyBtn');
+      function done() {
+        btn.textContent = '✅ Скопировано!';
+        btn.classList.add('copied');
+        setTimeout(function(){
+          btn.textContent = '📋 Скопировать текст';
+          btn.classList.remove('copied');
+        }, 2500);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function(){
+          fallbackCopy(text, done);
+        });
+      } else {
+        fallbackCopy(text, done);
+      }
+    }
+    function fallbackCopy(text, cb) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand('copy'); cb(); } catch(e) {}
+      document.body.removeChild(ta);
+    }
+  </script>
+</body>
+</html>`;
+}
+
 app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
   try {
     const { shopId, type } = req.params;
@@ -479,17 +577,27 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     const b = await getBouquetById(shopId, bouquetId);
     if (!b) return res.status(404).send('Букет не найден');
 
-    let redirectUrl = null;
+    const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
+
+    // MAX — промежуточная страница с копированием текста
+    if (type === 'max' && shop.maxLink) {
+      await incrementShopStat(shopId, 'orders');
+      await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
+      return res.send(buildMessengerOrderPage({ shop, bouquet: b, orderText, messenger: 'max' }));
+    }
+
+    // Telegram — тоже промежуточная страница (t.me/username не поддерживает ?text=)
     if (type === 'tg' && shop.telegramUsername) {
-      redirectUrl = `https://t.me/${shop.telegramUsername}`;
       await incrementShopStat(shopId, 'orders');
-    } else if (type === 'wa' && shop.whatsappPhone) {
+      await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
+      return res.send(buildMessengerOrderPage({ shop, bouquet: b, orderText, messenger: 'tg' }));
+    }
+
+    // WhatsApp и звонок — прямой редирект
+    let redirectUrl = null;
+    if (type === 'wa' && shop.whatsappPhone) {
       const waPhone = shop.whatsappPhone.replace(/\D/g, '');
-      const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
       redirectUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(orderText)}`;
-      await incrementShopStat(shopId, 'orders');
-    } else if (type === 'max' && shop.maxLink) {
-      redirectUrl = shop.maxLink;
       await incrementShopStat(shopId, 'orders');
     } else if (type === 'call' && shop.phone) {
       redirectUrl = `tel:${shop.phone.replace(/\D/g, '')}`;
@@ -965,7 +1073,6 @@ bot.on('message', async (msg) => {
 
     if (input.field === 'telegram_username' && value) value = value.replace(/^@/, '').toLowerCase();
     if (input.field === 'max_username' && value) {
-      // Валидация ссылки MAX
       if (!/^https?:\/\/max\.ru\//.test(value)) {
         return bot.sendMessage(chatId, '❌ Ссылка должна начинаться с <code>https://max.ru/u/...</code>\n\nПопробуйте ещё раз или нажмите /cancel.', { parse_mode: 'HTML' });
       }
@@ -1361,7 +1468,6 @@ initDb().then(async () => {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} создан`);
   } else {
     console.log(`✅ Preset-магазин ${PRESET_SHOP.shopId} найден`);
-    // Если maxLink ещё не установлен у существующего магазина — вшиваем
     if (!existing.maxLink) {
       await updateShopField(PRESET_SHOP.shopId, 'max_username', PRESET_SHOP.maxLink);
       console.log(`✅ MAX-ссылка для ${PRESET_SHOP.shopId} установлена`);
