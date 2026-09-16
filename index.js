@@ -28,6 +28,7 @@ app.post(WEBHOOK_PATH, (req, res) => {
 });
 
 const BOT_USERNAME = 'petalo_rus_bot';
+const SITE_URL = 'https://petalo.onrender.com';
 
 const PRESET_SHOP = {
   shopId: 'kupidon',
@@ -67,6 +68,7 @@ const MENU_BUTTONS = [
 ];
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 function normalizeName(name) { return String(name || '').toLowerCase().trim().replace(/\s+/g, ' '); }
 function calculateOldPrice(price, percent) {
   const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
@@ -469,8 +471,6 @@ function buildShopDataMessage(shop) {
   };
 }
 
-// Универсальная промежуточная страница: текст заказа + кнопка «Скопировать» + «Открыть мессенджер».
-// messenger: 'max' или 'tg'
 function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   const isMax = messenger === 'max';
   const messengerName = isMax ? 'MAX' : 'Telegram';
@@ -567,6 +567,119 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
 </html>`;
 }
 
+// Страница одного букета — для красивой развёртки в мессенджерах и для просмотра.
+function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
+  const shopNameEsc = esc(shop.displayName);
+  const bouquetNameEsc = esc(bouquet.name);
+  const bouquetIdEsc = esc(shop.shopId);
+  const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
+  const bouquetUrl = `${SITE_URL}/shop/${esc(shop.shopId)}/b/${bouquet.id}`;
+
+  const title = `${bouquetNameEsc} — ${shopNameEsc}`;
+  const description = `${bouquet.price} ₽ · ${shopNameEsc}`;
+
+  const ogTags = photoUrl ? `
+<meta property="og:image" content="${escAttr(photoUrl)}">
+<meta property="og:image:width" content="800">
+<meta property="og:image:height" content="800">
+<meta name="twitter:image" content="${escAttr(photoUrl)}">` : '';
+
+  // Галерея: главное фото большое, остальные миниатюрами
+  const mainPhotoHtml = photoUrl
+    ? `<img src="${escAttr(photoUrl)}" style="width:100%;max-width:500px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,0.1);" alt="${escAttr(bouquetNameEsc)}">`
+    : `<div style="width:100%;max-width:500px;aspect-ratio:1/1;background:#f0f0f0;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:60px;margin:0 auto;">📷</div>`;
+
+  let thumbsHtml = '';
+  if (otherPhotoUrls && otherPhotoUrls.length > 0) {
+    thumbsHtml = `<div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;">${
+      otherPhotoUrls.map(u => `<img src="${escAttr(u)}" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.1);">`).join('')
+    }</div>`;
+  }
+
+  // Кнопки связи
+  let buttonsHTML = '';
+  if (shop.telegramUsername) {
+    buttonsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/tg" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:14px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:16px;">📩 Написать в Telegram</a>`;
+  }
+  if (shop.whatsappPhone) {
+    buttonsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/wa" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:14px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:16px;">💬 Написать в WhatsApp</a>`;
+  }
+  if (shop.maxLink) {
+    buttonsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/max" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:14px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:16px;">🅼 Написать в MAX</a>`;
+  }
+  if (shop.phone) {
+    buttonsHTML += `<a href="/go/${esc(shop.shopId)}/${bouquet.id}/call" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:14px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:16px;">📞 Позвонить</a>`;
+  }
+
+  const priceHtml = oldPrice > bouquet.price
+    ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:20px;">${oldPrice} ₽</span>&nbsp; ${bouquet.price} ₽`
+    : `${bouquet.price} ₽`;
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title}</title>
+
+<meta property="og:type" content="product">
+<meta property="og:title" content="${escAttr(title)}">
+<meta property="og:description" content="${escAttr(description)}">
+<meta property="og:url" content="${escAttr(bouquetUrl)}">
+<meta property="og:site_name" content="Petalo">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escAttr(title)}">
+<meta name="twitter:description" content="${escAttr(description)}">${ogTags}
+
+<style>
+  body{font-family:-apple-system,sans-serif;margin:0;padding:20px;background:#fafaf8;text-align:center;color:#2c3e50;}
+  .container{max-width:560px;margin:0 auto;padding:12px 0;}
+  .back{display:inline-block;margin-bottom:16px;color:#888;text-decoration:none;font-size:14px;}
+  h1{font-size:24px;margin:16px 0 8px;line-height:1.3;}
+  .price{font-size:28px;font-weight:bold;margin:8px 0 20px;color:#2c3e50;}
+  .card{background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,0.06);margin:20px 0;}
+  .share{display:inline-block;margin-top:20px;color:#888;text-decoration:none;font-size:14px;padding:10px 16px;border-radius:20px;background:#f0f0f0;}
+  .share:active{background:#e0e0e0;}
+</style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="/shop/${bouquetIdEsc}">← К витрине</a>
+    <div>${mainPhotoHtml}</div>
+    ${thumbsHtml}
+    <h1>${bouquetNameEsc}</h1>
+    <div class="price">${priceHtml}</div>
+
+    <div class="card">
+      ${buttonsHTML || '<div style="color:#888;padding:10px;">Контакты временно недоступны</div>'}
+    </div>
+
+    <a class="share" href="#" onclick="shareBouquet(); return false;">📤 Поделиться с близкими</a>
+  </div>
+
+  <script>
+    function shareBouquet() {
+      var url = ${JSON.stringify(bouquetUrl)};
+      var name = ${JSON.stringify(bouquet.name)};
+      var price = ${bouquet.price};
+      var text = name + ' — ' + price + ' ₽';
+      if (navigator.share) {
+        navigator.share({ title: name, text: text, url: url }).catch(function(){});
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function(){
+          alert('Ссылка скопирована — вставьте её в мессенджер');
+        }).catch(function(){
+          prompt('Скопируйте ссылку:', url);
+        });
+      } else {
+        prompt('Скопируйте ссылку:', url);
+      }
+    }
+  </script>
+</body>
+</html>`;
+}
+
 app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
   try {
     const { shopId, type } = req.params;
@@ -579,21 +692,18 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
 
     const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
 
-    // MAX — промежуточная страница с копированием текста
     if (type === 'max' && shop.maxLink) {
       await incrementShopStat(shopId, 'orders');
       await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
       return res.send(buildMessengerOrderPage({ shop, bouquet: b, orderText, messenger: 'max' }));
     }
 
-    // Telegram — тоже промежуточная страница (t.me/username не поддерживает ?text=)
     if (type === 'tg' && shop.telegramUsername) {
       await incrementShopStat(shopId, 'orders');
       await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
       return res.send(buildMessengerOrderPage({ shop, bouquet: b, orderText, messenger: 'tg' }));
     }
 
-    // WhatsApp и звонок — прямой редирект
     let redirectUrl = null;
     if (type === 'wa' && shop.whatsappPhone) {
       const waPhone = shop.whatsappPhone.replace(/\D/g, '');
@@ -611,6 +721,32 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="0; url=${redirectUrl}"><title>Переход…</title></head><body style="font-family:-apple-system,sans-serif;text-align:center;padding:50px;color:#555;"><p>Переходим к продавцу…</p><p><a href="${redirectUrl}">Нажмите здесь, если не переходит автоматически</a></p></body></html>`);
   } catch (e) {
     console.error('Ошибка /go:', e?.message || e);
+    res.status(500).send('Ошибка');
+  }
+});
+
+// Страница одного букета
+app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
+  try {
+    const shop = await getShopFromDb(req.params.shopId);
+    if (!shop) return res.status(404).send('❌ Магазин не найден');
+    const bouquetId = parseInt(req.params.bouquetId);
+    if (!bouquetId || isNaN(bouquetId)) return res.status(404).send('❌ Букет не найден');
+    const b = await getBouquetById(req.params.shopId, bouquetId);
+    if (!b) return res.status(404).send('❌ Букет не найден');
+
+    // Основное фото и остальные
+    const photoUrls = [];
+    for (const fid of b.photos) {
+      const u = await getPhotoUrl(fid);
+      if (u) photoUrls.push(u);
+    }
+    const mainPhoto = photoUrls[0] || null;
+    const otherPhotos = photoUrls.slice(1);
+
+    res.send(buildBouquetPage({ shop, bouquet: b, photoUrl: mainPhoto, otherPhotoUrls: otherPhotos }));
+  } catch (e) {
+    console.error('Ошибка страницы букета:', e?.message || e);
     res.status(500).send('Ошибка');
   }
 });bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
@@ -682,7 +818,7 @@ bot.on('callback_query', async (q) => {
   const owner = isOwner(shop, chatId);
 
   if (data === 'noop') return;
-  if (data === 'menu_link') return bot.sendMessage(chatId, `🔗 Ваша витрина:\nhttps://petalo.onrender.com/shop/${shopId}`);
+  if (data === 'menu_link') return bot.sendMessage(chatId, `🔗 Ваша витрина:\n${SITE_URL}/shop/${shopId}`);
   if (data === 'menu_close') { delete checkSessions[chatId]; return bot.deleteMessage(chatId, q.message.message_id).catch(() => {}); }
   if (data === 'menu_back') {
     if (!owner) return;
@@ -1308,7 +1444,7 @@ bot.on('message', async (msg) => {
     userToShop[chatId] = state.data.shopId;
     delete registrationState[chatId];
     const shop = await getShopFromDb(state.data.shopId);
-    return bot.sendMessage(chatId, `🎉 Магазин создан!\n🔗 https://petalo.onrender.com/shop/${state.data.shopId}`, { reply_markup: getMainKeyboard(shop, chatId) });
+    return bot.sendMessage(chatId, `🎉 Магазин создан!\n🔗 ${SITE_URL}/shop/${state.data.shopId}`, { reply_markup: getMainKeyboard(shop, chatId) });
   }
 });
 
@@ -1389,6 +1525,7 @@ app.get('/shop/:shopId', async (req, res) => {
         }
 
         const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
+        const bouquetUrl = `${SITE_URL}/shop/${shop.shopId}/b/${b.id}`;
 
         let buttonsHTML = '';
         if (shop.telegramUsername) {
@@ -1404,6 +1541,10 @@ app.get('/shop/:shopId', async (req, res) => {
           buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/call" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>`;
         }
 
+        const bouquetUrlJs = JSON.stringify(bouquetUrl);
+        const bouquetNameJs = JSON.stringify(b.name);
+        const bouquetPriceJs = b.price;
+
         cards += `<div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
           <div style="position:absolute;top:24px;right:24px;background:rgba(44,62,80,0.85);color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;z-index:10;">№${b.id}</div>
           ${gallery}
@@ -1412,6 +1553,9 @@ app.get('/shop/:shopId', async (req, res) => {
             ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
           </p>
           ${buttonsHTML || '<div style="color:#888;padding:10px;">Контакты для связи временно недоступны</div>'}
+          <div style="margin-top:10px;">
+            <a href="#" onclick='shareBouquet(event, ${bouquetUrlJs}, ${bouquetNameJs}, ${bouquetPriceJs}); return false;' style="display:inline-block;color:#888;font-size:13px;text-decoration:none;padding:6px 12px;border-radius:16px;background:#f5f5f5;">📤 Поделиться</a>
+          </div>
         </div>`;
       }
     }
@@ -1423,7 +1567,25 @@ app.get('/shop/:shopId', async (req, res) => {
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
       <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
-      <body><div class="container">${headerHTML}<h1>${esc(shop.displayName)}</h1><div style="color:#555;font-size:14px;margin-bottom:10px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>${filtersHTML}${cards}</div></body></html>`);
+      <body><div class="container">${headerHTML}<h1>${esc(shop.displayName)}</h1><div style="color:#555;font-size:14px;margin-bottom:10px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>${filtersHTML}${cards}</div>
+      <script>
+        function shareBouquet(e, url, name, price) {
+          if (e) { e.preventDefault(); }
+          var text = name + ' — ' + price + ' ₽';
+          if (navigator.share) {
+            navigator.share({ title: name, text: text, url: url }).catch(function(){});
+          } else if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(function(){
+              alert('Ссылка скопирована — вставьте её в мессенджер');
+            }).catch(function(){
+              prompt('Скопируйте ссылку:', url);
+            });
+          } else {
+            prompt('Скопируйте ссылку:', url);
+          }
+        }
+      </script>
+      </body></html>`);
   } catch (e) { console.error('Ошибка витрины'); res.status(500).send('Ошибка'); }
 });
 
@@ -1474,7 +1636,7 @@ initDb().then(async () => {
     }
   }
 
-  const WEBHOOK_URL = `https://petalo.onrender.com${WEBHOOK_PATH}`;
+  const WEBHOOK_URL = `${SITE_URL}${WEBHOOK_PATH}`;
   console.log('🔗 Устанавливаем webhook...');
   try {
     await bot.deleteWebHook();
