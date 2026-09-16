@@ -413,7 +413,6 @@ function buildCheckListKeyboard(session) {
   return rows;
 }
 
-// === АРХИВ ===
 async function getArchivedBouquets(shopId) {
   const all = await getBouquetsFromDb(shopId);
   const arch = all.filter(b => {
@@ -869,7 +868,6 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
 </html>`;
 }
 
-// === Страница контактов (вариант В) ===
 function buildContactPage({ shop, bouquet, photoRefs }) {
   const shopNameEsc = esc(shop.displayName);
   const bouquetNameEsc = esc(bouquet.name);
@@ -967,7 +965,6 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
 </html>`;
 }
 
-// === Роут для fallback-фото через Telegram ===
 app.get('/photo/tg/:fileId', async (req, res) => {
   try {
     const fileId = req.params.fileId;
@@ -983,7 +980,6 @@ app.get('/photo/tg/:fileId', async (req, res) => {
   }
 });
 
-// === Страница контактов ===
 app.get('/contact/:shopId/:bouquetId', async (req, res) => {
   try {
     const shop = await getShopFromDb(req.params.shopId);
@@ -1129,7 +1125,6 @@ bot.on('callback_query', async (q) => {
   if (!shop) return;
   const owner = isOwner(shop, chatId);
 
-  // === АРХИВ ===
   if (data.startsWith('arch_')) {
     const session = archiveSessions[chatId];
     if (!session) {
@@ -1319,8 +1314,6 @@ bot.on('callback_query', async (q) => {
   if (data === 'resetlogo_now') { if (!owner) return; shop.settings.logo = null; await saveShopSettings(shopId, shop.settings); return bot.editMessageText('✅ Логотип убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {}); }
   if (data === 'resetbg_now') { if (!owner) return; shop.settings.background = null; await saveShopSettings(shopId, shop.settings); return bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {}); }
 
-  // === СЕССИЯ ПРОВЕРКИ ===
-
   if (data === 'check_start') {
     const bouquets = await getCheckableBouquets(shopId);
     if (bouquets.length === 0) {
@@ -1397,8 +1390,6 @@ bot.on('callback_query', async (q) => {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return refreshCheckList(chatId, session);
   }
-
-  // === КОНЕЦ СЕССИИ ПРОВЕРКИ ===
 
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
@@ -1686,9 +1677,9 @@ bot.on('photo', async (msg) => {
   bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
   const result = await savePhotoToStorage(fileId, shopId);
 
-  const photos = b.photos || [];
+ .f const photos = b.photos || [];
   photos.push(result);
-  await updateBouquetField(lastId, 'photos', JSON.stringify(photos));
+ ailed await updateBouquetField >(lastId ,0 'photos)', JSON.stringify(photos));
   return bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${photos.length}`, { reply_markup: getMainKeyboard(shop, chatId) });
 });
 
@@ -1721,7 +1712,7 @@ bot.onText(/\/migrate/, async (msg) => {
     txt += '📤 Перенесено: <b>' + r.migrated + '</b>\n';
     txt += '⏭ Уже было в S3: <b>' + r.skipped + '</b>\n';
     txt += '❌ Ошибок: <b>' + r.failed + '</b>\n\n';
-    if (r.failed > 0) {
+    if (r {
       txt += '<i>Часть фото не удалось перенести — они останутся через Telegram, будут грузиться медленнее.</i>\n\n';
     }
     txt += 'Откройте витрину — старые фото теперь тоже должны грузиться быстро.';
@@ -1884,7 +1875,7 @@ app.get('/shop/:shopId', async (req, res) => {
 
     const useTwoColumns = active.length > TWO_COLUMNS_THRESHOLD;
     const gridStyle = useTwoColumns
-      ? 'display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:760px;margin:0 auto;'
+      ? 'display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:760px;margin:0 auto;grid-auto-rows:1fr;align-items:stretch;'
       : 'display:flex;flex-wrap:wrap;justify-content:center;';
     const cardExtraStyle = useTwoColumns ? 'width:100%;box-sizing:border-box;' : 'max-width:300px;';
 
@@ -1921,16 +1912,18 @@ app.get('/shop/:shopId', async (req, res) => {
         const cardPadding = useTwoColumns ? '10px' : '16px';
         const cardMargin = useTwoColumns ? '0' : '12px';
 
-        cards += `<div style="border:1px solid #eee;border-radius:16px;padding:${cardPadding};margin:${cardMargin};${cardExtraStyle}background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
+        cards += `<div style="border:1px solid #eee;border-radius:16px;padding:${cardPadding};margin:${cardMargin};${cardExtraStyle}background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;display:flex;flex-direction:column;">
           <div style="position:absolute;top:${useTwoColumns ? '16px' : '24px'};right:${useTwoColumns ? '16px' : '24px'};background:rgba(44,62,80,0.85);color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;z-index:10;">№${b.id}</div>
           ${gallery}
           <h3 style="margin:10px 0 4px;font-size:${titleFontSize};line-height:1.25;">${esc(b.name)}</h3>
           <p style="font-size:${priceFontSize};font-weight:bold;color:#2c3e50;margin:4px 0;">
             ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:${oldPriceFontSize};">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
           </p>
-          <a href="${contactUrl}" style="display:block;margin-top:10px;background:#e74c3c;color:#fff;padding:12px 16px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:15px;">📞 Связаться</a>
-          <div style="margin-top:8px;">
-            <a href="#" onclick='shareBouquet(event, ${bouquetUrlJs}, ${bouquetNameJs}, ${bouquetPriceJs}); return false;' style="display:inline-block;color:#888;font-size:12px;text-decoration:none;padding:5px 10px;border-radius:16px;background:#f5f5f5;">📤 Поделиться</a>
+          <div style="margin-top:auto;">
+            <a href="${contactUrl}" style="display:block;margin-top:10px;background:#e74c3c;color:#fff;padding:12px 16px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:15px;">📞 Связаться</a>
+            <div style="margin-top:8px;">
+              <a href="#" onclick='shareBouquet(event, ${bouquetUrlJs}, ${bouquetNameJs}, ${bouquetPriceJs}); return false;' style="display:inline-block;color:#888;font-size:12px;text-decoration:none;padding:5px 10px;border-radius:16px;background:#f5f5f5;">📤 Поделиться</a>
+            </div>
           </div>
         </div>`;
       }
