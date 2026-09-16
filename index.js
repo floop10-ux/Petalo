@@ -181,10 +181,11 @@ async function uploadToS3(buffer, key) {
   return `https://${YC_BUCKET}.storage.yandexcloud.net/${key}`;
 }
 
-// Универсальная функция сохранения фото: сначала S3, при неудаче — Telegram file_id
+// Сохраняет фото: возвращает {s3, tg} или {tg}
+// s3 — ссылка на Yandex, tg — исходный file_id для fallback (VPN)
 async function savePhotoToStorage(telegramFileId, shopId) {
   if (!S3_ENABLED) {
-    return { ref: telegramFileId, usedS3: false };
+    return { tg: telegramFileId };
   }
   try {
     const buffer = await downloadTelegramFile(telegramFileId);
@@ -192,14 +193,64 @@ async function savePhotoToStorage(telegramFileId, shopId) {
     const key = `${shopId}/${Date.now()}_${rand}.jpg`;
     const url = await uploadToS3(buffer, key);
     console.log('📤 Фото в S3:', key);
-    return { ref: url, usedS3: true };
+    return { s3: url, tg: telegramFileId };
   } catch (e) {
     console.error('⚠️ Ошибка загрузки в S3:', e?.message || e);
-    return { ref: telegramFileId, usedS3: false };
+    return { tg: telegramFileId };
   }
 }
 
-// Миграция старых фото из Telegram в Yandex S3
+// Универсальная функция: возвращает primary и fallback URL для одного photo
+// Работает со строками (старый формат) и объектами {s3, tg}
+function getPhotoRefs(photo) {
+  if (!photo) return { primary: null, fallback: null };
+  if (typeof photo === 'string') {
+    if (photo.startsWith('http://') || photo.startsWith('https://')) {
+      return { primary: photo, fallback: null };
+    }
+    if (isValidFileId(photo)) {
+      return { primary: `/photo/tg/${photo}`, fallback: null };
+    }
+    return { primary: null, fallback: null };
+  }
+  if (typeof photo === 'object') {
+    if (photo.s3 && photo.tg) {
+      return { primary: photo.s3, fallback: `/photo/tg/${photo.tg}` };
+    }
+    if (photo.s3) return { primary: photo.s3, fallback: null };
+    if (photo.tg) return { primary: `/photo/tg/${photo.tg}`, fallback: null };
+  }
+  return { primary: null, fallback: null };
+}
+
+// Возвращает ссылку для Telegram sendPhoto (fileId или URL)
+function getTelegramPhotoRef(photo) {
+  if (!photo) return null;
+  if (typeof photo === 'string') {
+    if (isValidFileId(photo)) return photo;
+    if (photo.startsWith('http')) return photo;
+    return null;
+  }
+  if (typeof photo === 'object') {
+    if (photo.tg) return photo.tg;
+    if (photo.s3) return photo.s3;
+  }
+  return null;
+}
+
+// Общая функция для рендера одного <img> с onerror fallback
+function renderImgTag(refs, style) {
+  if (!refs.primary) return null;
+  const p = escAttr(refs.primary);
+  const st = style || '';
+  if (refs.fallback) {
+    const f = escAttr(refs.fallback);
+    return `<img src="${p}"${st ? ` style="${st}"` : ''} onerror="this.onerror=null;this.src='${f}'">`;
+  }
+  return `<img src="${p}"${st ? ` style="${st}"` : ''}>`;
+}
+
+// Миграция старых фото из Telegram в Yandex S3 (с сохранением tg)
 async function migratePhotosToS3(shopId) {
   const result = { migrated: 0, skipped: 0, failed: 0 };
   if (!S3_ENABLED) return result;
@@ -225,7 +276,7 @@ async function migratePhotosToS3(shopId) {
         const rand = Math.random().toString(36).slice(2, 8);
         const key = `${shopId}/${Date.now()}_${b.id}_${rand}.jpg`;
         const url = await uploadToS3(buf, key);
-        newPhotos.push(url);
+        newPhotos.push({ s3: url, tg: ref });
         result.migrated++;
         changed = true;
       } catch (e) {
@@ -246,6 +297,10 @@ async function migratePhotosToS3(shopId) {
     for (const field of ['logo', 'background']) {
       const ref = settings[field];
       if (!ref) continue;
+      if (typeof ref === 'object') {
+        result.skipped++;
+        continue;
+      }
       if (typeof ref === 'string' && (ref.startsWith('http://') || ref.startsWith('https://'))) {
         result.skipped++;
         continue;
@@ -256,7 +311,7 @@ async function migratePhotosToS3(shopId) {
         const rand = Math.random().toString(36).slice(2, 8);
         const key = `${shopId}/_${field}_${Date.now()}_${rand}.jpg`;
         const url = await uploadToS3(buf, key);
-        settings[field] = url;
+        settings[field] = { s3: url, tg: ref };
         settingsChanged = true;
         result.migrated++;
       } catch (e) {
@@ -272,9 +327,15 @@ async function migratePhotosToS3(shopId) {
   return result;
 }
 
-// Возвращает URL фото. Понимает и S3-ссылки, и старые Telegram file_id.
+// Получает актуальный URL для логотипа/фона (может быть строкой или объектом)
 async function getPhotoUrl(fileRef) {
-  if (!fileRef || typeof fileRef !== 'string') return null;
+  if (!fileRef) return null;
+  if (typeof fileRef === 'object') {
+    if (fileRef.s3) return fileRef.s3;
+    if (fileRef.tg) fileRef = fileRef.tg;
+    else return null;
+  }
+  if (typeof fileRef !== 'string') return null;
   if (fileRef.startsWith('https://') || fileRef.startsWith('http://')) return fileRef;
   if (!isValidFileId(fileRef)) return null;
   const cached = photoUrlCache[fileRef];
@@ -406,15 +467,10 @@ async function showArchiveCard(chatId, session) {
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
 
   const firstPhoto = (b.photos && b.photos.length > 0) ? b.photos[0] : null;
-  if (firstPhoto && isValidFileId(firstPhoto)) {
+  const tgRef = getTelegramPhotoRef(firstPhoto);
+  if (tgRef) {
     try {
-      await bot.sendPhoto(chatId, firstPhoto, { caption: txt, ...opts });
-      return;
-    } catch (e) { /* фолбэк */ }
-  }
-  if (firstPhoto && typeof firstPhoto === 'string' && firstPhoto.startsWith('http')) {
-    try {
-      await bot.sendPhoto(chatId, firstPhoto, { caption: txt, ...opts });
+      await bot.sendPhoto(chatId, tgRef, { caption: txt, ...opts });
       return;
     } catch (e) { /* фолбэк */ }
   }
@@ -442,15 +498,10 @@ async function sendBouquetPreview(chatId, b, headerText, buttons) {
   const caption = `${headerText}\n\n<b>№${b.id}</b> ${esc(b.name)}\n💰 ${b.price} ₽`;
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
   const firstPhoto = (b.photos && b.photos.length > 0) ? b.photos[0] : null;
-  if (firstPhoto && isValidFileId(firstPhoto)) {
+  const tgRef = getTelegramPhotoRef(firstPhoto);
+  if (tgRef) {
     try {
-      await bot.sendPhoto(chatId, firstPhoto, { caption: caption, parse_mode: 'HTML', reply_markup: opts.reply_markup });
-      return;
-    } catch (e) { /* фолбэк */ }
-  }
-  if (firstPhoto && typeof firstPhoto === 'string' && firstPhoto.startsWith('http')) {
-    try {
-      await bot.sendPhoto(chatId, firstPhoto, { caption: caption, parse_mode: 'HTML', reply_markup: opts.reply_markup });
+      await bot.sendPhoto(chatId, tgRef, { caption: caption, parse_mode: 'HTML', reply_markup: opts.reply_markup });
       return;
     } catch (e) { /* фолбэк */ }
   }
@@ -745,7 +796,7 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
 </html>`;
 }
 
-function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
+function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const shopNameEsc = esc(shop.displayName);
   const bouquetNameEsc = esc(bouquet.name);
   const bouquetIdEsc = esc(shop.shopId);
@@ -753,18 +804,19 @@ function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
   const bouquetUrl = `${SITE_URL}/shop/${esc(shop.shopId)}/b/${bouquet.id}`;
   const title = `${bouquetNameEsc} — ${shopNameEsc}`;
   const description = `${bouquet.price} ₽ · ${shopNameEsc}`;
-  const ogTags = photoUrl ? `
-<meta property="og:image" content="${escAttr(photoUrl)}">
+  const primaryPhotoUrl = (photoRefs && photoRefs.primary) ? photoRefs.primary : null;
+  const ogTags = primaryPhotoUrl ? `
+<meta property="og:image" content="${escAttr(primaryPhotoUrl)}">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="800">
-<meta name="twitter:image" content="${escAttr(photoUrl)}">` : '';
-  const mainPhotoHtml = photoUrl
-    ? `<img src="${escAttr(photoUrl)}" style="width:100%;max-width:500px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,0.1);" alt="${escAttr(bouquetNameEsc)}">`
+<meta name="twitter:image" content="${escAttr(primaryPhotoUrl)}">` : '';
+  const mainPhotoHtml = (photoRefs && photoRefs.primary)
+    ? renderImgTag(photoRefs, 'width:100%;max-width:500px;border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,0.1);')
     : `<div style="width:100%;max-width:500px;aspect-ratio:1/1;background:#f0f0f0;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:60px;margin:0 auto;">📷</div>`;
   let thumbsHtml = '';
-  if (otherPhotoUrls && otherPhotoUrls.length > 0) {
+  if (otherPhotoRefs && otherPhotoRefs.length > 0) {
     thumbsHtml = `<div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;">${
-      otherPhotoUrls.map(u => `<img src="${escAttr(u)}" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.1);">`).join('')
+      otherPhotoRefs.map(r => renderImgTag(r, 'width:70px;height:70px;object-fit:cover;border-radius:10px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.1);')).join('')
     }</div>`;
   }
   let buttonsHTML = '';
@@ -827,15 +879,33 @@ function buildBouquetPage({ shop, bouquet, photoUrl, otherPhotoUrls }) {
 </html>`;
 }
 
+// === Роут для fallback-фото через Telegram ===
+// Принимает file_id, получает актуальную ссылку у Telegram, редиректит.
+app.get('/photo/tg/:fileId', async (req, res) => {
+  try {
+    const fileId = req.params.fileId;
+    if (!isValidFileId(fileId)) return res.status(400).send('bad');
+    const fileInfo = await bot.getFile(fileId);
+    if (!fileInfo || !fileInfo.file_path) return res.status(404).send('not found');
+    const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
+    // Кешируем ответ у клиента на 40 минут — ссылка живёт ~60 мин
+    res.setHeader('Cache-Control', 'public, max-age=2400');
+    return res.redirect(302, url);
+  } catch (e) {
+    console.error('Ошибка /photo/tg:', e?.message || e);
+    return res.status(404).send('not found');
+  }
+});
+
 app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
   try {
     const { shopId, type } = req.params;
     const bouquetId = parseInt(req.params.bouquetId);
     if (!bouquetId || isNaN(bouquetId)) return res.status(404).send('Не найдено');
     const shop = await getShopFromDb(shopId);
-    if (!shop) return res.status(404).send('Не найдено');
-    const b = await getBouquetById(shopId, bouquetId);
-    if (!b) return res.status(404).send('Букет не найден');
+    if (!shop) return res.status(404).send('Не найденоCE');
+    const b = await(cl geticksBouquetById(shopId, bouquetId);
+,    if (!b) return res.status(404).send('Букет не найден');
     const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
     if (type === 'max' && shop.maxLink) {
       await incrementShopStat(shopId, 'orders');
@@ -844,7 +914,7 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     }
     if (type === 'tg' && shop.telegramUsername) {
       await incrementShopStat(shopId, 'orders');
-      await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
+      await pool.query('UPDATE bouquets SET clicks = COALES 0) + 1 WHERE id = $1', [b.id]);
       return res.send(buildMessengerOrderPage({ shop, bouquet: b, orderText, messenger: 'tg' }));
     }
     let redirectUrl = null;
@@ -873,14 +943,14 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     if (!bouquetId || isNaN(bouquetId)) return res.status(404).send('❌ Букет не найден');
     const b = await getBouquetById(req.params.shopId, bouquetId);
     if (!b) return res.status(404).send('❌ Букет не найден');
-    const photoUrls = [];
-    for (const fid of b.photos) {
-      const u = await getPhotoUrl(fid);
-      if (u) photoUrls.push(u);
+    const photoRefsList = [];
+    for (const p of b.photos) {
+      const r = getPhotoRefs(p);
+      if (r.primary) photoRefsList.push(r);
     }
-    const mainPhoto = photoUrls[0] || null;
-    const otherPhotos = photoUrls.slice(1);
-    res.send(buildBouquetPage({ shop, bouquet: b, photoUrl: mainPhoto, otherPhotoUrls: otherPhotos }));
+    const mainRef = photoRefsList[0] || null;
+    const otherRefs = photoRefsList.slice(1);
+    res.send(buildBouquetPage({ shop, bouquet: b, photoRefs: mainRef, otherPhotoRefs: otherRefs }));
   } catch (e) {
     console.error('Ошибка страницы букета:', e?.message || e);
     res.status(500).send('Ошибка');
@@ -1462,7 +1532,7 @@ bot.on('photo', async (msg) => {
     if (which === 'logo' || which === 'background') {
       bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
       const result = await savePhotoToStorage(fileId, shopId);
-      shop.settings[which] = result.ref;
+      shop.settings[which] = result;
       await saveShopSettings(shopId, shop.settings);
       delete awaitingUpload[chatId];
       return bot.sendMessage(chatId, `✅ ${which === 'logo' ? 'Логотип' : 'Фон'} установлен!`, { reply_markup: getMainKeyboard(shop, chatId) });
@@ -1493,7 +1563,7 @@ bot.on('photo', async (msg) => {
 
     const id = await addBouquetToDb(shopId, {
       name: finalName, price: Math.round(price), description: null,
-      photos: [result.ref], isPinned: finalName.startsWith('.'),
+      photos: [result], isPinned: finalName.startsWith('.'),
       chatId, clicks: archivedClicks
     });
     lastBouquetByUser[chatId] = id;
@@ -1513,7 +1583,7 @@ bot.on('photo', async (msg) => {
   const result = await savePhotoToStorage(fileId, shopId);
 
   const photos = b.photos || [];
-  photos.push(result.ref);
+  photos.push(result);
   await updateBouquetField(lastId, 'photos', JSON.stringify(photos));
   return bot.sendMessage(chatId, `📸 Фото добавлено. Всего: ${photos.length}`, { reply_markup: getMainKeyboard(shop, chatId) });
 });
@@ -1708,27 +1778,28 @@ app.get('/shop/:shopId', async (req, res) => {
         ${sortPill('↓ Сначала дешевле', 'asc')}${sortPill('↑ Сначала дороже', 'desc')}
       </div>`;
 
-    // === Логика 2 колонок: если букетов > 12 — сетка 2 колонки на мобильном ===
     const useTwoColumns = active.length > TWO_COLUMNS_THRESHOLD;
     const gridStyle = useTwoColumns
       ? 'display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:760px;margin:0 auto;'
       : 'display:flex;flex-wrap:wrap;justify-content:center;';
-    const cardExtraStyle = useTwoColumns
-      ? 'width:100%;box-sizing:border-box;'
-      : 'max-width:300px;';
+    const cardExtraStyle = useTwoColumns ? 'width:100%;box-sizing:border-box;' : 'max-width:300px;';
 
     let cards = '';
     if (active.length === 0) {
       cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;grid-column:1/-1;">🌿 По этому фильтру букетов нет.</div>';
     } else {
       for (const b of active) {
-        const photoUrls = [];
-        for (const fid of b.photos) { const u = await getPhotoUrl(fid); if (u) photoUrls.push(u); }
+        const photoRefsList = [];
+        for (const p of b.photos) {
+          const r = getPhotoRefs(p);
+          if (r.primary) photoRefsList.push(r);
+        }
         let gallery = '';
-        if (photoUrls.length === 0) gallery = `<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:40px;">📷</div>`;
-        else if (photoUrls.length === 1) gallery = `<img src="${photoUrls[0]}" style="width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;">`;
-        else {
-          const slides = photoUrls.map(p => `<img src="${p}" style="height:220px;width:auto;border-radius:12px;flex-shrink:0;">`).join('');
+        if (photoRefsList.length === 0) gallery = `<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:40px;">📷</div>`;
+        else if (photoRefsList.length === 1) {
+          gallery = renderImgTag(photoRefsList[0], 'width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;');
+        } else {
+          const slides = photoRefsList.map(r => renderImgTag(r, 'height:220px;width:auto;border-radius:12px;flex-shrink:0;')).join('');
           gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;">${slides}</div>`;
         }
 
@@ -1775,9 +1846,10 @@ app.get('/shop/:shopId', async (req, res) => {
     }
 
     const logoUrl = shop.settings.logo ? await getPhotoUrl(shop.settings.logo) : null;
-    const bgUrl = shop.settings.background ? await getPhotoUrl(shop.settings.background) : null;
+    const bgRefs = shop.settings.background ? getPhotoRefs(shop.settings.background) : null;
+    const bgUrl = bgRefs ? bgRefs.primary : null;
     const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-attachment:fixed;` : `background:#fafaf8;`;
-    const headerHTML = logoUrl ? `<img src="${logoUrl}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
+    const headerHTML = logoUrl ? `<img src="${escAttr(logoUrl)}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
       <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
