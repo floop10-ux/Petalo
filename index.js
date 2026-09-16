@@ -65,6 +65,7 @@ const MENU_BUTTONS = [
 ];
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 function normalizeName(name) { return String(name || '').toLowerCase().trim().replace(/\s+/g, ' '); }
 function calculateOldPrice(price, percent) {
   const pct = (typeof percent === 'number' && percent >= 0) ? percent : 20;
@@ -1059,52 +1060,102 @@ app.get('/shop/:shopId', async (req, res) => {
     if (!shop) return res.status(404).send('❌ Магазин не найден');
     if (!isSubscriptionActive(shop)) return res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:50px;"><h1>🌸 ${esc(shop.displayName)}</h1><p>Витрина приостановлена.</p></body></html>`);
 
-    const all = await getBouquetsFromDb(shop.shopId);
-    const active = all.filter(isConfirmedRecently);
-    active.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return new Date(b.confirmedAt || b.createdAt) - new Date(a.confirmedAt || a.createdAt);
-    });
+    const priceFilter = req.query.price || 'all';
+    const sortParam = req.query.sort || 'default';
+
+    let all = await getBouquetsFromDb(shop.shopId);
+    let active = all.filter(isConfirmedRecently);
+
+    if (priceFilter === 'low') active = active.filter(b => b.price < 3000);
+    else if (priceFilter === 'mid') active = active.filter(b => b.price >= 3000 && b.price <= 6000);
+    else if (priceFilter === 'high') active = active.filter(b => b.price > 6000);
+
+    if (sortParam === 'asc') {
+      active.sort((a, b) => a.price - b.price);
+    } else if (sortParam === 'desc') {
+      active.sort((a, b) => b.price - a.price);
+    } else {
+      active.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return new Date(b.confirmedAt || b.createdAt) - new Date(a.confirmedAt || a.createdAt);
+      });
+    }
+
+    const buildUrl = (newPrice, newSort) => {
+      const p = newPrice || priceFilter;
+      const s = newSort || sortParam;
+      const parts = [];
+      if (p !== 'all') parts.push('price=' + p);
+      if (s !== 'default') parts.push('sort=' + s);
+      return '/shop/' + shop.shopId + (parts.length ? '?' + parts.join('&') : '');
+    };
+
+    const pillBase = 'display:inline-block;padding:8px 16px;margin:4px;border-radius:20px;text-decoration:none;font-size:14px;font-weight:bold;';
+    const pillActive = 'background:#e74c3c;color:#fff;';
+    const pillIdle = 'background:#f0f0f0;color:#555;';
+    const pill = (label, filterValue) => {
+      const isActive = priceFilter === filterValue;
+      return `<a href="${buildUrl(filterValue, null)}" style="${pillBase}${isActive ? pillActive : pillIdle}">${label}</a>`;
+    };
+
+    const sortPillBase = 'display:inline-block;padding:6px 12px;margin:4px;border-radius:16px;text-decoration:none;font-size:13px;';
+    const sortPillActive = 'background:#3498db;color:#fff;';
+    const sortPillIdle = 'background:#f5f5f5;color:#666;';
+    const sortPill = (label, sortValue) => {
+      const isActive = sortParam === sortValue;
+      return `<a href="${buildUrl(null, sortValue)}" style="${sortPillBase}${isActive ? sortPillActive : sortPillIdle}">${label}</a>`;
+    };
+
+    const filtersHTML = `
+      <div style="margin:20px 0 6px;">
+        ${pill('Все', 'all')}${pill('До 3000 ₽', 'low')}${pill('3000–6000 ₽', 'mid')}${pill('От 6000 ₽', 'high')}
+      </div>
+      <div style="margin-bottom:20px;">
+        ${sortPill('↓ Сначала дешевле', 'asc')}${sortPill('↑ Сначала дороже', 'desc')}
+      </div>`;
 
     let cards = '';
-    if (active.length === 0) cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;">🌿 Пока нет букетов.</div>';
-    else for (const b of active) {
-      const photoUrls = [];
-      for (const fid of b.photos) { const u = await getPhotoUrl(fid); if (u) photoUrls.push(u); }
-      let gallery = '';
-      if (photoUrls.length === 0) gallery = `<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:40px;">📷</div>`;
-      else if (photoUrls.length === 1) gallery = `<img src="${photoUrls[0]}" style="width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;">`;
-      else {
-        const slides = photoUrls.map(p => `<img src="${p}" style="height:220px;width:auto;border-radius:12px;flex-shrink:0;">`).join('');
-        gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;">${slides}</div>`;
-      }
+    if (active.length === 0) {
+      cards = '<div style="text-align:center;padding:50px;font-size:20px;color:#888;">🌿 По этому фильтру букетов нет.</div>';
+    } else {
+      for (const b of active) {
+        const photoUrls = [];
+        for (const fid of b.photos) { const u = await getPhotoUrl(fid); if (u) photoUrls.push(u); }
+        let gallery = '';
+        if (photoUrls.length === 0) gallery = `<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:40px;">📷</div>`;
+        else if (photoUrls.length === 1) gallery = `<img src="${photoUrls[0]}" style="width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;">`;
+        else {
+          const slides = photoUrls.map(p => `<img src="${p}" style="height:220px;width:auto;border-radius:12px;flex-shrink:0;">`).join('');
+          gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;">${slides}</div>`;
+        }
 
-      const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
+        const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
 
-      let buttonsHTML = '';
-      if (shop.telegramUsername) {
-        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/tg" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Написать в Telegram</a>`;
-      }
-      if (shop.whatsappPhone) {
-        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/wa" target="_blank" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">💬 Написать в WhatsApp</a>`;
-      }
-      if (shop.maxUsername) {
-        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/max" target="_blank" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">🅼 Написать в MAX</a>`;
-      }
-      if (shop.phone) {
-        buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/call" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>`;
-      }
+        let buttonsHTML = '';
+        if (shop.telegramUsername) {
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/tg" target="_blank" style="display:block;margin-top:10px;background:#229ED9;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📩 Написать в Telegram</a>`;
+        }
+        if (shop.whatsappPhone) {
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/wa" target="_blank" style="display:block;margin-top:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">💬 Написать в WhatsApp</a>`;
+        }
+        if (shop.maxUsername) {
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/max" target="_blank" style="display:block;margin-top:8px;background:#7B68EE;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">🅼 Написать в MAX</a>`;
+        }
+        if (shop.phone) {
+          buttonsHTML += `<a href="/go/${shop.shopId}/${b.id}/call" style="display:block;margin-top:8px;background:#3498db;color:#fff;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;">📞 Позвонить</a>`;
+        }
 
-      cards += `<div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
-        <div style="position:absolute;top:24px;right:24px;background:rgba(44,62,80,0.85);color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;z-index:10;">№${b.id}</div>
-        ${gallery}
-        <h3 style="margin:12px 0 6px;">${esc(b.name)}</h3>
-        <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
-          ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
-        </p>
-        ${buttonsHTML || '<div style="color:#888;padding:10px;">Контакты для связи временно недоступны</div>'}
-      </div>`;
+        cards += `<div style="border:1px solid #eee;border-radius:16px;padding:16px;margin:12px;max-width:300px;display:inline-block;vertical-align:top;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;">
+          <div style="position:absolute;top:24px;right:24px;background:rgba(44,62,80,0.85);color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:bold;z-index:10;">№${b.id}</div>
+          ${gallery}
+          <h3 style="margin:12px 0 6px;">${esc(b.name)}</h3>
+          <p style="font-size:22px;font-weight:bold;color:#2c3e50;margin:6px 0;">
+            ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:18px;">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
+          </p>
+          ${buttonsHTML || '<div style="color:#888;padding:10px;">Контакты для связи временно недоступны</div>'}
+        </div>`;
+      }
     }
 
     const logoUrl = shop.settings.logo ? await getPhotoUrl(shop.settings.logo) : null;
@@ -1114,7 +1165,7 @@ app.get('/shop/:shopId', async (req, res) => {
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
       <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
-      <body><div class="container">${headerHTML}<h1>${esc(shop.displayName)}</h1><div style="color:#555;font-size:14px;margin-bottom:20px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>${cards}</div></body></html>`);
+      <body><div class="container">${headerHTML}<h1>${esc(shop.displayName)}</h1><div style="color:#555;font-size:14px;margin-bottom:10px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>${filtersHTML}${cards}</div></body></html>`);
   } catch (e) { console.error('Ошибка витрины'); res.status(500).send('Ошибка'); }
 });
 
