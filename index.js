@@ -1986,10 +1986,10 @@ app.get('/shop/:shopId', async (req, res) => {
         ${sortPill('↓ Сначала дешевле', 'asc')}${sortPill('↑ Сначала дороже', 'desc')}
       </div>`;
 
-    // ИСПРАВЛЕНИЕ: жёсткие 50/50, чтобы галерея не растягивала колонку
+    // ИСПРАВЛЕНИЕ: жёсткие 50/50 + stretch, чтобы карточки в ряду были одной высоты и кнопки на одной линии
     const useTwoColumns = active.length > TWO_COLUMNS_THRESHOLD;
     const gridStyle = useTwoColumns
-      ? 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;max-width:760px;margin:0 auto;align-items:start;'
+      ? 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;max-width:760px;margin:0 auto;align-items:stretch;'
       : 'display:flex;flex-wrap:wrap;justify-content:center;';
     const cardExtraStyle = useTwoColumns ? 'width:100%;box-sizing:border-box;min-width:0;' : 'max-width:300px;';
 
@@ -2027,9 +2027,6 @@ app.get('/shop/:shopId', async (req, res) => {
         const cardPadding = useTwoColumns ? '10px' : '16px';
         const cardMargin = useTwoColumns ? '0' : '12px';
 
-        // ИСПРАВЛЕНИЯ:
-        // - h3: word-wrap, чтобы длинные названия не ломали верстку
-        // - кнопка «Связаться»: max-width:230px + margin:auto — одинаковая в 1 и 2 колонки
         cards += `<div style="border:1px solid #eee;border-radius:16px;padding:${cardPadding};margin:${cardMargin};${cardExtraStyle}background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;display:flex;flex-direction:column;">
           <div style="position:absolute;top:${useTwoColumns ? '16px' : '24px'};right:${useTwoColumns ? '16px' : '24px'};background:rgba(44,62,80,0.85);color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;z-index:10;">№${b.id}</div>
           ${gallery}
@@ -2053,7 +2050,7 @@ app.get('/shop/:shopId', async (req, res) => {
     const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-attachment:fixed;` : `background:#fafaf8;`;
     const headerHTML = logoUrl ? `<img src="${escAttr(logoUrl)}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
 
-    // ИСПРАВЛЕНИЕ: заголовок магазина — на белой полупрозрачной подложке, чтобы читался на фоне
+    // Заголовок магазина — на белой полупрозрачной подложке, чтобы читался на фоне
     const titleHTML = `<div style="background:rgba(255,255,255,0.9);border-radius:18px;padding:14px 20px;max-width:560px;margin:0 auto 16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><h1 style="color:#2c3e50;margin:0 0 6px;font-size:24px;">${esc(shop.displayName)}</h1>${(shop.address || shop.hours) ? `<div style="color:#555;font-size:14px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>` : ''}</div>`;
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
