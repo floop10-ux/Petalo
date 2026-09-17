@@ -12,6 +12,13 @@ if (!token) {
   process.exit(1);
 }
 
+const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID ? Number(process.env.OWNER_CHAT_ID) : null;
+if (!OWNER_CHAT_ID) {
+  console.log('⚠️ OWNER_CHAT_ID не задан — preset kupidon отключён');
+} else {
+  console.log('✅ OWNER_CHAT_ID: ' + OWNER_CHAT_ID);
+}
+
 const YC_BUCKET = process.env.YC_BUCKET_NAME;
 const YC_ACCESS_KEY_ID = process.env.YC_ACCESS_KEY_ID;
 const YC_SECRET_ACCESS_KEY = process.env.YC_SECRET_ACCESS_KEY;
@@ -91,6 +98,32 @@ const MENU_BUTTONS = [
   '⚙️ Меню'
 ];
 
+const PARSE_ERROR_TEXT =
+  `❌ <b>Не могу разобрать подпись.</b>\n\n` +
+  `Правильно: <b>31 роза 3500</b>\n` +
+  `(название, потом цена — последним словом)\n\n` +
+  `Неправильно: 31 роза 3500 сорт Аваланж цена\n` +
+  `(после цены не должно быть слов)\n\n` +
+  `Попробуйте ещё раз или нажмите /cancel`;
+
+const ADD_BOUQUET_HINT =
+  `📷 <b>Пришлите фото букета с подписью.</b>\n\n` +
+  `В подписи: название + цена.\n` +
+  `Цена — <b>последнее слово</b>, одно число.\n\n` +
+  `✅ <b>Правильно:</b>\n` +
+  `  31 роза 3500\n` +
+  `  Пионы 4500\n` +
+  `  31 роза 50см сорт Аваланж 3500\n` +
+  `  Микс 2800\n\n` +
+  `❌ <b>Неправильно:</b>\n` +
+  `  31 роза 3500 сорт Аваланж цена\n` +
+  `     (после цены есть слова)\n` +
+  `  3500 31 роза\n` +
+  `     (цена в начале)\n` +
+  `  31 роза 3500₽ за штуку\n` +
+  `     (символы и слова после цены)\n\n` +
+  `💡 Ещё фото — без подписи.`;
+
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 function normalizeName(name) { return String(name || '').toLowerCase().trim().replace(/\s+/g, ' '); }
@@ -105,8 +138,6 @@ function shortName(name, maxEach) {
   return s.slice(0, n) + '…' + s.slice(-n);
 }
 
-// Извлекает ключ объекта из S3-URL.
-// Пример: https://petalo-photos.storage.yandexcloud.net/kupidon/1.jpg -> kupidon/1.jpg
 function s3UrlToKey(url) {
   if (!url || typeof url !== 'string') return null;
   const marker = '.storage.yandexcloud.net/';
@@ -161,6 +192,12 @@ function generateInviteCode() {
   for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
   return code;
 }
+function generateShopId() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let s = '';
+  for (let i = 0; i < 6; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+  return 'shop_' + s;
+}
 
 function isValidFileId(fileId) {
   if (!fileId || typeof fileId !== 'string') return false;
@@ -205,9 +242,6 @@ async function savePhotoToStorage(telegramFileId, shopId) {
   }
 }
 
-// Возвращает refs для отображения:
-// primary — откуда грузить (всегда через прокси Render, чтобы не зависеть от VPN)
-// fallback — запасной вариант (Telegram), если прокси не отдаст
 function getPhotoRefs(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
@@ -265,7 +299,6 @@ function renderImgTag(refs, style) {
   return `<img src="${p}"${st ? ` style="${st}"` : ''}>`;
 }
 
-// Делает URL абсолютным (для og:image, соцсети требуют полный URL)
 function absoluteUrl(url) {
   if (!url) return null;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
@@ -990,8 +1023,6 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
 }
 
 // === ПРОКСИ S3 ЧЕРЕЗ RENDER ===
-// Клиент запрашивает фото у нас, мы берём с Yandex и отдаём.
-// Так VPN клиента не мешает — он не общается с Yandex напрямую.
 app.get('/photo/s3/*', async (req, res) => {
   try {
     const key = req.params[0];
@@ -1108,7 +1139,8 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     console.error('Ошибка страницы букета:', e?.message || e);
     res.status(500).send('Ошибка');
   }
-});bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
+});// ========= /start =========
+bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
   const userName = msg.from.first_name || 'Флорист';
@@ -1116,6 +1148,7 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
   delete checkSessions[chatId];
   delete archiveSessions[chatId];
 
+  // Инвайт через deep-link (?start=inv_CODE)
   if (param && param.startsWith('inv_')) {
     const inviteCode = param.replace('inv_', '').toUpperCase();
     const shopId = await getShopByInvite(inviteCode);
@@ -1125,18 +1158,22 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
       if (currentShop && currentShop !== shopId) return bot.sendMessage(chatId, '❌ Вы уже привязаны к другому магазину.');
       await addAdminToDb(chatId, shopId, 'florist', userName);
       userToShop[chatId] = shopId;
-      return bot.sendMessage(chatId, `🎉 Добро пожаловать в команду «${esc(shop.displayName)}»!\n\n📷 Добавляйте букеты: фото с подписью "Название цена".\n✅ Подтверждайте наличие через «Что в наличии?».`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+      return bot.sendMessage(chatId, `🎉 Добро пожаловать в команду «${esc(shop.displayName)}»!\n\n📷 Добавляйте букеты: фото с подписью «Название цена».\n✅ Подтверждайте наличие через «Что в наличии?».`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
     }
     return bot.sendMessage(chatId, '❌ Приглашение недействительно.');
   }
 
   let shopId = userToShop[chatId] || await findUserShop(chatId);
+
+  // Правка 2: preset kupidon только для OWNER_CHAT_ID
   if (!shopId) {
-    const presetShop = await getShopFromDb(PRESET_SHOP.shopId);
-    if (presetShop && presetShop.admins.length === 0) {
-      await addAdminToDb(chatId, PRESET_SHOP.shopId, 'owner', userName);
-      userToShop[chatId] = PRESET_SHOP.shopId;
-      shopId = PRESET_SHOP.shopId;
+    if (OWNER_CHAT_ID && chatId === OWNER_CHAT_ID) {
+      const presetShop = await getShopFromDb(PRESET_SHOP.shopId);
+      if (presetShop && presetShop.admins.length === 0) {
+        await addAdminToDb(chatId, PRESET_SHOP.shopId, 'owner', userName);
+        userToShop[chatId] = PRESET_SHOP.shopId;
+        shopId = PRESET_SHOP.shopId;
+      }
     }
   }
 
@@ -1162,15 +1199,36 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     txt += `📦 Архив — вернуть ушедшие букеты\n`;
     txt += `⚙️ Меню — настройки`;
     return bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
-  } else {
-    bot.sendMessage(chatId, '🌸 <b>Petalo</b> — витрина для цветочных магазинов.\n\nОткройте витрину магазина и напишите нам в удобном мессенджере.', { parse_mode: 'HTML' });
   }
+
+  // Правка 1: приветствие с одной кнопкой для нового пользователя
+  return bot.sendMessage(chatId,
+    `🌸 <b>Добро пожаловать в Petalo!</b>\n\n` +
+    `Это витрина для цветочных магазинов.\n` +
+    `Флорист добавляет букет через бота — он сразу появляется на витрине.\n` +
+    `Клиент видит витрину и пишет вам в мессенджер.\n\n` +
+    `Если вы флорист — нажмите «Создать магазин», и через минуту у вас будет своя витрина.\n\n` +
+    `Если вас пригласил владелец магазина — просто откройте ссылку, которую он прислал.`,
+    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: '➕ Создать магазин', callback_data: 'welcome_create' }]
+    ] } }
+  );
 });
 
+// ========= CALLBACK =========
 bot.on('callback_query', async (q) => {
   const chatId = q.from.id;
   const data = q.data;
   bot.answerCallbackQuery(q.id).catch(() => {});
+
+  // Приветствие нового пользователя — обрабатываем ДО проверки shopId
+  if (data === 'welcome_create') {
+    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    const existing = userToShop[chatId] || await findUserShop(chatId);
+    if (existing) return bot.sendMessage(chatId, '❌ Уже привязаны к магазину.');
+    registrationState[chatId] = { step: 'name', data: {} };
+    return bot.sendMessage(chatId, '📝 Шаг 1 из 8.\n\n<b>Техническое имя</b> (латиницей, без пробелов).\nПример: <code>flowers_msk</code>', { parse_mode: 'HTML' });
+  }
 
   const shopId = userToShop[chatId] || await findUserShop(chatId);
   if (!shopId) return;
@@ -1238,7 +1296,7 @@ bot.on('callback_query', async (q) => {
   if (data === 'menu_invite') {
     if (!owner) return;
     const link = `https://t.me/${BOT_USERNAME}?start=inv_${shop.inviteCode}`;
-    return bot.sendMessage(chatId, `🔑 Ссылка-приглашение:\n\n${link}`);
+    return bot.sendMessage(chatId, `🔑 Ссылка-приглашение:\n\n${link}\n\nОтправьте её флористу — он кликнет и сразу попадёт в вашу команду.`);
   }
   if (data === 'menu_team') {
     if (!owner) return;
@@ -1641,7 +1699,7 @@ bot.on('message', async (msg) => {
   if (!shopId) return;
   const shop = await getShopFromDb(shopId);
 
-  if (text === '📷 Добавить букет') return bot.sendMessage(chatId, '📷 Отправьте фото с подписью "Название цена".\n\n💡 Ещё фото — без подписи.', { reply_markup: getMainKeyboard(shop, chatId) });
+  if (text === '📷 Добавить букет') return bot.sendMessage(chatId, ADD_BOUQUET_HINT, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   if (text === '✅ Что в наличии?') {
     if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
     const { text: t, options } = await buildCheckStartScreen(shopId);
@@ -1692,14 +1750,15 @@ bot.on('photo', async (msg) => {
   const caption = (msg.caption || '').trim();
 
   if (caption) {
-    const words = caption.split(/\s+/);
-    let price = 0, name = caption;
-    for (let i = words.length - 1; i >= 0; i--) {
-      const num = parseFloat(words[i]);
-      if (!isNaN(num) && num > 0) { price = num; name = words.slice(0, i).join(' '); break; }
+    // Правка 3+4: цена — строго последнее слово, чистое число
+    const words = caption.split(/\s+/).filter(w => w.length > 0);
+    const lastWord = words[words.length - 1] || '';
+    const price = /^\d+$/.test(lastWord) ? parseInt(lastWord, 10) : 0;
+    const finalName = words.slice(0, -1).join(' ').trim();
+
+    if (price <= 0 || !finalName) {
+      return bot.sendMessage(chatId, PARSE_ERROR_TEXT, { parse_mode: 'HTML' });
     }
-    if (price === 0 || !name) return bot.sendMessage(chatId, '❌ Укажите цену в конце. Пример: "Розы 4500"');
-    const finalName = name.trim();
 
     bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
     const result = await savePhotoToStorage(fileId, shopId);
@@ -1710,20 +1769,20 @@ bot.on('photo', async (msg) => {
     for (const old of all) if (old.deleted && normalizeName(old.name) === norm) archivedClicks += (old.clicks || 0);
 
     const id = await addBouquetToDb(shopId, {
-      name: finalName, price: Math.round(price), description: null,
+      name: finalName, price: price, description: null,
       photos: [result], isPinned: finalName.startsWith('.'),
       chatId, clicks: archivedClicks
     });
     lastBouquetByUser[chatId] = id;
 
-    let reply = `✅ Букет <b>№${id}</b> «${esc(finalName)}» добавлен! ${Math.round(price)} ₽`;
+    let reply = `✅ Букет <b>№${id}</b> «${esc(finalName)}» добавлен! ${price} ₽`;
     if (archivedClicks > 0) reply += `\n\n📊 Учтено прошлых кликов: ${archivedClicks}`;
     reply += `\n\n💡 Ещё фото? Отправьте без подписи.`;
     return bot.sendMessage(chatId, reply, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
 
   const lastId = lastBouquetByUser[chatId];
-  if (!lastId) return bot.sendMessage(chatId, '❌ Отправьте фото с подписью.');
+  if (!lastId) return bot.sendMessage(chatId, '❌ Отправьте фото с подписью.\n\n' + ADD_BOUQUET_HINT, { parse_mode: 'HTML' });
   const b = await getBouquetById(shopId, lastId);
   if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
 
@@ -1741,6 +1800,7 @@ bot.onText(/\/cancel/, async (msg) => {
   delete awaitingUpload[chatId]; delete awaitingInput[chatId]; delete awaitingPrice[chatId];
   delete awaitingName[chatId]; delete awaitingMarkup[chatId];
   delete checkSessions[chatId]; delete archiveSessions[chatId];
+  delete registrationState[chatId];
   const shopId = userToShop[chatId] || await findUserShop(chatId);
   if (shopId) {
     const shop = await getShopFromDb(shopId);
