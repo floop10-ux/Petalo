@@ -1,6 +1,6 @@
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const pool = require('./db');
 require('dotenv').config();
 
@@ -105,6 +105,16 @@ function shortName(name, maxEach) {
   return s.slice(0, n) + '…' + s.slice(-n);
 }
 
+// Извлекает ключ объекта из S3-URL.
+// Пример: https://petalo-photos.storage.yandexcloud.net/kupidon/1.jpg -> kupidon/1.jpg
+function s3UrlToKey(url) {
+  if (!url || typeof url !== 'string') return null;
+  const marker = '.storage.yandexcloud.net/';
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  return url.slice(idx + marker.length);
+}
+
 function isConfirmedRecently(b) {
   if (!b) return false;
   if (b.deleted || b.hidden) return false;
@@ -195,23 +205,37 @@ async function savePhotoToStorage(telegramFileId, shopId) {
   }
 }
 
+// Возвращает refs для отображения:
+// primary — откуда грузить (всегда через прокси Render, чтобы не зависеть от VPN)
+// fallback — запасной вариант (Telegram), если прокси не отдаст
 function getPhotoRefs(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
     if (photo.startsWith('http://') || photo.startsWith('https://')) {
+      const key = s3UrlToKey(photo);
+      if (key) {
+        return { primary: '/photo/s3/' + key, fallback: null };
+      }
       return { primary: photo, fallback: null };
     }
     if (isValidFileId(photo)) {
-      return { primary: `/photo/tg/${photo}`, fallback: null };
+      return { primary: '/photo/tg/' + photo, fallback: null };
     }
     return { primary: null, fallback: null };
   }
   if (typeof photo === 'object') {
     if (photo.s3 && photo.tg) {
-      return { primary: photo.s3, fallback: `/photo/tg/${photo.tg}` };
+      const key = s3UrlToKey(photo.s3);
+      return {
+        primary: key ? '/photo/s3/' + key : photo.s3,
+        fallback: '/photo/tg/' + photo.tg
+      };
     }
-    if (photo.s3) return { primary: photo.s3, fallback: null };
-    if (photo.tg) return { primary: `/photo/tg/${photo.tg}`, fallback: null };
+    if (photo.s3) {
+      const key = s3UrlToKey(photo.s3);
+      return { primary: key ? '/photo/s3/' + key : photo.s3, fallback: null };
+    }
+    if (photo.tg) return { primary: '/photo/tg/' + photo.tg, fallback: null };
   }
   return { primary: null, fallback: null };
 }
@@ -239,6 +263,13 @@ function renderImgTag(refs, style) {
     return `<img src="${p}"${st ? ` style="${st}"` : ''} onerror="this.onerror=null;this.src='${f}'">`;
   }
   return `<img src="${p}"${st ? ` style="${st}"` : ''}>`;
+}
+
+// Делает URL абсолютным (для og:image, соцсети требуют полный URL)
+function absoluteUrl(url) {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return SITE_URL + url;
 }
 
 async function migratePhotosToS3(shopId) {
@@ -788,7 +819,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const bouquetUrl = `${SITE_URL}/shop/${esc(shop.shopId)}/b/${bouquet.id}`;
   const title = `${bouquetNameEsc} — ${esc(shop.displayName)}`;
   const description = `${bouquet.price} ₽ · ${esc(shop.displayName)}`;
-  const primaryPhotoUrl = (photoRefs && photoRefs.primary) ? photoRefs.primary : null;
+  const primaryPhotoUrl = (photoRefs && photoRefs.primary) ? absoluteUrl(photoRefs.primary) : null;
   const ogTags = primaryPhotoUrl ? `
 <meta property="og:image" content="${escAttr(primaryPhotoUrl)}">
 <meta property="og:image:width" content="800">
@@ -957,6 +988,35 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
 </body>
 </html>`;
 }
+
+// === ПРОКСИ S3 ЧЕРЕЗ RENDER ===
+// Клиент запрашивает фото у нас, мы берём с Yandex и отдаём.
+// Так VPN клиента не мешает — он не общается с Yandex напрямую.
+app.get('/photo/s3/*', async (req, res) => {
+  try {
+    const key = req.params[0];
+    if (!key || key.includes('..')) return res.status(400).send('bad');
+    if (!s3) return res.status(503).send('s3 disabled');
+
+    const cmd = new GetObjectCommand({ Bucket: YC_BUCKET, Key: key });
+    const data = await s3.send(cmd);
+
+    res.setHeader('Content-Type', data.ContentType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+
+    const stream = data.Body;
+    if (stream.pipe) {
+      stream.pipe(res);
+    } else {
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      res.send(Buffer.concat(chunks));
+    }
+  } catch (e) {
+    console.error('Ошибка /photo/s3:', e?.message || e);
+    return res.status(404).send('not found');
+  }
+});
 
 app.get('/photo/tg/:fileId', async (req, res) => {
   try {
