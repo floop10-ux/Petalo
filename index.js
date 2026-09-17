@@ -1986,7 +1986,7 @@ app.get('/shop/:shopId', async (req, res) => {
         ${sortPill('↓ Сначала дешевле', 'asc')}${sortPill('↑ Сначала дороже', 'desc')}
       </div>`;
 
-    // ИСПРАВЛЕНИЕ: жёсткие 50/50 + stretch, чтобы карточки в ряду были одной высоты и кнопки на одной линии
+    // Жёсткие 50/50 + stretch: карточки в ряду одной высоты, кнопки на одной линии
     const useTwoColumns = active.length > TWO_COLUMNS_THRESHOLD;
     const gridStyle = useTwoColumns
       ? 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;max-width:760px;margin:0 auto;align-items:stretch;'
@@ -2008,7 +2008,6 @@ app.get('/shop/:shopId', async (req, res) => {
         else if (photoRefsList.length === 1) {
           gallery = renderImgTag(photoRefsList[0], 'width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;');
         } else {
-          // ИСПРАВЛЕНИЕ: max-width и min-width, чтобы галерея скроллилась сама, а не растягивала карточку
           const slides = photoRefsList.map(r => renderImgTag(r, 'height:220px;width:auto;border-radius:12px;flex-shrink:0;')).join('');
           gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;max-width:100%;min-width:0;">${slides}</div>`;
         }
@@ -2054,8 +2053,19 @@ app.get('/shop/:shopId', async (req, res) => {
     const titleHTML = `<div style="background:rgba(255,255,255,0.9);border-radius:18px;padding:14px 20px;max-width:560px;margin:0 auto 16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><h1 style="color:#2c3e50;margin:0 0 6px;font-size:24px;">${esc(shop.displayName)}</h1>${(shop.address || shop.hours) ? `<div style="color:#555;font-size:14px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>` : ''}</div>`;
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
-      <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
-      <body><div class="container">${headerHTML}${titleHTML}${filtersHTML}<div style="${gridStyle}">${cards}</div></div>
+      <style>
+        body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}}
+        h1{color:#2c3e50;}
+        .container{max-width:1200px;margin:0 auto;}
+        .shop-grid img{cursor:zoom-in;}
+      </style></head>
+      <body><div class="container">${headerHTML}${titleHTML}${filtersHTML}<div class="shop-grid" style="${gridStyle}">${cards}</div></div>
+
+      <div id="lightbox" onclick="closeLightbox()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">
+        <img id="lightbox-img" src="" alt="" style="max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,0.6);">
+        <button onclick="closeLightbox()" style="position:fixed;top:20px;right:20px;background:rgba(255,255,255,0.95);border:none;width:44px;height:44px;border-radius:50%;font-size:22px;cursor:pointer;font-weight:bold;color:#333;box-shadow:0 2px 8px rgba(0,0,0,0.4);">✕</button>
+      </div>
+
       <script>
         function shareBouquet(e, url, name, price) {
           if (e) { e.preventDefault(); }
@@ -2068,6 +2078,28 @@ app.get('/shop/:shopId', async (req, res) => {
             }).catch(function(){ prompt('Скопируйте ссылку:', url); });
           } else { prompt('Скопируйте ссылку:', url); }
         }
+        function openLightbox(src) {
+          var lb = document.getElementById('lightbox');
+          var img = document.getElementById('lightbox-img');
+          img.src = src;
+          lb.style.display = 'flex';
+          document.body.style.overflow = 'hidden';
+        }
+        function closeLightbox() {
+          document.getElementById('lightbox').style.display = 'none';
+          document.getElementById('lightbox-img').src = '';
+          document.body.style.overflow = '';
+        }
+        document.addEventListener('click', function(e) {
+          var img = e.target.closest('.shop-grid img');
+          if (!img) return;
+          e.preventDefault();
+          e.stopPropagation();
+          openLightbox(img.src);
+        });
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') closeLightbox();
+        });
       </script>
       </body></html>`);
   } catch (e) { console.error('Ошибка витрины'); res.status(500).send('Ошибка'); }
