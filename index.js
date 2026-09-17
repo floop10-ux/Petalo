@@ -1986,11 +1986,12 @@ app.get('/shop/:shopId', async (req, res) => {
         ${sortPill('↓ Сначала дешевле', 'asc')}${sortPill('↑ Сначала дороже', 'desc')}
       </div>`;
 
+    // ИСПРАВЛЕНИЕ: жёсткие 50/50, чтобы галерея не растягивала колонку
     const useTwoColumns = active.length > TWO_COLUMNS_THRESHOLD;
     const gridStyle = useTwoColumns
-      ? 'display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:760px;margin:0 auto;grid-auto-rows:1fr;align-items:stretch;'
+      ? 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;max-width:760px;margin:0 auto;align-items:start;'
       : 'display:flex;flex-wrap:wrap;justify-content:center;';
-    const cardExtraStyle = useTwoColumns ? 'width:100%;box-sizing:border-box;' : 'max-width:300px;';
+    const cardExtraStyle = useTwoColumns ? 'width:100%;box-sizing:border-box;min-width:0;' : 'max-width:300px;';
 
     let cards = '';
     if (active.length === 0) {
@@ -2007,8 +2008,9 @@ app.get('/shop/:shopId', async (req, res) => {
         else if (photoRefsList.length === 1) {
           gallery = renderImgTag(photoRefsList[0], 'width:100%;border-radius:12px;aspect-ratio:1/1;object-fit:cover;');
         } else {
+          // ИСПРАВЛЕНИЕ: max-width и min-width, чтобы галерея скроллилась сама, а не растягивала карточку
           const slides = photoRefsList.map(r => renderImgTag(r, 'height:220px;width:auto;border-radius:12px;flex-shrink:0;')).join('');
-          gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;">${slides}</div>`;
+          gallery = `<div style="display:flex;overflow-x:auto;gap:6px;margin-bottom:4px;max-width:100%;min-width:0;">${slides}</div>`;
         }
 
         const oldPrice = calculateOldPrice(b.price, shop.settings.markupPercent);
@@ -2025,15 +2027,18 @@ app.get('/shop/:shopId', async (req, res) => {
         const cardPadding = useTwoColumns ? '10px' : '16px';
         const cardMargin = useTwoColumns ? '0' : '12px';
 
+        // ИСПРАВЛЕНИЯ:
+        // - h3: word-wrap, чтобы длинные названия не ломали верстку
+        // - кнопка «Связаться»: max-width:230px + margin:auto — одинаковая в 1 и 2 колонки
         cards += `<div style="border:1px solid #eee;border-radius:16px;padding:${cardPadding};margin:${cardMargin};${cardExtraStyle}background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;display:flex;flex-direction:column;">
           <div style="position:absolute;top:${useTwoColumns ? '16px' : '24px'};right:${useTwoColumns ? '16px' : '24px'};background:rgba(44,62,80,0.85);color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;z-index:10;">№${b.id}</div>
           ${gallery}
-          <h3 style="margin:10px 0 4px;font-size:${titleFontSize};line-height:1.25;">${esc(b.name)}</h3>
+          <h3 style="margin:10px 0 4px;font-size:${titleFontSize};line-height:1.25;word-wrap:break-word;overflow-wrap:break-word;">${esc(b.name)}</h3>
           <p style="font-size:${priceFontSize};font-weight:bold;color:#2c3e50;margin:4px 0;">
             ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:${oldPriceFontSize};">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
           </p>
           <div style="margin-top:auto;">
-            <a href="${contactUrl}" style="display:block;margin-top:10px;background:#e74c3c;color:#fff;padding:12px 16px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:15px;">📞 Связаться</a>
+            <a href="${contactUrl}" style="display:block;max-width:230px;margin:10px auto 0;background:#e74c3c;color:#fff;padding:12px 16px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:15px;">📞 Связаться</a>
             <div style="margin-top:8px;">
               <a href="#" onclick='shareBouquet(event, ${bouquetUrlJs}, ${bouquetNameJs}, ${bouquetPriceJs}); return false;' style="display:inline-block;color:#888;font-size:12px;text-decoration:none;padding:5px 10px;border-radius:16px;background:#f5f5f5;">📤 Поделиться</a>
             </div>
@@ -2048,9 +2053,12 @@ app.get('/shop/:shopId', async (req, res) => {
     const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-attachment:fixed;` : `background:#fafaf8;`;
     const headerHTML = logoUrl ? `<img src="${escAttr(logoUrl)}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
 
+    // ИСПРАВЛЕНИЕ: заголовок магазина — на белой полупрозрачной подложке, чтобы читался на фоне
+    const titleHTML = `<div style="background:rgba(255,255,255,0.9);border-radius:18px;padding:14px 20px;max-width:560px;margin:0 auto 16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><h1 style="color:#2c3e50;margin:0 0 6px;font-size:24px;">${esc(shop.displayName)}</h1>${(shop.address || shop.hours) ? `<div style="color:#555;font-size:14px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>` : ''}</div>`;
+
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
       <style>body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}} h1{color:#2c3e50;} .container{max-width:1200px;margin:0 auto;}</style></head>
-      <body><div class="container">${headerHTML}<h1>${esc(shop.displayName)}</h1><div style="color:#555;font-size:14px;margin-bottom:10px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>${filtersHTML}<div style="${gridStyle}">${cards}</div></div>
+      <body><div class="container">${headerHTML}${titleHTML}${filtersHTML}<div style="${gridStyle}">${cards}</div></div>
       <script>
         function shareBouquet(e, url, name, price) {
           if (e) { e.preventDefault(); }
