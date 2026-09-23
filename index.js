@@ -55,8 +55,8 @@ app.post(WEBHOOK_PATH, (req, res) => {
   res.sendStatus(200);
 });
 
-const BOT_USERNAME = 'petalo_rus_bot';
-const SITE_URL = 'https://petalo.onrender.com';
+const BOT_USERNAME = 'flowind_rus_bot';
+const SITE_URL = 'https://flowind.ru';
 
 const PRESET_SHOP = {
   shopId: 'kupidon',
@@ -886,7 +886,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
 <meta property="og:title" content="${escAttr(title)}">
 <meta property="og:description" content="${escAttr(description)}">
 <meta property="og:url" content="${escAttr(bouquetUrl)}">
-<meta property="og:site_name" content="Petalo">
+<meta property="og:site_name" content="Flowind">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${escAttr(title)}">
 <meta name="twitter:description" content="${escAttr(description)}">${ogTags}
@@ -1203,7 +1203,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
   // Правка 1: приветствие с одной кнопкой для нового пользователя
   return bot.sendMessage(chatId,
-    `🌸 <b>Добро пожаловать в Petalo!</b>\n\n` +
+    `🌸 <b>Добро пожаловать в Flowind!</b>\n\n` +
     `Это витрина для цветочных магазинов.\n` +
     `Флорист добавляет букет через бота — он сразу появляется на витрине.\n` +
     `Клиент видит витрину и пишет вам в мессенджер.\n\n` +
@@ -2052,7 +2052,7 @@ app.get('/shop/:shopId', async (req, res) => {
     // Заголовок магазина — на белой полупрозрачной подложке, чтобы читался на фоне
     const titleHTML = `<div style="background:rgba(255,255,255,0.9);border-radius:18px;padding:14px 20px;max-width:560px;margin:0 auto 16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><h1 style="color:#2c3e50;margin:0 0 6px;font-size:24px;">${esc(shop.displayName)}</h1>${(shop.address || shop.hours) ? `<div style="color:#555;font-size:14px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>` : ''}</div>`;
 
-    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Petalo</title>
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Flowind</title>
       <style>
         body{font-family:-apple-system,sans-serif;margin:0;padding:20px;text-align:center;${bodyStyle}}
         h1{color:#2c3e50;}
@@ -2105,7 +2105,7 @@ app.get('/shop/:shopId', async (req, res) => {
   } catch (e) { console.error('Ошибка витрины'); res.status(500).send('Ошибка'); }
 });
 
-app.get('/', (req, res) => res.send('<html><body style="font-family:sans-serif;text-align:center;padding:50px;"><h1>🌸 Petalo</h1></body></html>'));
+app.get('/', (req, res) => res.send('<html><body style="font-family:sans-serif;text-align:center;padding:50px;"><h1>🌸 Flowind</h1></body></html>'));
 
 async function checkAndNotify() {
   try {
@@ -2163,5 +2163,5 @@ initDb().then(async () => {
   setInterval(checkAndNotify, 10 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`🚀 Petalo на порту ${PORT} (webhook)`));
+  app.listen(PORT, () => console.log(`🚀 Flowind на порту ${PORT} (webhook)`));
 }).catch(err => { console.error('❌ Ошибка инициализации:', err.message); process.exit(1); });
