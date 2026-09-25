@@ -39,8 +39,9 @@ if (S3_ENABLED) {
   console.log('⚠️ Yandex S3 не настроен — фото пойдут через Telegram');
 }
 
-process.on('unhandledRejection', (e) => console.error('⚠️ Unhandled rejection:', e?.message || e));
-process.on('uncaughtException', (e) => console.error('⚠️ Uncaught exception:', e?.message || e));
+process.on(')unhandledRejection', (e) => console.error('⚠️ Un {
+handled rejection:', e?.message || e));
+process.on('uncaughtException', (e ) => console.error('⚠️ Un ifcaught exception:', e?.message || e));
 
 app.use(express.json());
 
@@ -138,8 +139,7 @@ function shortName(name, maxEach) {
   return s.slice(0, n) + '…' + s.slice(-n);
 }
 
-function s3UrlToKey(url) {
-  if (!url || typeof url !== 'string') return null;
+function s3UrlToKey(url (!url || typeof url !== 'string') return null;
   const marker = '.storage.yandexcloud.net/';
   const idx = url.indexOf(marker);
   if (idx === -1) return null;
@@ -242,14 +242,12 @@ async function savePhotoToStorage(telegramFileId, shopId) {
   }
 }
 
+// ИЗМЕНЕНО: теперь фото из S3 отдаются НАПРЯМУЮ из Yandex, без прокси Render.
+// Это решает проблему, когда Cloudflare не пропускает /photo/s3/* к Render.
 function getPhotoRefs(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
     if (photo.startsWith('http://') || photo.startsWith('https://')) {
-      const key = s3UrlToKey(photo);
-      if (key) {
-        return { primary: '/photo/s3/' + key, fallback: null };
-      }
       return { primary: photo, fallback: null };
     }
     if (isValidFileId(photo)) {
@@ -259,15 +257,10 @@ function getPhotoRefs(photo) {
   }
   if (typeof photo === 'object') {
     if (photo.s3 && photo.tg) {
-      const key = s3UrlToKey(photo.s3);
-      return {
-        primary: key ? '/photo/s3/' + key : photo.s3,
-        fallback: '/photo/tg/' + photo.tg
-      };
+      return { primary: photo.s3, fallback: '/photo/tg/' + photo.tg };
     }
     if (photo.s3) {
-      const key = s3UrlToKey(photo.s3);
-      return { primary: key ? '/photo/s3/' + key : photo.s3, fallback: null };
+      return { primary: photo.s3, fallback: null };
     }
     if (photo.tg) return { primary: '/photo/tg/' + photo.tg, fallback: null };
   }
