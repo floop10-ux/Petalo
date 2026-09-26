@@ -487,10 +487,20 @@ function buildCheckListKeyboard(session) {
   const end = Math.min(start + CHECK_PER_PAGE, total);
   const slice = session.bouquets.slice(start, end);
 
-  for (const b of slice) {
+  // Разделяем на проверенные и непроверенные
+  const checked = slice.filter(b => session.checked[b.id]);
+  const unchecked = slice.filter(b => !session.checked[b.id]);
+
+  // Сверху — проверенные (с галочками)
+  for (const b of checked) {
     const st = session.checked[b.id];
-    const prefix = st === 'yes' ? '✓ ' : (st === 'no' ? '🚫 ' : '');
+    const prefix = st === 'yes' ? '✓ ' : '🚫 ';
     rows.push([{ text: `${prefix}№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
+  }
+
+  // Внизу — непроверенные (в них и тыкаем)
+  for (const b of unchecked) {
+    rows.push([{ text: `№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
   }
 
   if (totalPages > 1) {
