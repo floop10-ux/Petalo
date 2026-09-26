@@ -39,9 +39,8 @@ if (S3_ENABLED) {
   console.log('⚠️ Yandex S3 не настроен — фото пойдут через Telegram');
 }
 
-process.on(')unhandledRejection', (e) => console.error('⚠️ Un {
-handled rejection:', e?.message || e));
-process.on('uncaughtException', (e ) => console.error('⚠️ Un ifcaught exception:', e?.message || e));
+process.on('unhandledRejection', (e) => console.error('⚠️ Unhandled rejection:', e?.message || e));
+process.on('uncaughtException', (e) => console.error('⚠️ Uncaught exception:', e?.message || e));
 
 app.use(express.json());
 
@@ -139,7 +138,8 @@ function shortName(name, maxEach) {
   return s.slice(0, n) + '…' + s.slice(-n);
 }
 
-function s3UrlToKey(url (!url || typeof url !== 'string') return null;
+function s3UrlToKey(url) {
+  if (!url || typeof url !== 'string') return null;
   const marker = '.storage.yandexcloud.net/';
   const idx = url.indexOf(marker);
   if (idx === -1) return null;
@@ -199,6 +199,32 @@ function generateShopId() {
   return 'shop_' + s;
 }
 
+// Нормализация телефона: любой формат → +7XXXXXXXXXX (для РФ) или +<все_цифры> (международный).
+// Меньше 10 цифр — считаем опечаткой, возвращаем null.
+function normalizePhone(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length < 10) return null;
+  if (digits.length === 10) return '+7' + digits;
+  if (digits.length === 11) {
+    if (digits[0] === '8') return '+7' + digits.slice(1);
+    return '+' + digits;
+  }
+  return '+' + digits;
+}
+
+// Красивое отображение: +79624025175 → +7 962 402-51-75
+function formatPhone(normalized) {
+  if (!normalized || typeof normalized !== 'string') return '';
+  if (!normalized.startsWith('+')) return normalized;
+  const digits = normalized.slice(1);
+  if (digits.length === 11 && digits[0] === '7') {
+    return '+7 ' + digits.slice(1, 4) + ' ' + digits.slice(4, 7) + '-' + digits.slice(7, 9) + '-' + digits.slice(9, 11);
+  }
+  return normalized;
+}
+
 function isValidFileId(fileId) {
   if (!fileId || typeof fileId !== 'string') return false;
   return /^[A-Za-z0-9_\-]{20,}$/.test(fileId);
@@ -242,8 +268,7 @@ async function savePhotoToStorage(telegramFileId, shopId) {
   }
 }
 
-// ИЗМЕНЕНО: теперь фото из S3 отдаются НАПРЯМУЮ из Yandex, без прокси Render.
-// Это решает проблему, когда Cloudflare не пропускает /photo/s3/* к Render.
+// Фото из S3 отдаются НАПРЯМУЮ из Yandex (без прокси Render).
 function getPhotoRefs(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
@@ -738,9 +763,9 @@ function buildShopDataMessage(shop) {
   txt += `📝 Название: ${esc(shop.displayName)}\n`;
   txt += `📍 Адрес: ${shop.address ? esc(shop.address) : '<i>не указан</i>'}\n`;
   txt += `🕐 Часы: ${shop.hours ? esc(shop.hours) : '<i>не указаны</i>'}\n`;
-  txt += `📞 Телефон: ${shop.phone ? esc(shop.phone) : '<i>не указан</i>'}\n\n`;
+  txt += `📞 Телефон: ${shop.phone ? esc(formatPhone(shop.phone)) : '<i>не указан</i>'}\n\n`;
   txt += `📱 Telegram: ${shop.telegramUsername ? '@' + esc(shop.telegramUsername) : '<i>не указан</i>'}\n`;
-  txt += `💬 WhatsApp: ${shop.whatsappPhone ? esc(shop.whatsappPhone) : '<i>не указан</i>'}\n`;
+  txt += `💬 WhatsApp: ${shop.whatsappPhone ? esc(formatPhone(shop.whatsappPhone)) : '<i>не указан</i>'}\n`;
   txt += `🅼 MAX: ${shop.maxLink ? '✅ установлена' : '<i>не указана</i>'}\n\n`;
   txt += `<i>Что изменить?</i>`;
   return {
@@ -1132,7 +1157,227 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     console.error('Ошибка страницы букета:', e?.message || e);
     res.status(500).send('Ошибка');
   }
-});// ========= /start =========
+});// ========= РЕГИСТРАЦИЯ МАГАЗИНА =========
+const REG_STEPS = {
+  shopId: {
+    text: '📝 <b>Шаг 1 из 8. Короткое название для ссылки</b>\n\n' +
+          'Только латинские буквы, цифры и _, без пробелов.\n' +
+          'Например: <code>cveti_msk</code>\n\n' +
+          'Это будет адрес витрины: <code>flowind.ru/shop/cveti_msk</code>\n\n' +
+          '<i>Если не знаете — нажмите «Пропустить», я сгенерирую сам.</i>',
+    skip: true,
+    mandatory: true
+  },
+  displayName: {
+    text: '✅ <b>Шаг 2 из 8. Красивое название</b>\n\n' +
+          'Как назвать магазин для клиентов?\n' +
+          'Оно появится на витрине. Можно с эмодзи.\n\n' +
+          'Например: <i>🌸 Цветы на Фрунзе</i>',
+    skip: false,
+    mandatory: true
+  },
+  address: {
+    text: '✅ <b>Шаг 3 из 8. Адрес</b>\n\n' +
+          'Клиенты увидят адрес на витрине.\n' +
+          'Например: <i>Москва, ул. Фрунзе, 15</i>\n\n' +
+          '<i>Можно пропустить и добавить позже.</i>',
+    skip: true,
+    mandatory: false
+  },
+  hours: {
+    text: '✅ <b>Шаг 4 из 8. Часы работы</b>\n\n' +
+          'Например: <i>Пн-Вс 10:30-21:00</i>\n\n' +
+          '<i>Можно пропустить.</i>',
+    skip: true,
+    mandatory: false
+  },
+  phone: {
+    text: '✅ <b>Шаг 5 из 8. Телефон</b>\n\n' +
+          'Для кнопки «Позвонить» на витрине.\n' +
+          'Например: <i>+7 962 402-51-75</i>\n\n' +
+          '<i>Можно пропустить.</i>',
+    skip: true,
+    mandatory: false
+  },
+  telegram: {
+    text: '✅ <b>Шаг 6 из 8. Ваш юзернейм в Telegram</b>\n\n' +
+          'Клиенты будут писать вам, нажав кнопку на витрине.\n' +
+          'Пришлите без @.\n\n' +
+          'Например: если ваш юзернейм @KupidonAdm — напишите <code>KupidonAdm</code>\n\n' +
+          '<i>Если у вас нет юзернейма — можно пропустить, и клиенты смогут только позвонить или написать в WhatsApp.</i>',
+    skip: true,
+    mandatory: false
+  },
+  whatsapp: {
+    text: '✅ <b>Шаг 7 из 8. Номер WhatsApp</b>\n\n' +
+          'Клиенты смогут написать вам одним нажатием.\n' +
+          'Например: <i>+7 962 402-51-75</i>\n\n' +
+          '<i>Можно пропустить.</i>',
+    skip: true,
+    mandatory: false
+  },
+  max: {
+    text: '✅ <b>Шаг 8 из 8. Ссылка на профиль в MAX</b>\n\n' +
+          '<i>Можно пропустить и добавить позже — «Меню» → «🏪 Данные магазина».</i>\n\n' +
+          'Она начинается с <code>https://max.ru/u/...</code>\n\n' +
+          'Пришлите её сюда или нажмите «Пропустить».',
+    skip: true,
+    mandatory: false
+  }
+};
+
+const REG_ORDER = ['shopId', 'displayName', 'address', 'hours', 'phone', 'telegram', 'whatsapp', 'max'];
+
+const REG_FINAL_TEXT = (shopId, displayName) =>
+  `🎉 <b>Готово! Ваша витрина создана.</b>\n\n` +
+  `🏪 Магазин: «${esc(displayName)}»\n\n` +
+  `🔗 <b>Ссылка для клиентов:</b>\n${SITE_URL}/shop/${shopId}\n\n` +
+  `━━━━━━━━━━━━━━━\n\n` +
+  `📷 <b>Что делать дальше:</b>\n\n` +
+  `1. Нажмите «📷 Добавить букет» и отправьте фото с подписью.\n\n` +
+  `2. В подписи: название + пробел + цена.\n` +
+  `   ✅ <code>31 роза 3500</code>\n` +
+  `   ✅ <code>Пионы 4500</code>\n` +
+  `   ❌ <code>31 роза 3500 сорт Аваланж цена</code>\n` +
+  `      (цена должна быть последней)\n\n` +
+  `3. Букет сразу появится на витрине.\n\n` +
+  `4. Через 3 дня бот напомнит — надо будет подтвердить, что он ещё есть.\n\n` +
+  `━━━━━━━━━━━━━━━\n\n` +
+  `⚙️ Чтобы заполнить адрес, телефон и другое — «Меню» → «🏪 Данные магазина»\n\n` +
+  `💡 Если что-то непонятно — напишите <code>/cancel</code> и начните заново.\n\n` +
+  `<b>Попробуйте прямо сейчас — отправьте первый букет.</b>`;
+
+async function generateUniqueShopId() {
+  for (let i = 0; i < 20; i++) {
+    const id = generateShopId();
+    if (!(await getShopFromDb(id))) return id;
+  }
+  return generateShopId() + Date.now().toString(36).slice(-4);
+}
+
+async function startRegistration(chatId) {
+  const existing = userToShop[chatId] || await findUserShop(chatId);
+  if (existing) {
+    return bot.sendMessage(chatId, '❌ Уже привязаны к магазину.');
+  }
+  registrationState[chatId] = { step: 'shopId', data: {}, messageId: null };
+  await sendRegistrationStep(chatId, registrationState[chatId]);
+}
+
+async function sendRegistrationStep(chatId, state) {
+  const stepConfig = REG_STEPS[state.step];
+  if (!stepConfig) { delete registrationState[chatId]; return; }
+  const opts = { parse_mode: 'HTML' };
+  if (stepConfig.skip) {
+    opts.reply_markup = { inline_keyboard: [[{ text: '⏭ Пропустить', callback_data: 'reg_skip' }]] };
+  }
+  const msg = await bot.sendMessage(chatId, stepConfig.text, opts);
+  state.messageId = msg.message_id;
+}
+
+async function regGoToNextStep(chatId, state) {
+  const idx = REG_ORDER.indexOf(state.step);
+  if (idx === -1 || idx >= REG_ORDER.length - 1) return regFinish(chatId, state);
+  state.step = REG_ORDER[idx + 1];
+  await sendRegistrationStep(chatId, state);
+}
+
+async function regSkipCurrentStep(chatId, state) {
+  if (state.step === 'shopId') {
+    state.data.shopId = await generateUniqueShopId();
+  }
+  await regGoToNextStep(chatId, state);
+}
+
+async function regSaveValue(chatId, state, text) {
+  const step = state.step;
+  const value = text.trim();
+
+  if (step === 'shopId') {
+    const clean = value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    if (!clean || clean.length < 2) {
+      return bot.sendMessage(chatId, '❌ Только латинские буквы, цифры и _ (минимум 2 символа). Попробуйте ещё раз или нажмите «Пропустить».', { parse_mode: 'HTML' });
+    }
+    if (await getShopFromDb(clean)) {
+      return bot.sendMessage(chatId, '❌ Это имя уже занято. Попробуйте другое или нажмите «Пропустить».', { parse_mode: 'HTML' });
+    }
+    state.data.shopId = clean;
+  } else if (step === 'displayName') {
+    if (value.length < 2 || value.length > 60) {
+      return bot.sendMessage(chatId, '❌ Название должно быть от 2 до 60 символов. Попробуйте ещё раз.');
+    }
+    state.data.displayName = value;
+  } else if (step === 'address') {
+    state.data.address = value;
+  } else if (step === 'hours') {
+    state.data.hours = value;
+  } else if (step === 'phone') {
+    const norm = normalizePhone(value);
+    if (!norm) {
+      return bot.sendMessage(chatId, '❌ Похоже на опечатку. Пришлите номер целиком.\nНапример: <i>+7 962 402-51-75</i>\n\nИли нажмите «Пропустить».', { parse_mode: 'HTML' });
+    }
+    state.data.phone = norm;
+  } else if (step === 'telegram') {
+    const clean = value.replace(/^@/, '').toLowerCase();
+    if (!/^[a-z0-9_]{3,32}$/.test(clean)) {
+      return bot.sendMessage(chatId, '❌ Юзернейм — только латиница, цифры, _ (от 3 до 32 символов). Попробуйте ещё раз или нажмите «Пропустить».', { parse_mode: 'HTML' });
+    }
+    state.data.telegramUsername = clean;
+  } else if (step === 'whatsapp') {
+    const norm = normalizePhone(value);
+    if (!norm) {
+      return bot.sendMessage(chatId, '❌ Похоже на опечатку. Пришлите номер целиком.\nНапример: <i>+7 962 402-51-75</i>\n\nИли нажмите «Пропустить».', { parse_mode: 'HTML' });
+    }
+    state.data.whatsappPhone = norm;
+  } else if (step === 'max') {
+    if (!/^https?:\/\/max\.ru\//.test(value)) {
+      return bot.sendMessage(chatId, '❌ Ссылка должна начинаться с <code>https://max.ru/u/...</code>\n\nПопробуйте ещё раз или нажмите «Пропустить».', { parse_mode: 'HTML' });
+    }
+    state.data.maxLink = value;
+  }
+
+  await regGoToNextStep(chatId, state);
+}
+
+async function regFinish(chatId, state) {
+  const d = state.data;
+  const now = new Date();
+  const trialEnd = new Date(now);
+  trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
+  const inviteCode = generateInviteCode();
+  const userName = state.userName || 'Владелец';
+
+  try {
+    await createShopInDb({
+      shopId: d.shopId,
+      name: d.shopId,
+      displayName: d.displayName,
+      address: d.address || null,
+      hours: d.hours || null,
+      phone: d.phone || null,
+      telegramUsername: d.telegramUsername || null,
+      whatsappPhone: d.whatsappPhone || null,
+      maxLink: d.maxLink || null,
+      inviteCode,
+      trialStart: now.toISOString(),
+      trialEnd: trialEnd.toISOString(),
+      settings: { logo: null, background: null, markupPercent: 20, aiEnabled: false },
+      stats: { views: 0, orders: 0, calls: 0, startedAt: now.toISOString() }
+    });
+    await addAdminToDb(chatId, d.shopId, 'owner', userName);
+    userToShop[chatId] = d.shopId;
+    delete registrationState[chatId];
+    const shop = await getShopFromDb(d.shopId);
+    await bot.sendMessage(chatId, REG_FINAL_TEXT(d.shopId, d.displayName), { parse_mode: 'HTML' });
+    return bot.sendMessage(chatId, '👇', { reply_markup: getMainKeyboard(shop, chatId) });
+  } catch (e) {
+    console.error('Ошибка создания магазина:', e?.message || e);
+    delete registrationState[chatId];
+    return bot.sendMessage(chatId, '❌ Ошибка при создании магазина. Попробуйте ещё раз /register.');
+  }
+}
+
+// ========= /start =========
 bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const param = match && match[1] ? match[1].trim() : null;
@@ -1217,10 +1462,18 @@ bot.on('callback_query', async (q) => {
   // Приветствие нового пользователя — обрабатываем ДО проверки shopId
   if (data === 'welcome_create') {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    const existing = userToShop[chatId] || await findUserShop(chatId);
-    if (existing) return bot.sendMessage(chatId, '❌ Уже привязаны к магазину.');
-    registrationState[chatId] = { step: 'name', data: {} };
-    return bot.sendMessage(chatId, '📝 Шаг 1 из 8.\n\n<b>Техническое имя</b> (латиницей, без пробелов).\nПример: <code>flowers_msk</code>', { parse_mode: 'HTML' });
+    return startRegistration(chatId);
+  }
+
+  // Пропуск шага регистрации
+  if (data === 'reg_skip') {
+    const state = registrationState[chatId];
+    if (!state) {
+      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      return;
+    }
+    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    return regSkipCurrentStep(chatId, state);
   }
 
   const shopId = userToShop[chatId] || await findUserShop(chatId);
@@ -1639,6 +1892,13 @@ bot.on('message', async (msg) => {
         return bot.sendMessage(chatId, '❌ Ссылка должна начинаться с <code>https://max.ru/u/...</code>\n\nПопробуйте ещё раз или нажмите /cancel.', { parse_mode: 'HTML' });
       }
     }
+    if ((input.field === 'phone' || input.field === 'whatsapp_phone') && value) {
+      const norm = normalizePhone(value);
+      if (!norm) {
+        return bot.sendMessage(chatId, '❌ Похоже на опечатку. Пришлите номер целиком.\nНапример: <i>+7 962 402-51-75</i>\n\nИли напишите "нет" и нажмите /cancel.', { parse_mode: 'HTML' });
+      }
+      value = norm;
+    }
 
     if (input.field === 'display_name' && value) {
       if (value.length < 2 || value.length > 60) return bot.sendMessage(chatId, '❌ 2–60 символов.');
@@ -1830,11 +2090,7 @@ bot.onText(/\/migrate/, async (msg) => {
 });
 
 bot.onText(/\/register/, async (msg) => {
-  const chatId = msg.chat.id;
-  const existing = userToShop[chatId] || await findUserShop(chatId);
-  if (existing) return bot.sendMessage(chatId, '❌ Уже привязаны к магазину.');
-  registrationState[chatId] = { step: 'name', data: {} };
-  bot.sendMessage(chatId, '📝 Шаг 1 из 8.\n\n<b>Техническое имя</b> (латиницей, без пробелов).\nПример: <code>flowers_msk</code>', { parse_mode: 'HTML' });
+  await startRegistration(msg.chat.id);
 });
 
 bot.on('message', async (msg) => {
@@ -1844,78 +2100,18 @@ bot.on('message', async (msg) => {
   const state = registrationState[chatId];
   if (!state) return;
 
-  if (state.step === 'name') {
-    const name = text.trim().toLowerCase().replace(/\s+/g, '_');
-    if (!/^[a-z0-9_]+$/.test(name)) return bot.sendMessage(chatId, '❌ Только латиница, цифры, _.');
-    if (await getShopFromDb(name)) return bot.sendMessage(chatId, '❌ Имя занято.');
-    state.data.shopId = name;
-    state.step = 'displayName';
-    return bot.sendMessage(chatId, '✅ Шаг 2. Красивое название.');
+  if (!state.userName && msg.from && msg.from.first_name) {
+    state.userName = msg.from.first_name;
   }
-  if (state.step === 'displayName') {
-    if (text.length < 2 || text.length > 60) return bot.sendMessage(chatId, '❌ 2–60 символов.');
-    state.data.displayName = text.trim();
-    state.step = 'address';
-    return bot.sendMessage(chatId, '✅ Шаг 3. Адрес (или "нет").');
-  }
-  if (state.step === 'address') {
-    state.data.address = text.trim().toLowerCase() === 'нет' ? null : text.trim();
-    state.step = 'hours';
-    return bot.sendMessage(chatId, '✅ Шаг 4. Часы работы (или "нет").');
-  }
-  if (state.step === 'hours') {
-    state.data.hours = text.trim().toLowerCase() === 'нет' ? null : text.trim();
-    state.step = 'phone';
-    return bot.sendMessage(chatId, '✅ Шаг 5. Телефон для кнопки «Позвонить» (или "нет").');
-  }
-  if (state.step === 'phone') {
-    state.data.phone = text.trim().toLowerCase() === 'нет' ? null : text.trim();
-    state.step = 'telegram';
-    return bot.sendMessage(chatId, '✅ Шаг 6. <b>Telegram-юзернейм</b> (без @).\nПример: <code>KupidonAdm</code>\n(или "нет")', { parse_mode: 'HTML' });
-  }
-  if (state.step === 'telegram') {
-    state.data.telegramUsername = text.trim().toLowerCase() === 'нет' ? null : text.trim().replace(/^@/, '').toLowerCase();
-    state.step = 'whatsapp';
-    return bot.sendMessage(chatId, '✅ Шаг 7. <b>Номер WhatsApp</b>.\nПример: <code>+7 962 402-51-75</code>\n(или "нет")', { parse_mode: 'HTML' });
-  }
-  if (state.step === 'whatsapp') {
-    state.data.whatsappPhone = text.trim().toLowerCase() === 'нет' ? null : text.trim();
-    state.step = 'max';
-    return bot.sendMessage(chatId, '✅ Шаг 8. 🅼 <b>Ссылка на профиль в MAX</b>\n\n<b>Как получить:</b>\n1. Откройте приложение MAX\n2. Зайдите в свой профиль\n3. Нажмите «Пригласить друзей» или «Поделиться»\n4. Скопируйте ссылку\n\nОна начинается с <code>https://max.ru/u/...</code>\n\nПришлите её сюда целиком.\n(или "нет")', { parse_mode: 'HTML' });
-  }
-  if (state.step === 'max') {
-    if (text.trim().toLowerCase() === 'нет') {
-      state.data.maxLink = null;
-    } else {
-      const v = text.trim();
-      if (!/^https?:\/\/max\.ru\//.test(v)) {
-        return bot.sendMessage(chatId, '❌ Ссылка должна начинаться с <code>https://max.ru/u/...</code>\n\nПопробуйте ещё раз или напишите "нет".', { parse_mode: 'HTML' });
-      }
-      state.data.maxLink = v;
-    }
 
-    const now = new Date();
-    const trialEnd = new Date(now);
-    trialEnd.setMonth(trialEnd.getMonth() + PRESET_SHOP.trialMonths);
-    const inviteCode = generateInviteCode();
-    const userName = msg.from.first_name || 'Владелец';
-    await createShopInDb({
-      shopId: state.data.shopId, name: state.data.shopId,
-      displayName: state.data.displayName, address: state.data.address,
-      hours: state.data.hours, phone: state.data.phone,
-      telegramUsername: state.data.telegramUsername,
-      whatsappPhone: state.data.whatsappPhone,
-      maxLink: state.data.maxLink,
-      inviteCode, trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(),
-      settings: { logo: null, background: null, markupPercent: 20, aiEnabled: false },
-      stats: { views: 0, orders: 0, calls: 0, startedAt: now.toISOString() }
-    });
-    await addAdminToDb(chatId, state.data.shopId, 'owner', userName);
-    userToShop[chatId] = state.data.shopId;
-    delete registrationState[chatId];
-    const shop = await getShopFromDb(state.data.shopId);
-    return bot.sendMessage(chatId, `🎉 Магазин создан!\n🔗 ${SITE_URL}/shop/${state.data.shopId}`, { reply_markup: getMainKeyboard(shop, chatId) });
+  const cfg = REG_STEPS[state.step];
+  if (!cfg) { delete registrationState[chatId]; return; }
+
+  // Для опциональных шагов "нет" = пропуск
+  if (text.trim().toLowerCase() === 'нет' && !cfg.mandatory) {
+    return regSkipCurrentStep(chatId, state);
   }
+  return regSaveValue(chatId, state, text);
 });
 
 app.get('/shop/:shopId', async (req, res) => {
@@ -1979,7 +2175,6 @@ app.get('/shop/:shopId', async (req, res) => {
         ${sortPill('↓ Сначала дешевле', 'asc')}${sortPill('↑ Сначала дороже', 'desc')}
       </div>`;
 
-    // Жёсткие 50/50 + stretch: карточки в ряду одной высоты, кнопки на одной линии
     const useTwoColumns = active.length > TWO_COLUMNS_THRESHOLD;
     const gridStyle = useTwoColumns
       ? 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;max-width:760px;margin:0 auto;align-items:stretch;'
@@ -2042,7 +2237,6 @@ app.get('/shop/:shopId', async (req, res) => {
     const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-attachment:fixed;` : `background:#fafaf8;`;
     const headerHTML = logoUrl ? `<img src="${escAttr(logoUrl)}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
 
-    // Заголовок магазина — на белой полупрозрачной подложке, чтобы читался на фоне
     const titleHTML = `<div style="background:rgba(255,255,255,0.9);border-radius:18px;padding:14px 20px;max-width:560px;margin:0 auto 16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><h1 style="color:#2c3e50;margin:0 0 6px;font-size:24px;">${esc(shop.displayName)}</h1>${(shop.address || shop.hours) ? `<div style="color:#555;font-size:14px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>` : ''}</div>`;
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Flowind</title>
@@ -2128,9 +2322,9 @@ initDb().then(async () => {
     await createShopInDb({
       shopId: PRESET_SHOP.shopId, name: PRESET_SHOP.shopId,
       displayName: PRESET_SHOP.displayName, address: PRESET_SHOP.address,
-      hours: PRESET_SHOP.hours, phone: PRESET_SHOP.phone,
+      hours: PRESET_SHOP.hours, phone: normalizePhone(PRESET_SHOP.phone),
       telegramUsername: PRESET_SHOP.telegramUsername,
-      whatsappPhone: PRESET_SHOP.whatsappPhone,
+      whatsappPhone: normalizePhone(PRESET_SHOP.whatsappPhone),
       maxLink: PRESET_SHOP.maxLink,
       inviteCode, trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(),
       settings: { logo: null, background: null, markupPercent: PRESET_SHOP.markupPercent, aiEnabled: false },
