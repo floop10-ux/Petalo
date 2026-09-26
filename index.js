@@ -417,7 +417,10 @@ async function getPhotoUrl(fileRef) {
     photoUrlCache[fileRef] = { url, expires: Date.now() + 50 * 60 * 1000 };
     return url;
   } catch (e) { return null; }
-}function estimateCheckMinutes(count) {
+}const CHECK_PER_PAGE = 25;
+const CHECK_SESSION_TTL = 60 * 60 * 1000;
+
+function estimateCheckMinutes(count) {
   const sec = count * 15;
   return Math.max(1, Math.ceil(sec / 60));
 }
@@ -436,14 +439,11 @@ async function buildCheckStartScreen(shopId) {
   if (count === 0) {
     return { text: '🌿 На витрине нет букетов — проверять нечего.', options: { parse_mode: 'HTML' } };
   }
-  if (count > MAX_SESSION_BOUQUETS) {
-    return { text: `⚠️ Слишком много букетов для одной проверки (${count}).`, options: { parse_mode: 'HTML' } };
-  }
-  const minutes = estimateCheckMinutes(count);
+  const pages = Math.ceil(count / CHECK_PER_PAGE);
   const txt = `✅ <b>Проверка наличия</b>\n\n` +
     `В списке <b>${count}</b> ${plural(count, 'букет', 'букета', 'букетов')}.\n` +
-    `⏱ Это займёт примерно <b>${minutes}</b> ${plural(minutes, 'минуту', 'минуты', 'минут')}.\n\n` +
-    `<i>⚠️ Не отвлекайтесь — если прервать, проверка начнётся сначала.</i>`;
+    `Мы разбили их на <b>${pages}</b> ${plural(pages, 'страницу', 'страницы', 'страниц')} по ${CHECK_PER_PAGE}.\n\n` +
+    `<i>💾 Если отвлечётесь — не страшно. Проверка сохранится, и вы сможете продолжить с того же места в течение часа.</i>`;
   return {
     text: txt,
     options: {
@@ -470,24 +470,37 @@ function plural(n, one, few, many) {
 function buildCheckListText(session) {
   const total = session.bouquets.length;
   const done = Object.keys(session.checked).length;
+  const totalPages = Math.max(1, Math.ceil(total / CHECK_PER_PAGE));
+  const page = (session.currentPage || 0) + 1;
   let txt = `✅ <b>Проверка наличия</b>\n`;
-  txt += `Проверено <b>${done}</b> из <b>${total}</b>\n\n`;
-  txt += `<i>Работайте снизу списка: непроверенные букеты — под проверенными.</i>`;
+  txt += `Страница <b>${page}</b> из <b>${totalPages}</b> · Проверено <b>${done}</b> из <b>${total}</b>\n\n`;
+  txt += `<i>Работайте снизу списка, так удобнее.</i>`;
   return txt;
 }
 
 function buildCheckListKeyboard(session) {
   const rows = [];
-  for (const id of session.order) {
-    const b = session.bouquets.find(x => x.id === id);
-    if (!b) continue;
-    const mark = session.checked[id] === 'yes' ? '✓' : '🚫';
-    rows.push([{ text: `${mark} №${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
+  const total = session.bouquets.length;
+  const totalPages = Math.max(1, Math.ceil(total / CHECK_PER_PAGE));
+  const page = Math.max(0, Math.min(session.currentPage || 0, totalPages - 1));
+  const start = page * CHECK_PER_PAGE;
+  const end = Math.min(start + CHECK_PER_PAGE, total);
+  const slice = session.bouquets.slice(start, end);
+
+  for (const b of slice) {
+    const st = session.checked[b.id];
+    const prefix = st === 'yes' ? '✓ ' : (st === 'no' ? '🚫 ' : '');
+    rows.push([{ text: `${prefix}№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
   }
-  const unchecked = session.bouquets.filter(b => !session.checked[b.id]).sort((a, b) => a.id - b.id);
-  for (const b of unchecked) {
-    rows.push([{ text: `№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
+
+  if (totalPages > 1) {
+    const navRow = [];
+    if (page > 0) navRow.push({ text: '⬅️ Назад', callback_data: `check_page_${page - 1}` });
+    navRow.push({ text: `${page + 1} / ${totalPages}`, callback_data: 'noop' });
+    if (page < totalPages - 1) navRow.push({ text: 'Дальше ➡️', callback_data: `check_page_${page + 1}` });
+    rows.push(navRow);
   }
+
   rows.push([{ text: '⏹ Завершить проверку', callback_data: 'check_finish' }]);
   return rows;
 }
@@ -1383,8 +1396,8 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const param = match && match[1] ? match[1].trim() : null;
   const userName = msg.from.first_name || 'Флорист';
 
-  delete checkSessions[chatId];
   delete archiveSessions[chatId];
+  // Сессию проверки НЕ удаляем — она живёт 60 минут
 
   // Инвайт через deep-link (?start=inv_CODE)
   if (param && param.startsWith('inv_')) {
@@ -1459,6 +1472,11 @@ bot.on('callback_query', async (q) => {
   const data = q.data;
   bot.answerCallbackQuery(q.id).catch(() => {});
 
+  // Продлить активность сессии проверки, если она есть
+  if (checkSessions[chatId]) {
+    checkSessions[chatId].lastActivity = Date.now();
+  }
+
   // Приветствие нового пользователя — обрабатываем ДО проверки shopId
   if (data === 'welcome_create') {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
@@ -1513,7 +1531,6 @@ bot.on('callback_query', async (q) => {
   if (data === 'menu_close') { delete checkSessions[chatId]; delete archiveSessions[chatId]; return bot.deleteMessage(chatId, q.message.message_id).catch(() => {}); }
   if (data === 'menu_back') {
     if (!owner) return;
-    delete checkSessions[chatId];
     delete archiveSessions[chatId];
     return bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...getSettingsMenu(shop, chatId) }).catch(() => {});
   }
@@ -1678,11 +1695,15 @@ bot.on('callback_query', async (q) => {
         chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML'
       }).catch(() => {});
     }
-    if (bouquets.length > MAX_SESSION_BOUQUETS) {
-      return bot.editMessageText(`⚠️ Слишком много букетов для одной проверки (${bouquets.length}).`,
-        { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
-    }
-    checkSessions[chatId] = { shopId, bouquets, checked: {}, order: [], listMessageId: q.message.message_id };
+    checkSessions[chatId] = {
+      shopId,
+      bouquets,
+      checked: {},
+      order: [],
+      listMessageId: q.message.message_id,
+      currentPage: 0,
+      lastActivity: Date.now()
+    };
     const session = checkSessions[chatId];
     const txt = buildCheckListText(session);
     const kb = { inline_keyboard: buildCheckListKeyboard(session) };
@@ -1701,6 +1722,21 @@ bot.on('callback_query', async (q) => {
     });
   }
 
+  if (data.startsWith('check_page_')) {
+    const session = checkSessions[chatId];
+    if (!session) {
+      return bot.editMessageText('⚠️ Сессия проверки истекла. Начните заново.', {
+        chat_id: chatId, message_id: q.message.message_id
+      }).catch(() => {});
+    }
+    const newPage = parseInt(data.replace('check_page_', ''));
+    if (!isNaN(newPage)) session.currentPage = newPage;
+    session.lastActivity = Date.now();
+    const txt = buildCheckListText(session);
+    const kb = { inline_keyboard: buildCheckListKeyboard(session) };
+    return bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+  }
+
   if (data.startsWith('check_show_')) {
     const session = checkSessions[chatId];
     if (!session) return bot.sendMessage(chatId, '⚠️ Сессия проверки прервана. Начните заново.');
@@ -1708,6 +1744,7 @@ bot.on('callback_query', async (q) => {
     const b = session.bouquets.find(x => x.id === id);
     if (!b) return bot.sendMessage(chatId, '⚠️ Букет больше не в списке.');
     session.currentBouquetId = id;
+    session.lastActivity = Date.now();
     const already = session.checked[id];
     const headerText = already ? `📷 <b>Проверка (уже отмечен)</b>` : `📷 <b>Проверка наличия</b>`;
     return sendBouquetPreview(chatId, b, headerText, [
@@ -1731,6 +1768,7 @@ bot.on('callback_query', async (q) => {
     session.checked[id] = 'yes';
     session.order = [id, ...session.order.filter(x => x !== id)];
     session.currentBouquetId = null;
+    session.lastActivity = Date.now();
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return refreshCheckList(chatId, session);
   }
@@ -1744,6 +1782,7 @@ bot.on('callback_query', async (q) => {
     session.checked[id] = 'no';
     session.order = [id, ...session.order.filter(x => x !== id)];
     session.currentBouquetId = null;
+    session.lastActivity = Date.now();
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return refreshCheckList(chatId, session);
   }
@@ -1871,8 +1910,8 @@ bot.on('message', async (msg) => {
     delete awaitingMarkup[chatId];
     delete awaitingInput[chatId];
     delete awaitingUpload[chatId];
-    delete checkSessions[chatId];
     delete archiveSessions[chatId];
+    // ВАЖНО: сессию проверки НЕ удаляем — она живёт 60 минут
   }
 
   const shopId = userToShop[chatId] || await findUserShop(chatId);
@@ -1955,6 +1994,17 @@ bot.on('message', async (msg) => {
   if (text === '📷 Добавить букет') return bot.sendMessage(chatId, ADD_BOUQUET_HINT, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   if (text === '✅ Что в наличии?') {
     if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
+    const existing = checkSessions[chatId];
+    if (existing && (Date.now() - (existing.lastActivity || 0)) < CHECK_SESSION_TTL) {
+      // Продолжаем активную сессию
+      existing.lastActivity = Date.now();
+      const t = buildCheckListText(existing);
+      const kb = { inline_keyboard: buildCheckListKeyboard(existing) };
+      const msg = await bot.sendMessage(chatId, t, { parse_mode: 'HTML', reply_markup: kb });
+      existing.listMessageId = msg.message_id;
+      return;
+    }
+    // Иначе — стартовый экран
     const { text: t, options } = await buildCheckStartScreen(shopId);
     return bot.sendMessage(chatId, t, options);
   }
@@ -2003,7 +2053,6 @@ bot.on('photo', async (msg) => {
   const caption = (msg.caption || '').trim();
 
   if (caption) {
-    // Правка 3+4: цена — строго последнее слово, чистое число
     const words = caption.split(/\s+/).filter(w => w.length > 0);
     const lastWord = words[words.length - 1] || '';
     const price = /^\d+$/.test(lastWord) ? parseInt(lastWord, 10) : 0;
@@ -2312,6 +2361,19 @@ async function checkAndNotify() {
   } catch (e) { console.error('Notify error'); }
 }
 
+function cleanupExpiredCheckSessions() {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const chatId of Object.keys(checkSessions)) {
+    const s = checkSessions[chatId];
+    if (!s || !s.lastActivity || now - s.lastActivity > CHECK_SESSION_TTL) {
+      delete checkSessions[chatId];
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) console.log(`🧹 Очищено сессий проверки: ${cleaned}`);
+}
+
 initDb().then(async () => {
   const existing = await getShopFromDb(PRESET_SHOP.shopId);
   if (!existing) {
@@ -2348,6 +2410,7 @@ initDb().then(async () => {
   } catch (e) { console.error('❌ Ошибка установки webhook'); }
 
   setInterval(checkAndNotify, 10 * 60 * 1000);
+  setInterval(cleanupExpiredCheckSessions, 5 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`🚀 Flowind на порту ${PORT} (webhook)`));
