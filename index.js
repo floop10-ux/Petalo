@@ -82,10 +82,10 @@ const awaitingMarkup = {};
 const photoUrlCache = {};
 const checkSessions = {};
 const archiveSessions = {};
+const notifiedClicks = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
 const MAX_LIST_ITEMS = 25;
-const MAX_SESSION_BOUQUETS = 80;
 const TWO_COLUMNS_THRESHOLD = 12;
 
 const MENU_BUTTONS = [
@@ -95,6 +95,8 @@ const MENU_BUTTONS = [
   '📝 Переименовать',
   '🗑 Удалить букет',
   '📦 Архив',
+  '✅ Я сегодня работаю',
+  '🚪 Закончить работу',
   '⚙️ Меню'
 ];
 
@@ -200,7 +202,6 @@ function generateShopId() {
 }
 
 // Нормализация телефона: любой формат → +7XXXXXXXXXX (для РФ) или +<все_цифры> (международный).
-// Меньше 10 цифр — считаем опечаткой, возвращаем null.
 function normalizePhone(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const digits = raw.replace(/\D/g, '');
@@ -223,6 +224,69 @@ function formatPhone(normalized) {
     return '+7 ' + digits.slice(1, 4) + ' ' + digits.slice(4, 7) + '-' + digits.slice(7, 9) + '-' + digits.slice(9, 11);
   }
   return normalized;
+}
+
+// ========== УВЕДОМЛЕНИЯ О КЛИКАХ ==========
+const CLICK_NOTIFY_TTL = 10 * 60 * 1000;
+
+const CLICK_TYPE_NAMES = {
+  tg: '📩 Telegram',
+  wa: '💬 WhatsApp',
+  max: '🅼 MAX',
+  call: '📞 Звонок'
+};
+
+function sendClickNotification(shop, bouquet, type) {
+  if (!shop || !shop.admins || shop.admins.length === 0) return;
+  const channelName = CLICK_TYPE_NAMES[type] || 'Мессенджер';
+  const isCall = type === 'call';
+
+  const onShiftAdmins = shop.admins.filter(a => a.onShift);
+
+  if (onShiftAdmins.length > 0) {
+    const text = `🔔 <b>Клиент нажал «${isCall ? 'Позвонить' : 'Связаться'}»</b>\n\n` +
+      `Букет <b>№${bouquet.id}</b> «${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n` +
+      `Канал: ${channelName}\n\n` +
+      (isCall
+        ? `<i>Ожидайте звонка.</i>`
+        : `<i>Возможно, он уже пишет вам — проверьте.</i>`);
+    for (const admin of onShiftAdmins) {
+      bot.sendMessage(admin.chatId, text, { parse_mode: 'HTML' }).catch(() => {});
+    }
+    return;
+  }
+
+  // Никто не на смене — уведомляем только владельца
+  const owner = shop.admins.find(a => a.role === 'owner');
+  if (!owner) return;
+
+  const warnText = `⚠️ <b>На смене никого</b>\n\n` +
+    `Клиент нажал «${isCall ? 'Позвонить' : 'Связаться'}»\n\n` +
+    `Букет <b>№${bouquet.id}</b> «${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n` +
+    `Канал: ${channelName}\n\n` +
+    `<i>Напомните флористам отметиться в боте — «✅ Я сегодня работаю».</i>`;
+  bot.sendMessage(owner.chatId, warnText, { parse_mode: 'HTML' }).catch(() => {});
+}
+
+function cleanupNotifiedClicks() {
+  const now = Date.now();
+  for (const k of Object.keys(notifiedClicks)) {
+    if (now - notifiedClicks[k] > CLICK_NOTIFY_TTL) delete notifiedClicks[k];
+  }
+}
+
+async function setUserOnShift(chatId, shopId, on) {
+  if (on) {
+    await pool.query(
+      `UPDATE admins SET on_shift_until = NOW() + INTERVAL '14 hours' WHERE chat_id = $1 AND shop_id = $2`,
+      [chatId, shopId]
+    );
+  } else {
+    await pool.query(
+      `UPDATE admins SET on_shift_until = NULL WHERE chat_id = $1 AND shop_id = $2`,
+      [chatId, shopId]
+    );
+  }
 }
 
 function isValidFileId(fileId) {
@@ -630,6 +694,8 @@ async function initDb() {
       UNIQUE(chat_id, shop_id)
     );
   `);
+  await pool.query(`ALTER TABLE admins ADD COLUMN IF NOT EXISTS on_shift_until TIMESTAMPTZ`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bouquets (
       id SERIAL PRIMARY KEY,
@@ -668,7 +734,13 @@ async function getShopFromDb(shopId) {
     inviteCode: s.invite_code, trialStart: s.trial_start, trialEnd: s.trial_end,
     settings: s.settings || { logo: null, background: null, markupPercent: 20, aiEnabled: false },
     stats: s.stats || { views: 0, orders: 0, calls: 0, startedAt: new Date().toISOString() },
-    admins: admins.rows.map(a => ({ chatId: parseInt(a.chat_id), role: a.role, name: a.name, joinedAt: a.joined_at }))
+    admins: admins.rows.map(a => ({
+      chatId: parseInt(a.chat_id),
+      role: a.role,
+      name: a.name,
+      joinedAt: a.joined_at,
+      onShift: !!(a.on_shift_until && new Date(a.on_shift_until) > new Date())
+    }))
   };
 }
 
@@ -744,18 +816,27 @@ async function findUserShop(chatId) {
 
 function getMainKeyboard(shop, chatId) {
   const owner = isOwner(shop, chatId);
+  const me = shop && shop.admins ? shop.admins.find(a => a.chatId === chatId) : null;
+  const onShift = !!(me && me.onShift);
+  const shiftBtn = onShift
+    ? { text: '🚪 Закончить работу' }
+    : { text: '✅ Я сегодня работаю' };
+
   if (owner) {
     return { keyboard: [
       [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
       [{ text: '✏️ Изменить цену' }, { text: '📝 Переименовать' }],
       [{ text: '🗑 Удалить букет' }, { text: '📦 Архив' }],
+      [shiftBtn],
       [{ text: '⚙️ Меню' }]
     ], resize_keyboard: true };
   }
   return { keyboard: [
     [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
     [{ text: '✏️ Изменить цену' }, { text: '📝 Переименовать' }],
-    [{ text: '📦 Архив' }, { text: '⚙️ Меню' }]
+    [{ text: '📦 Архив' }],
+    [shiftBtn],
+    [{ text: '⚙️ Меню' }]
   ], resize_keyboard: true };
 }
 
@@ -1131,7 +1212,19 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     if (!shop) return res.status(404).send('Не найдено');
     const b = await getBouquetById(shopId, bouquetId);
     if (!b) return res.status(404).send('Букет не найден');
+
     const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
+
+    // Уведомление флористу с антифлудом на 10 минут по IP + букет + тип
+    const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'unknown';
+    const clickKey = `${shopId}:${bouquetId}:${type}:${clientIp}`;
+    const now = Date.now();
+    const lastNotified = notifiedClicks[clickKey];
+    if (!lastNotified || now - lastNotified > CLICK_NOTIFY_TTL) {
+      notifiedClicks[clickKey] = now;
+      sendClickNotification(shop, b, type);
+    }
+
     if (type === 'max' && shop.maxLink) {
       await incrementShopStat(shopId, 'orders');
       await pool.query('UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 WHERE id = $1', [b.id]);
@@ -1388,6 +1481,8 @@ async function regFinish(chatId, state) {
       stats: { views: 0, orders: 0, calls: 0, startedAt: now.toISOString() }
     });
     await addAdminToDb(chatId, d.shopId, 'owner', userName);
+    // Владелец сразу на смене — он только что создал магазин и активно работает
+    await setUserOnShift(chatId, d.shopId, true);
     userToShop[chatId] = d.shopId;
     delete registrationState[chatId];
     const shop = await getShopFromDb(d.shopId);
@@ -1419,7 +1514,13 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
       if (currentShop && currentShop !== shopId) return bot.sendMessage(chatId, '❌ Вы уже привязаны к другому магазину.');
       await addAdminToDb(chatId, shopId, 'florist', userName);
       userToShop[chatId] = shopId;
-      return bot.sendMessage(chatId, `🎉 Добро пожаловать в команду «${esc(shop.displayName)}»!\n\n📷 Добавляйте букеты: фото с подписью «Название цена».\n✅ Подтверждайте наличие через «Что в наличии?».`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+      const updatedShop = await getShopFromDb(shopId);
+      return bot.sendMessage(chatId,
+        `🎉 Добро пожаловать в команду «${esc(shop.displayName)}»!\n\n` +
+        `📷 Добавляйте букеты: фото с подписью «Название цена».\n` +
+        `✅ Подтверждайте наличие через «Что в наличии?».\n\n` +
+        `<i>💡 Чтобы получать уведомления о клиентах, нажмите «✅ Я сегодня работаю» в меню.</i>`,
+        { parse_mode: 'HTML', reply_markup: getMainKeyboard(updatedShop, chatId) });
     }
     return bot.sendMessage(chatId, '❌ Приглашение недействительно.');
   }
@@ -1432,6 +1533,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
       const presetShop = await getShopFromDb(PRESET_SHOP.shopId);
       if (presetShop && presetShop.admins.length === 0) {
         await addAdminToDb(chatId, PRESET_SHOP.shopId, 'owner', userName);
+        await setUserOnShift(chatId, PRESET_SHOP.shopId, true);
         userToShop[chatId] = PRESET_SHOP.shopId;
         shopId = PRESET_SHOP.shopId;
       }
@@ -1450,8 +1552,12 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     }
 
     const owner = isOwner(shop, chatId);
+    const me = shop.admins.find(a => a.chatId === chatId);
+    const onShift = !!(me && me.onShift);
+
     let txt = `🌸 «${esc(shop.displayName)}»\n\n`;
-    txt += owner ? `👑 Вы — владелец.\n\n` : `🌸 Вы — флорист.\n\n`;
+    txt += owner ? `👑 Вы — владелец.\n` : `🌸 Вы — флорист.\n`;
+    txt += onShift ? `🟢 Вы <b>на смене</b>.\n\n` : `⚪ Вы <b>не на смене</b>. Нажмите «✅ Я сегодня работаю», чтобы получать уведомления о клиентах.\n\n`;
     txt += `📷 Добавить букет — отправить фото с подписью\n`;
     txt += `✅ Что в наличии — отметить актуальные\n`;
     txt += `✏️ Изменить цену — обновить стоимость\n`;
@@ -1575,7 +1681,10 @@ bot.on('callback_query', async (q) => {
     if (!owner) return;
     const others = shop.admins.filter(a => a.chatId !== chatId);
     if (others.length === 0) return bot.sendMessage(chatId, '👥 <b>Команда магазина</b>\n\nПока только вы.', { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
-    const keyboard = others.map(a => [{ text: `🌸 ${a.name || 'Флорист'}`, callback_data: `team_user_${a.chatId}` }]);
+    const keyboard = others.map(a => {
+      const dot = a.onShift ? '🟢' : '⚪';
+      return [{ text: `${dot} ${a.name || 'Флорист'}`, callback_data: `team_user_${a.chatId}` }];
+    });
     keyboard.push([{ text: '↩️ Назад', callback_data: 'menu_back' }]);
     return bot.sendMessage(chatId, `👥 <b>Команда магазина</b> (${others.length})`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
   }
@@ -1584,7 +1693,11 @@ bot.on('callback_query', async (q) => {
     const targetChatId = parseInt(data.split('_')[2]);
     const target = shop.admins.find(a => a.chatId === targetChatId);
     if (!target) return;
-    return bot.sendMessage(chatId, `🌸 <b>${esc(target.name || 'Флорист')}</b>\n\nПрисоединился: ${new Date(target.joinedAt).toLocaleDateString()}`,
+    const statusText = target.onShift ? '🟢 На смене' : '⚪ Выходной';
+    return bot.sendMessage(chatId,
+      `🌸 <b>${esc(target.name || 'Флорист')}</b>\n\n` +
+      `Статус: ${statusText}\n` +
+      `Присоединился: ${new Date(target.joinedAt).toLocaleDateString()}`,
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
         [{ text: '🗑 Удалить доступ', callback_data: `kick_${targetChatId}` }],
         [{ text: '↩️ Назад', callback_data: 'menu_team' }]
@@ -1672,7 +1785,9 @@ bot.on('callback_query', async (q) => {
     const active = (await getBouquetsFromDb(shopId)).length;
     const days = getRemainingDays(shop);
     const myRole = owner ? '👑 Владелец' : '🌸 Флорист';
-    let txt = `📋 <b>${esc(shop.displayName)}</b>\n\n👤 ${myRole}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${active}\n💰 Наценка: ${shop.settings.markupPercent}%\n📅 Триал: ${days} дней`;
+    const me = shop.admins.find(a => a.chatId === chatId);
+    const myShift = me && me.onShift ? '🟢 На смене' : '⚪ Не на смене';
+    let txt = `📋 <b>${esc(shop.displayName)}</b>\n\n👤 ${myRole} · ${myShift}\n👥 Команда: ${shop.admins.length}\n📦 Букетов: ${active}\n💰 Наценка: ${shop.settings.markupPercent}%\n📅 Триал: ${days} дней`;
     const kb = owner ? { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } : { inline_keyboard: [[{ text: '❌ Закрыть', callback_data: 'menu_close' }]] };
     return bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: kb });
   }
@@ -2006,7 +2121,6 @@ bot.on('message', async (msg) => {
     if (!isSubscriptionActive(shop)) return bot.sendMessage(chatId, '❌ Подписка истекла.');
     const existing = checkSessions[chatId];
     if (existing && (Date.now() - (existing.lastActivity || 0)) < CHECK_SESSION_TTL) {
-      // Продолжаем активную сессию
       existing.lastActivity = Date.now();
       const t = buildCheckListText(existing);
       const kb = { inline_keyboard: buildCheckListKeyboard(existing) };
@@ -2014,7 +2128,6 @@ bot.on('message', async (msg) => {
       existing.listMessageId = msg.message_id;
       return;
     }
-    // Иначе — стартовый экран
     const { text: t, options } = await buildCheckStartScreen(shopId);
     return bot.sendMessage(chatId, t, options);
   }
@@ -2033,6 +2146,22 @@ bot.on('message', async (msg) => {
     if (arch.length === 0) return bot.sendMessage(chatId, '📦 В архиве пусто — все букеты на витрине.', { reply_markup: getMainKeyboard(shop, chatId) });
     archiveSessions[chatId] = { bouquets: arch, currentIndex: 0 };
     return showArchiveCard(chatId, archiveSessions[chatId]);
+  }
+  if (text === '✅ Я сегодня работаю') {
+    await setUserOnShift(chatId, shopId, true);
+    const updated = await getShopFromDb(shopId);
+    return bot.sendMessage(chatId,
+      `✅ Отлично! Вы <b>на смене</b>.\n\n` +
+      `Теперь все уведомления о клиентах будут приходить вам. Через 14 часов статус сбросится автоматически.`,
+      { parse_mode: 'HTML', reply_markup: getMainKeyboard(updated, chatId) });
+  }
+  if (text === '🚪 Закончить работу') {
+    await setUserOnShift(chatId, shopId, false);
+    const updated = await getShopFromDb(shopId);
+    return bot.sendMessage(chatId,
+      `👋 Хорошего отдыха!\n\n` +
+      `Уведомления больше не приходят. Вернётесь — нажмите «✅ Я сегодня работаю».`,
+      { reply_markup: getMainKeyboard(updated, chatId) });
   }
   if (text === '⚙️ Меню') return bot.sendMessage(chatId, '⚙️ Меню магазина:', getSettingsMenu(shop, chatId));
 });
@@ -2166,7 +2295,6 @@ bot.on('message', async (msg) => {
   const cfg = REG_STEPS[state.step];
   if (!cfg) { delete registrationState[chatId]; return; }
 
-  // Для опциональных шагов "нет" = пропуск
   if (text.trim().toLowerCase() === 'нет' && !cfg.mandatory) {
     return regSkipCurrentStep(chatId, state);
   }
@@ -2421,6 +2549,7 @@ initDb().then(async () => {
 
   setInterval(checkAndNotify, 10 * 60 * 1000);
   setInterval(cleanupExpiredCheckSessions, 5 * 60 * 1000);
+  setInterval(cleanupNotifiedClicks, 5 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`🚀 Flowind на порту ${PORT} (webhook)`));
