@@ -256,7 +256,6 @@ function sendClickNotification(shop, bouquet, type) {
     return;
   }
 
-  // Никто не на смене — уведомляем только владельца
   const owner = shop.admins.find(a => a.role === 'owner');
   if (!owner) return;
 
@@ -551,18 +550,15 @@ function buildCheckListKeyboard(session) {
   const end = Math.min(start + CHECK_PER_PAGE, total);
   const slice = session.bouquets.slice(start, end);
 
-  // Разделяем на проверенные и непроверенные
   const checked = slice.filter(b => session.checked[b.id]);
   const unchecked = slice.filter(b => !session.checked[b.id]);
 
-  // Сверху — проверенные (с галочками)
   for (const b of checked) {
     const st = session.checked[b.id];
     const prefix = st === 'yes' ? '✓ ' : '🚫 ';
     rows.push([{ text: `${prefix}№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
   }
 
-  // Внизу — непроверенные (в них и тыкаем)
   for (const b of unchecked) {
     rows.push([{ text: `№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
   }
@@ -610,14 +606,41 @@ function buildArchiveCardText(session) {
 
 async function showArchiveCard(chatId, session) {
   if (session.currentIndex >= session.bouquets.length) {
+    const shopId = session.shopId;
     delete archiveSessions[chatId];
-    return bot.sendMessage(chatId, '🎉 Архив просмотрен!').catch(() => {});
+    const shop = shopId ? await getShopFromDb(shopId) : null;
+    return bot.sendMessage(chatId, '📦 Архив просмотрен.', shop ? { reply_markup: getMainKeyboard(shop, chatId) } : {}).catch(() => {});
   }
+
+  // На первом показе — скрываем нижнее меню, чтобы фото было крупнее
+  if (session.currentIndex === 0 && !session.keyboardHidden) {
+    session.keyboardHidden = true;
+    await bot.sendMessage(chatId, '📦 <i>Открываю архив — меню вернётся после закрытия.</i>', {
+      parse_mode: 'HTML',
+      reply_markup: { remove_keyboard: true }
+    }).catch(() => {});
+  }
+
   const b = session.bouquets[session.currentIndex];
-  const txt = buildArchiveCardText(session);
+  const s = getBouquetStatus(b);
+  const statusEmoji = s === 'hidden' ? '🚫' : '❌';
+  let dateStr = '';
+  if (b.confirmedAt) {
+    const d = new Date(b.confirmedAt);
+    dateStr = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  }
+
+  const caption =
+    `📦 <b>${session.currentIndex + 1}/${session.bouquets.length}</b> · <b>№${b.id}</b>\n` +
+    `${esc(b.name)} — <b>${b.price} ₽</b>\n` +
+    `<i>${statusEmoji} ${dateStr ? dateStr + ' · ' : ''}${s === 'hidden' ? 'убран вручную' : 'срок истёк'}</i>`;
+
   const buttons = [
-    [{ text: '↩️ Вернуть на витрину', callback_data: 'arch_restore' }],
-    [{ text: '⏭ Следующий', callback_data: 'arch_next' }, { text: '⏹ Закрыть', callback_data: 'arch_close' }]
+    [
+      { text: '↩️ Вернуть', callback_data: 'arch_restore' },
+      { text: '⏭ Дальше', callback_data: 'arch_next' },
+      { text: '⏹ Закрыть', callback_data: 'arch_close' }
+    ]
   ];
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
 
@@ -625,11 +648,11 @@ async function showArchiveCard(chatId, session) {
   const tgRef = getTelegramPhotoRef(firstPhoto);
   if (tgRef) {
     try {
-      await bot.sendPhoto(chatId, tgRef, { caption: txt, ...opts });
+      await bot.sendPhoto(chatId, tgRef, { caption, ...opts });
       return;
     } catch (e) { /* фолбэк */ }
   }
-  await bot.sendMessage(chatId, txt, opts);
+  await bot.sendMessage(chatId, caption, opts);
 }
 
 async function showBouquetList(chatId, shopId, action, headerText) {
@@ -1215,7 +1238,6 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
 
     const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
 
-    // Уведомление флористу с антифлудом на 10 минут по IP + букет + тип
     const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'unknown';
     const clickKey = `${shopId}:${bouquetId}:${type}:${clientIp}`;
     const now = Date.now();
@@ -1996,9 +2018,7 @@ bot.on('callback_query', async (q) => {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.');
   }
-});
-
-async function refreshCheckList(chatId, session) {
+});async function refreshCheckList(chatId, session) {
   const total = session.bouquets.length;
   const done = Object.keys(session.checked).length;
   if (done >= total) {
@@ -2144,7 +2164,7 @@ bot.on('message', async (msg) => {
   if (text === '📦 Архив') {
     const arch = await getArchivedBouquets(shopId);
     if (arch.length === 0) return bot.sendMessage(chatId, '📦 В архиве пусто — все букеты на витрине.', { reply_markup: getMainKeyboard(shop, chatId) });
-    archiveSessions[chatId] = { bouquets: arch, currentIndex: 0 };
+    archiveSessions[chatId] = { bouquets: arch, currentIndex: 0, shopId, keyboardHidden: false };
     return showArchiveCard(chatId, archiveSessions[chatId]);
   }
   if (text === '✅ Я сегодня работаю') {
