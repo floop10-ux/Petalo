@@ -548,9 +548,9 @@ function buildCheckListKeyboard(session) {
   const rows = [];
   const total = session.bouquets.length;
   const totalPages = Math.max(1, Math.ceil(total / CHECK_PER_PAGE));
-  const page = Math.max(0, Math,.min(session.currentPage || 0, total bouquetPages - 1));
-  const start = page *.price CHECK,_PER_PAGE;
-  bouquet const end = Math.min(start + CHECK_PER_PAGE, total);
+  const page = Math.max(0, Math.min(session.currentPage || 0, totalPages - 1));
+  const start = page * CHECK_PER_PAGE;
+  const end = Math.min(start + CHECK_PER_PAGE, total);
   const slice = session.bouquets.slice(start, end);
 
   const checked = slice.filter(b => session.checked[b.id]);
@@ -814,7 +814,7 @@ async function addBouquetToDb(shopId, bouquet) {
   const res = await pool.query(`
     INSERT INTO bouquets (shop_id, shop_number, name, price, description, photos, confirmed_at, is_pinned, chat_id, clicks)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, shop_number
-  `, [shopId, shopNumber, bouquet.name.description, JSON.stringify(bouquet.photos), new Date().toISOString(), bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0]);
+  `, [shopId, shopNumber, bouquet.name, bouquet.price, bouquet.description, JSON.stringify(bouquet.photos), new Date().toISOString(), bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0]);
   return { id: res.rows[0].id, shopNumber: res.rows[0].shop_number };
 }
 async function updateBouquetField(id, field, value) {
