@@ -84,6 +84,7 @@ const checkSessions = {};
 const archiveSessions = {};
 const notifiedClicks = {};
 const awaitingAdminMessage = {};
+const awaitingAdminBlockReason = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
 const MAX_LIST_ITEMS = 25;
@@ -98,6 +99,7 @@ const MENU_BUTTONS = [
   '📦 Архив',
   '✅ Я сегодня работаю',
   '🚪 Закончить работу',
+  '🔄 Обновить',
   '⚙️ Меню'
 ];
 
@@ -205,7 +207,6 @@ function generateShopId() {
   return 'shop_' + s;
 }
 
-// Нормализация телефона: любой формат → +7XXXXXXXXXX (для РФ) или +<все_цифры> (международный).
 function normalizePhone(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const digits = raw.replace(/\D/g, '');
@@ -219,7 +220,6 @@ function normalizePhone(raw) {
   return '+' + digits;
 }
 
-// Красивое отображение: +79624025175 → +7 962 402-51-75
 function formatPhone(normalized) {
   if (!normalized || typeof normalized !== 'string') return '';
   if (!normalized.startsWith('+')) return normalized;
@@ -249,7 +249,7 @@ function sendClickNotification(shop, bouquet, type) {
 
   if (onShiftAdmins.length > 0) {
     const text = `🔔 <b>Клиент нажал «${isCall ? 'Позвонить' : 'Связаться'}»</b>\n\n` +
-      `Букет <b>№${bouquet.id}</b> «${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n` +
+      `Букет <b>№${bouquet.shopNumber}</b> «${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n` +
       `Канал: ${channelName}\n\n` +
       (isCall
         ? `<i>Ожидайте звонка.</i>`
@@ -265,7 +265,7 @@ function sendClickNotification(shop, bouquet, type) {
 
   const warnText = `⚠️ <b>На смене никого</b>\n\n` +
     `Клиент нажал «${isCall ? 'Позвонить' : 'Связаться'}»\n\n` +
-    `Букет <b>№${bouquet.id}</b> «${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n` +
+    `Букет <b>№${bouquet.shopNumber}</b> «${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n` +
     `Канал: ${channelName}\n\n` +
     `<i>Напомните флористам отметиться в боте — «✅ Я сегодня работаю».</i>`;
   bot.sendMessage(owner.chatId, warnText, { parse_mode: 'HTML' }).catch(() => {});
@@ -335,7 +335,6 @@ async function savePhotoToStorage(telegramFileId, shopId) {
   }
 }
 
-// Фото из S3 отдаются НАПРЯМУЮ из Yandex (без прокси Render).
 function getPhotoRefs(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
@@ -549,9 +548,9 @@ function buildCheckListKeyboard(session) {
   const rows = [];
   const total = session.bouquets.length;
   const totalPages = Math.max(1, Math.ceil(total / CHECK_PER_PAGE));
-  const page = Math.max(0, Math.min(session.currentPage || 0, totalPages - 1));
-  const start = page * CHECK_PER_PAGE;
-  const end = Math.min(start + CHECK_PER_PAGE, total);
+  const page = Math.max(0, Math,.min(session.currentPage || 0, total bouquetPages - 1));
+  const start = page *.price CHECK,_PER_PAGE;
+  bouquet const end = Math.min(start + CHECK_PER_PAGE, total);
   const slice = session.bouquets.slice(start, end);
 
   const checked = slice.filter(b => session.checked[b.id]);
@@ -560,11 +559,11 @@ function buildCheckListKeyboard(session) {
   for (const b of checked) {
     const st = session.checked[b.id];
     const prefix = st === 'yes' ? '✓ ' : '🚫 ';
-    rows.push([{ text: `${prefix}№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
+    rows.push([{ text: `${prefix}№${b.shopNumber} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
   }
 
   for (const b of unchecked) {
-    rows.push([{ text: `№${b.id} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
+    rows.push([{ text: `№${b.shopNumber} ${shortName(b.name, 16)}`, callback_data: `check_show_${b.id}` }]);
   }
 
   if (totalPages > 1) {
@@ -615,7 +614,7 @@ async function showArchiveCard(chatId, session) {
   }
 
   const caption =
-    `📦 <b>${session.currentIndex + 1}/${session.bouquets.length}</b> · <b>№${b.id}</b>\n` +
+    `📦 <b>${session.currentIndex + 1}/${session.bouquets.length}</b> · <b>№${b.shopNumber}</b>\n` +
     `${esc(b.name)} — <b>${b.price} ₽</b>\n` +
     `<i>${statusEmoji} ${dateStr ? dateStr + ' · ' : ''}${s === 'hidden' ? 'убран вручную' : 'срок истёк'}</i>`;
 
@@ -642,22 +641,22 @@ async function showArchiveCard(chatId, session) {
 async function showBouquetList(chatId, shopId, action, headerText) {
   const active = await getBouquetsFromDb(shopId);
   if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
-  active.sort((a, b) => a.id - b.id);
+  active.sort((a, b) => a.shopNumber - b.shopNumber);
   const shown = active.slice(0, MAX_LIST_ITEMS);
   let listTxt = `${headerText}\n\n`;
   for (const b of shown) {
-    listTxt += `<b>№${b.id}</b> — ${esc(b.name)} — <b>${b.price} ₽</b>\n\n`;
+    listTxt += `<b>№${b.shopNumber}</b> — ${esc(b.name)} — <b>${b.price} ₽</b>\n\n`;
   }
   if (active.length > shown.length) listTxt += `<i>Показаны первые ${shown.length} из ${active.length}.</i>`;
   const kb = [];
   for (let i = 0; i < shown.length; i += 4) {
-    kb.push(shown.slice(i, i + 4).map(b => ({ text: `№${b.id}`, callback_data: `${action}_${b.id}` })));
+    kb.push(shown.slice(i, i + 4).map(b => ({ text: `№${b.shopNumber}`, callback_data: `${action}_${b.id}` })));
   }
   return bot.sendMessage(chatId, listTxt, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
 }
 
 async function sendBouquetPreview(chatId, b, headerText, buttons) {
-  const caption = `${headerText}\n\n<b>№${b.id}</b> ${esc(b.name)}\n💰 ${b.price} ₽`;
+  const caption = `${headerText}\n\n<b>№${b.shopNumber}</b> ${esc(b.name)}\n💰 ${b.price} ₽`;
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
   const firstPhoto = (b.photos && b.photos.length > 0) ? b.photos[0] : null;
   const tgRef = getTelegramPhotoRef(firstPhoto);
@@ -689,6 +688,8 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS whatsapp_phone VARCHAR(50)`);
   await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_username VARCHAR(500)`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS blocked BOOLEAN DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS blocked_reason TEXT`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admins (
@@ -721,8 +722,18 @@ async function initDb() {
       clicks INTEGER DEFAULT 0
     );
   `);
+  await pool.query(`ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS shop_number INTEGER`);
+  await pool.query(`
+    UPDATE bouquets SET shop_number = sub.rn
+    FROM (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY shop_id ORDER BY id) AS rn
+      FROM bouquets WHERE shop_number IS NULL
+    ) sub
+    WHERE bouquets.id = sub.id
+  `);
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bouquets_shop_active ON bouquets(shop_id, deleted, is_pinned, confirmed_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bouquets_shop_number ON bouquets(shop_id, shop_number)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_admins_chat_id ON admins(chat_id)`);
 
   console.log('✅ Таблицы БД готовы');
@@ -739,6 +750,7 @@ async function getShopFromDb(shopId) {
     telegramUsername: s.telegram_username,
     whatsappPhone: s.whatsapp_phone, maxLink: s.max_username,
     inviteCode: s.invite_code, trialStart: s.trial_start, trialEnd: s.trial_end,
+    blocked: !!s.blocked, blockedReason: s.blocked_reason || null,
     settings: s.settings || { logo: null, background: null, markupPercent: 20, aiEnabled: false },
     stats: s.stats || { views: 0, orders: 0, calls: 0, startedAt: new Date().toISOString() },
     admins: admins.rows.map(a => ({
@@ -794,14 +806,16 @@ async function getBouquetById(shopId, bouquetId) {
   return mapBouquet(res.rows[0]);
 }
 function mapBouquet(b) {
-  return { id: b.id, name: b.name, price: b.price, description: b.description, photos: b.photos || [], createdAt: b.created_at, confirmedAt: b.confirmed_at, hidden: b.hidden, deleted: b.deleted, isPinned: b.is_pinned, chatId: parseInt(b.chat_id), reminded: b.reminded, clicks: b.clicks };
+  return { id: b.id, shopNumber: b.shop_number, name: b.name, price: b.price, description: b.description, photos: b.photos || [], createdAt: b.created_at, confirmedAt: b.confirmed_at, hidden: b.hidden, deleted: b.deleted, isPinned: b.is_pinned, chatId: parseInt(b.chat_id), reminded: b.reminded, clicks: b.clicks };
 }
 async function addBouquetToDb(shopId, bouquet) {
+  const r = await pool.query('SELECT COALESCE(MAX(shop_number), 0) + 1 AS next FROM bouquets WHERE shop_id = $1', [shopId]);
+  const shopNumber = r.rows[0].next;
   const res = await pool.query(`
-    INSERT INTO bouquets (shop_id, name, price, description, photos, confirmed_at, is_pinned, chat_id, clicks)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id
-  `, [shopId, bouquet.name, bouquet.price, bouquet.description, JSON.stringify(bouquet.photos), new Date().toISOString(), bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0]);
-  return res.rows[0].id;
+    INSERT INTO bouquets (shop_id, shop_number, name, price, description, photos, confirmed_at, is_pinned, chat_id, clicks)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, shop_number
+  `, [shopId, shopNumber, bouquet.name.description, JSON.stringify(bouquet.photos), new Date().toISOString(), bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0]);
+  return { id: res.rows[0].id, shopNumber: res.rows[0].shop_number };
 }
 async function updateBouquetField(id, field, value) {
   await pool.query(`UPDATE bouquets SET ${field} = $2 WHERE id = $1`, [id, value]);
@@ -824,7 +838,7 @@ async function findUserShop(chatId) {
 async function getAllShopsAdmin() {
   const res = await pool.query(`
     SELECT
-      s.shop_id, s.display_name, s.trial_end, s.stats,
+      s.shop_id, s.display_name, s.trial_end, s.stats, s.blocked,
       (SELECT COUNT(*) FROM bouquets b WHERE b.shop_id = s.shop_id AND b.deleted = FALSE) AS bouquets_count,
       (SELECT COUNT(*) FROM admins a WHERE a.shop_id = s.shop_id) AS team_count
     FROM shops s
@@ -836,12 +850,28 @@ async function getAllShopsAdmin() {
       shopId: r.shop_id,
       displayName: r.display_name,
       trialEnd: r.trial_end,
+      blocked: !!r.blocked,
       bouquetsCount: parseInt(r.bouquets_count) || 0,
       teamCount: parseInt(r.team_count) || 0,
       orders: stats.orders || 0,
       calls: stats.calls || 0
     };
   });
+}
+
+async function extendShopTrial(shopId, days) {
+  await pool.query(
+    `UPDATE shops SET trial_end = GREATEST(COALESCE(trial_end, NOW()), NOW()) + ($2 || ' days')::INTERVAL WHERE shop_id = $1`,
+    [shopId, String(days)]
+  );
+}
+
+async function blockShop(shopId, reason) {
+  await pool.query(`UPDATE shops SET blocked = TRUE, blocked_reason = $2 WHERE shop_id = $1`, [shopId, reason]);
+}
+
+async function unblockShop(shopId) {
+  await pool.query(`UPDATE shops SET blocked = FALSE, blocked_reason = NULL WHERE shop_id = $1`, [shopId]);
 }
 
 function getMainKeyboard(shop, chatId) {
@@ -858,7 +888,7 @@ function getMainKeyboard(shop, chatId) {
       [{ text: '✏️ Изменить цену' }, { text: '📝 Переименовать' }],
       [{ text: '🗑 Удалить букет' }, { text: '📦 Архив' }],
       [shiftBtn],
-      [{ text: '⚙️ Меню' }]
+      [{ text: '🔄 Обновить' }, { text: '⚙️ Меню' }]
     ], resize_keyboard: true };
   }
   return { keyboard: [
@@ -866,7 +896,7 @@ function getMainKeyboard(shop, chatId) {
     [{ text: '✏️ Изменить цену' }, { text: '📝 Переименовать' }],
     [{ text: '📦 Архив' }],
     [shiftBtn],
-    [{ text: '⚙️ Меню' }]
+    [{ text: '🔄 Обновить' }, { text: '⚙️ Меню' }]
   ], resize_keyboard: true };
 }
 
@@ -959,7 +989,7 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
 <body>
   <div class="container">
     <h1>${messengerEmoji} Перейти в ${messengerName}</h1>
-    <div class="sub">Букет №${bouquet.id} — ${bouquetNameEsc} — ${bouquet.price} ₽</div>
+    <div class="sub">Букет №${bouquet.shopNumber} — ${bouquetNameEsc} — ${bouquet.price} ₽</div>
     <div class="card">
       <div class="steps">
         <b>1.</b> Скопируйте текст ниже<br>
@@ -1083,7 +1113,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   const bouquetNameEsc = esc(bouquet.name);
   const bouquetIdEsc = esc(shop.shopId);
   const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
-  const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${bouquet.id} «${bouquet.name}» — ${bouquet.price} ₽.`;
+  const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${bouquet.shopNumber} «${bouquet.name}» — ${bouquet.price} ₽.`;
   const orderTextJs = JSON.stringify(orderText);
   const orderTextEsc = esc(orderText);
 
@@ -1243,7 +1273,7 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     const b = await getBouquetById(shopId, bouquetId);
     if (!b) return res.status(404).send('Букет не найден');
 
-    const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.id} «${b.name}» — ${b.price} ₽.`;
+    const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${b.shopNumber} «${b.name}» — ${b.price} ₽.`;
 
     const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'unknown';
     const clickKey = `${shopId}:${bouquetId}:${type}:${clientIp}`;
@@ -1517,7 +1547,6 @@ async function regFinish(chatId, state) {
     await bot.sendMessage(chatId, REG_FINAL_TEXT(d.shopId, d.displayName), { parse_mode: 'HTML' });
     await bot.sendMessage(chatId, '👇', { reply_markup: getMainKeyboard(shop, chatId) });
 
-    // Уведомить админа сервиса о новом магазине
     if (OWNER_CHAT_ID && OWNER_CHAT_ID !== chatId) {
       const tgRef = state.userUsername ? '@' + state.userUsername : `chat_id ${chatId}`;
       const adminTxt =
@@ -1538,12 +1567,15 @@ async function regFinish(chatId, state) {
 }
 
 // ========= АДМИН-ПАНЕЛЬ ВЛАДЕЛЬЦА СЕРВИСА =========
+const ADMIN_SHOP_PER_PAGE = 25;
+
 async function showAdminPanel(chatId, editMessageId = null) {
   const shops = await getAllShopsAdmin();
   const total = shops.length;
   const now = Date.now();
   const activeTrials = shops.filter(s => s.trialEnd && new Date(s.trialEnd).getTime() > now).length;
   const expired = total - activeTrials;
+  const blocked = shops.filter(s => s.blocked).length;
   const totalBouquets = shops.reduce((sum, s) => sum + s.bouquetsCount, 0);
   const totalOrders = shops.reduce((sum, s) => sum + s.orders, 0);
   const totalCalls = shops.reduce((sum, s) => sum + s.calls, 0);
@@ -1552,8 +1584,9 @@ async function showAdminPanel(chatId, editMessageId = null) {
     `🛡 <b>Админ-панель Flowind</b>\n\n` +
     `🏪 Всего магазинов: <b>${total}</b>\n` +
     `🟢 Активный триал: <b>${activeTrials}</b>\n` +
-    `🔴 Истёк триал: <b>${expired}</b>\n\n` +
-    `📦 Букетов на витринах: <b>${totalBouquets}</b>\n` +
+    `🔴 Истёк триал: <b>${expired}</b>\n` +
+    (blocked > 0 ? `🚫 Заблокировано: <b>${blocked}</b>\n` : '') +
+    `\n📦 Букетов на витринах: <b>${totalBouquets}</b>\n` +
     `📩 Заявок (сообщения): <b>${totalOrders}</b>\n` +
     `📞 Заявок (звонки): <b>${totalCalls}</b>`;
 
@@ -1572,11 +1605,10 @@ async function showAdminPanel(chatId, editMessageId = null) {
 
 async function showAdminShopsList(chatId, page = 0, editMessageId = null) {
   const shops = await getAllShopsAdmin();
-  const PER_PAGE = 10;
-  const totalPages = Math.max(1, Math.ceil(shops.length / PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(shops.length / ADMIN_SHOP_PER_PAGE));
   const safePage = Math.max(0, Math.min(page, totalPages - 1));
-  const start = safePage * PER_PAGE;
-  const slice = shops.slice(start, start + PER_PAGE);
+  const start = safePage * ADMIN_SHOP_PER_PAGE;
+  const slice = shops.slice(start, start + ADMIN_SHOP_PER_PAGE);
 
   let txt = `🏪 <b>Магазины</b> (${shops.length})\n`;
   if (totalPages > 1) txt += `Страница ${safePage + 1} из ${totalPages}\n`;
@@ -1586,7 +1618,8 @@ async function showAdminShopsList(chatId, page = 0, editMessageId = null) {
   const now = Date.now();
   for (const s of slice) {
     let emoji = '⚪';
-    if (s.trialEnd) {
+    if (s.blocked) emoji = '🚫';
+    else if (s.trialEnd) {
       const daysLeft = Math.ceil((new Date(s.trialEnd).getTime() - now) / (24 * 60 * 60 * 1000));
       if (daysLeft <= 0) emoji = '🔴';
       else if (daysLeft <= 7) emoji = '🟡';
@@ -1598,9 +1631,9 @@ async function showAdminShopsList(chatId, page = 0, editMessageId = null) {
 
   if (totalPages > 1) {
     const nav = [];
-    if (safePage > 0) nav.push({ text: '⬅️', callback_data: `admin_shops_${safePage - 1}` });
+    if (safePage > 0) nav.push({ text: '⬅️ Назад', callback_data: `admin_shops_${safePage - 1}` });
     nav.push({ text: `${safePage + 1} / ${totalPages}`, callback_data: 'noop' });
-    if (safePage < totalPages - 1) nav.push({ text: '➡️', callback_data: `admin_shops_${safePage + 1}` });
+    if (safePage < totalPages - 1) nav.push({ text: 'Дальше ➡️', callback_data: `admin_shops_${safePage + 1}` });
     rows.push(nav);
   }
 
@@ -1629,10 +1662,15 @@ async function showAdminShopCard(chatId, shopId, editMessageId) {
   const florists = shop.admins.filter(a => a.role !== 'owner');
 
   const days = getRemainingDays(shop);
-  const trialStatus = days > 0 ? `🟢 ${days} дней` : '🔴 истёк';
+  let trialStatus = days > 0 ? `🟢 ${days} дней` : '🔴 истёк';
+  if (shop.blocked) trialStatus = '🚫 ЗАБЛОКИРОВАН';
 
   let txt = `🏪 <b>${esc(shop.displayName)}</b>\n`;
   txt += `<code>${esc(shop.shopId)}</code>\n\n`;
+
+  if (shop.blocked && shop.blockedReason) {
+    txt += `🚫 <b>Причина блокировки:</b>\n<i>${esc(shop.blockedReason)}</i>\n\n`;
+  }
 
   if (owner) {
     txt += `👑 Владелец: <b>${esc(owner.name || 'Флорист')}</b>\n`;
@@ -1656,7 +1694,13 @@ async function showAdminShopCard(chatId, shopId, editMessageId) {
   txt += `📞 Звонки: ${calls}\n`;
 
   const buttons = [
+    [{ text: '⏱ Продлить на 7 дней', callback_data: `admin_extend_7_${shop.shopId}` }],
+    [{ text: '⏱ Продлить на 30 дней', callback_data: `admin_extend_30_${shop.shopId}` }],
+    [{ text: '⏱ Продлить на 90 дней', callback_data: `admin_extend_90_${shop.shopId}` }],
     [{ text: '💬 Написать владельцу', callback_data: `admin_msg_${shop.shopId}` }],
+    [shop.blocked
+      ? { text: '✅ Разблокировать', callback_data: `admin_unblock_${shop.shopId}` }
+      : { text: '🚫 Заблокировать', callback_data: `admin_block_${shop.shopId}` }],
     [{ text: '🛒 Открыть витрину', url: `${SITE_URL}/shop/${shop.shopId}` }],
     [{ text: '⬅️ К списку', callback_data: 'admin_shops_0' }]
   ];
@@ -1676,7 +1720,6 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const userName = msg.from.first_name || 'Флорист';
 
   delete archiveSessions[chatId];
-  // Сессию проверки НЕ удаляем — она живёт 60 минут
 
   // Инвайт через deep-link (?start=inv_CODE)
   if (param && param.startsWith('inv_')) {
@@ -1684,6 +1727,9 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const shopId = await getShopByInvite(inviteCode);
     if (shopId) {
       const shop = await getShopFromDb(shopId);
+      if (shop && shop.blocked) {
+        return bot.sendMessage(chatId, '🚫 Этот магазин заблокирован. Напишите @floop10.');
+      }
       const currentShop = await findUserShop(chatId);
       if (currentShop && currentShop !== shopId) return bot.sendMessage(chatId, '❌ Вы уже привязаны к другому магазину.');
       await addAdminToDb(chatId, shopId, 'florist', userName);
@@ -1719,6 +1765,14 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     if (!shop) return bot.sendMessage(chatId, '❌ Магазин не найден.');
     userToShop[chatId] = shopId;
 
+    if (shop.blocked) {
+      return bot.sendMessage(chatId,
+        `🚫 <b>Магазин заблокирован</b>\n\n` +
+        (shop.blockedReason ? `Причина: <i>${esc(shop.blockedReason)}</i>\n\n` : '') +
+        `Для разблокировки напишите: @floop10`,
+        { parse_mode: 'HTML' });
+    }
+
     if (!isSubscriptionActive(shop)) {
       return bot.sendMessage(chatId,
         `⏳ <b>Подписка истекла</b>\n\nМагазин «${esc(shop.displayName)}» приостановлен. Витрина не показывается клиентам, букеты не добавляются.\n\nДля продления напишите: @floop10`,
@@ -1742,7 +1796,6 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     return bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
 
-  // Правка 1: приветствие с одной кнопкой для нового пользователя
   return bot.sendMessage(chatId,
     `🌸 <b>Добро пожаловать в Flowind!</b>\n\n` +
     `Это витрина для цветочных магазинов.\n` +
@@ -1769,12 +1822,11 @@ bot.on('callback_query', async (q) => {
   const data = q.data;
   bot.answerCallbackQuery(q.id).catch(() => {});
 
-  // Продлить активность сессии проверки, если она есть
   if (checkSessions[chatId]) {
     checkSessions[chatId].lastActivity = Date.now();
   }
 
-  // Приветствие нового пользователя — обрабатываем ДО проверки shopId
+  // Приветствие нового пользователя
   if (data === 'welcome_create') {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return startRegistration(chatId, q.from.first_name, q.from.username);
@@ -1804,6 +1856,19 @@ bot.on('callback_query', async (q) => {
       const targetShopId = data.replace('admin_shop_', '');
       return showAdminShopCard(chatId, targetShopId, q.message.message_id);
     }
+    if (data.startsWith('admin_extend_')) {
+      // admin_extend_<days>_<shopId>
+      const rest = data.replace('admin_extend_', '');
+      const firstUnderscore = rest.indexOf('_');
+      const days = parseInt(rest.slice(0, firstUnderscore));
+      const targetShopId = rest.slice(firstUnderscore + 1);
+      if (!days || !targetShopId) return;
+      await extendShopTrial(targetShopId, days);
+      const shop = await getShopFromDb(targetShopId);
+      const newDays = getRemainingDays(shop);
+      await bot.answerCallbackQuery(q.id, { text: `✅ Продлено на ${days} дней`, show_alert: false }).catch(() => {});
+      return showAdminShopCard(chatId, targetShopId, q.message.message_id);
+    }
     if (data.startsWith('admin_msg_')) {
       const targetShopId = data.replace('admin_msg_', '');
       const targetShop = await getShopFromDb(targetShopId);
@@ -1822,6 +1887,30 @@ bot.on('callback_query', async (q) => {
         `Он получит его от бота Flowind.\n\n` +
         `<i>Отмена — /cancel</i>`,
         { parse_mode: 'HTML' });
+    }
+    if (data.startsWith('admin_block_')) {
+      const targetShopId = data.replace('admin_block_', '');
+      const targetShop = await getShopFromDb(targetShopId);
+      if (!targetShop) return;
+      awaitingAdminBlockReason[chatId] = { shopId: targetShopId };
+      return bot.sendMessage(chatId,
+        `🚫 <b>Блокировка магазина</b>\n\n` +
+        `Магазин «${esc(targetShop.displayName)}»\n\n` +
+        `Напишите <b>причину блокировки</b> — она будет показана владельцу, когда он напишет в бот.\n\n` +
+        `<i>Отмена — /cancel</i>`,
+        { parse_mode: 'HTML' });
+    }
+    if (data.startsWith('admin_unblock_')) {
+      const targetShopId = data.replace('admin_unblock_', '');
+      await unblockShop(targetShopId);
+      const shop = await getShopFromDb(targetShopId);
+      const owner = shop.admins.find(a => a.role === 'owner');
+      if (owner) {
+        bot.sendMessage(owner.chatId,
+          `✅ <b>Магазин разблокирован</b>\n\n«${esc(shop.displayName)}» снова работает.`,
+          { parse_mode: 'HTML' }).catch(() => {});
+      }
+      return showAdminShopCard(chatId, targetShopId, q.message.message_id);
     }
   }
 
@@ -2130,17 +2219,20 @@ bot.on('callback_query', async (q) => {
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     await updateBouquetFields(id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
-    return bot.sendMessage(chatId, `✅ Букет №${id} подтверждён.`);
+    const b = await getBouquetById(shopId, id);
+    return bot.sendMessage(chatId, `✅ Букет №${b ? b.shopNumber : id} подтверждён.`);
   }
   if (data.startsWith('hide_')) {
     const id = parseInt(data.split('_')[1]);
     await updateBouquetField(id, 'hidden', true);
-    return bot.sendMessage(chatId, `🚫 Букет №${id} убран.`);
+    const b = await getBouquetById(shopId, id);
+    return bot.sendMessage(chatId, `🚫 Букет №${b ? b.shopNumber : id} убран.`);
   }
   if (data.startsWith('show_')) {
     const id = parseInt(data.split('_')[1]);
     await updateBouquetFields(id, { hidden: false, confirmed_at: new Date().toISOString(), reminded: false });
-    return bot.sendMessage(chatId, `↩️ Букет №${id} возвращён.`);
+    const b = await getBouquetById(shopId, id);
+    return bot.sendMessage(chatId, `↩️ Букет №${b ? b.shopNumber : id} возвращён.`);
   }
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
@@ -2153,7 +2245,7 @@ bot.on('callback_query', async (q) => {
     const b = await getBouquetById(shopId, id);
     if (!b) return;
     awaitingPrice[chatId] = b.id;
-    return bot.sendMessage(chatId, `✏️ Напишите новую цену для букета <b>№${b.id}</b> (${esc(b.name)}).\nТекущая: <b>${b.price} ₽</b>\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+    return bot.sendMessage(chatId, `✏️ Напишите новую цену для букета <b>№${b.shopNumber}</b> (${esc(b.name)}).\nТекущая: <b>${b.price} ₽</b>\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
   if (data.startsWith('editprice_no_')) {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
@@ -2174,7 +2266,7 @@ bot.on('callback_query', async (q) => {
     const b = await getBouquetById(shopId, id);
     if (!b) return;
     awaitingName[chatId] = b.id;
-    return bot.sendMessage(chatId, `📝 Напишите новое название для букета <b>№${b.id}</b>.\nТекущее: <b>${esc(b.name)}</b>\n<i>Точка в начале — закрепить. Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
+    return bot.sendMessage(chatId, `📝 Напишите новое название для букета <b>№${b.shopNumber}</b>.\nТекущее: <b>${esc(b.name)}</b>\n<i>Точка в начале — закрепить. Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
   if (data.startsWith('rename_no_')) {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
@@ -2203,9 +2295,11 @@ bot.on('callback_query', async (q) => {
   if (data.startsWith('confirmdel_')) {
     if (!owner) return;
     const id = parseInt(data.split('_')[1]);
+    const b = await getBouquetById(shopId, id);
+    const num = b ? b.shopNumber : id;
     await updateBouquetField(id, 'deleted', true);
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    return showBouquetList(chatId, shopId, 'askdel', `✅ <b>Букет №${id} удалён с витрины.</b>\n\n🗑 Какой удалить ещё?`);
+    return showBouquetList(chatId, shopId, 'askdel', `✅ <b>Букет №${num} удалён с витрины.</b>\n\n🗑 Какой удалить ещё?`);
   }
   if (data === 'canceldel') {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
@@ -2242,6 +2336,30 @@ bot.on('message', async (msg) => {
   const text = msg.text;
   if (!text || text.startsWith('/')) return;
 
+  // Ввод причины блокировки магазина (админ сервиса)
+  if (awaitingAdminBlockReason[chatId]) {
+    const target = awaitingAdminBlockReason[chatId];
+    const reason = text.trim();
+    if (!reason || reason.length < 3) {
+      return bot.sendMessage(chatId, '❌ Причина слишком короткая (минимум 3 символа). Напишите понятнее или /cancel.');
+    }
+    if (reason.length > 300) {
+      return bot.sendMessage(chatId, '❌ Слишком длинная причина (максимум 300 символов).');
+    }
+    delete awaitingAdminBlockReason[chatId];
+    await blockShop(target.shopId, reason);
+    const shop = await getShopFromDb(target.shopId);
+    const owner = shop.admins.find(a => a.role === 'owner');
+    if (owner) {
+      bot.sendMessage(owner.chatId,
+        `🚫 <b>Магазин заблокирован</b>\n\n` +
+        `Причина: <i>${esc(reason)}</i>\n\n` +
+        `Если это ошибка — напишите @floop10.`,
+        { parse_mode: 'HTML' }).catch(() => {});
+    }
+    return bot.sendMessage(chatId, `✅ Магазин «${esc(shop.displayName)}» заблокирован.`);
+  }
+
   // Сообщение от админа сервиса владельцу магазина
   if (awaitingAdminMessage[chatId]) {
     const target = awaitingAdminMessage[chatId];
@@ -2267,7 +2385,9 @@ bot.on('message', async (msg) => {
     delete awaitingInput[chatId];
     delete awaitingUpload[chatId];
     delete archiveSessions[chatId];
-    // ВАЖНО: сессию проверки НЕ удаляем — она живёт 60 минут
+    delete awaitingAdminMessage[chatId];
+    delete awaitingAdminBlockReason[chatId];
+    // Сессию проверки НЕ удаляем — она живёт 60 минут
   }
 
   const shopId = userToShop[chatId] || await findUserShop(chatId);
@@ -2394,6 +2514,22 @@ bot.on('message', async (msg) => {
       `Уведомления больше не приходят. Вернётесь — нажмите «✅ Я сегодня работаю».`,
       { reply_markup: getMainKeyboard(updated, chatId) });
   }
+  if (text === '🔄 Обновить') {
+    // Сброс всех зависших состояний
+    delete awaitingPrice[chatId];
+    delete awaitingName[chatId];
+    delete awaitingMarkup[chatId];
+    delete awaitingInput[chatId];
+    delete awaitingUpload[chatId];
+    delete archiveSessions[chatId];
+    delete awaitingAdminMessage[chatId];
+    delete awaitingAdminBlockReason[chatId];
+    delete registrationState[chatId];
+    const updated = await getShopFromDb(shopId);
+    return bot.sendMessage(chatId,
+      `🔄 <b>Обновлено</b>\n\nВернулись в главное меню. Все данные на месте.`,
+      { parse_mode: 'HTML', reply_markup: getMainKeyboard(updated, chatId) });
+  }
   if (text === '⚙️ Меню') return bot.sendMessage(chatId, '⚙️ Меню магазина:', getSettingsMenu(shop, chatId));
 });
 
@@ -2402,6 +2538,8 @@ bot.on('photo', async (msg) => {
   const shopId = userToShop[chatId] || await findUserShop(chatId);
   if (!shopId) return bot.sendMessage(chatId, '❌ /start');
   const shop = await getShopFromDb(shopId);
+
+  if (shop.blocked) return bot.sendMessage(chatId, '🚫 Магазин заблокирован. Напишите @floop10.');
 
   const photo = msg.photo[msg.photo.length - 1];
   const fileId = photo.file_id;
@@ -2440,14 +2578,14 @@ bot.on('photo', async (msg) => {
     let archivedClicks = 0;
     for (const old of all) if (old.deleted && normalizeName(old.name) === norm) archivedClicks += (old.clicks || 0);
 
-    const id = await addBouquetToDb(shopId, {
+    const addResult = await addBouquetToDb(shopId, {
       name: finalName, price: price, description: null,
       photos: [result], isPinned: finalName.startsWith('.'),
       chatId, clicks: archivedClicks
     });
-    lastBouquetByUser[chatId] = id;
+    lastBouquetByUser[chatId] = addResult.id;
 
-    let reply = `✅ Букет <b>№${id}</b> «${esc(finalName)}» добавлен! ${price} ₽`;
+    let reply = `✅ Букет <b>№${addResult.shopNumber}</b> «${esc(finalName)}» добавлен! ${price} ₽`;
     if (archivedClicks > 0) reply += `\n\n📊 Учтено прошлых кликов: ${archivedClicks}`;
     reply += `\n\n💡 Ещё фото? Отправьте без подписи.`;
     return bot.sendMessage(chatId, reply, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
@@ -2472,6 +2610,7 @@ bot.onText(/\/cancel/, async (msg) => {
   delete awaitingUpload[chatId]; delete awaitingInput[chatId]; delete awaitingPrice[chatId];
   delete awaitingName[chatId]; delete awaitingMarkup[chatId];
   delete awaitingAdminMessage[chatId];
+  delete awaitingAdminBlockReason[chatId];
   delete checkSessions[chatId]; delete archiveSessions[chatId];
   delete registrationState[chatId];
   const shopId = userToShop[chatId] || await findUserShop(chatId);
@@ -2540,7 +2679,8 @@ app.get('/shop/:shopId', async (req, res) => {
   try {
     const shop = await getShopFromDb(req.params.shopId);
     if (!shop) return res.status(404).send('❌ Магазин не найден');
-    if (!isSubscriptionActive(shop)) return res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:50px;"><h1>🌸 ${esc(shop.displayName)}</h1><p>Витрина приостановлена.</p></body></html>`);
+    if (shop.blocked) return res.send(`<html><body style="font-family:-apple-system,sans-serif;text-align:center;padding:50px;"><h1>🚫 Магазин временно недоступен</h1><p style="color:#666;">Приносим извинения за неудобства.</p></body></html>`);
+    if (!isSubscriptionActive(shop)) return res.send(`<html><body style="font-family:-apple-system,sans-serif;text-align:center;padding:50px;"><h1>🌸 ${esc(shop.displayName)}</h1><p>Витрина приостановлена.</p></body></html>`);
 
     const priceFilter = req.query.price || 'all';
     const sortParam = req.query.sort || 'default';
@@ -2637,7 +2777,7 @@ app.get('/shop/:shopId', async (req, res) => {
         const cardMargin = useTwoColumns ? '0' : '12px';
 
         cards += `<div style="border:1px solid #eee;border-radius:16px;padding:${cardPadding};margin:${cardMargin};${cardExtraStyle}background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;display:flex;flex-direction:column;">
-          <div style="position:absolute;top:${useTwoColumns ? '16px' : '24px'};right:${useTwoColumns ? '16px' : '24px'};background:rgba(44,62,80,0.85);color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;z-index:10;">№${b.id}</div>
+          <div style="position:absolute;top:${useTwoColumns ? '16px' : '24px'};right:${useTwoColumns ? '16px' : '24px'};background:rgba(44,62,80,0.85);color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;z-index:10;">№${b.shopNumber}</div>
           ${gallery}
           <h3 style="margin:10px 0 4px;font-size:${titleFontSize};line-height:1.25;word-wrap:break-word;overflow-wrap:break-word;">${esc(b.name)}</h3>
           <p style="font-size:${priceFontSize};font-weight:bold;color:#2c3e50;margin:4px 0;">
@@ -2718,14 +2858,14 @@ app.get('/', (req, res) => res.send('<html><body style="font-family:sans-serif;t
 
 async function checkAndNotify() {
   try {
-    const shops = await pool.query('SELECT shop_id FROM shops');
+    const shops = await pool.query('SELECT shop_id FROM shops WHERE blocked = FALSE');
     for (const s of shops.rows) {
       const active = await getBouquetsFromDb(s.shop_id);
       for (const b of active) {
         if (b.isPinned || b.hidden || b.reminded || !b.confirmedAt) continue;
         const rem = 3 * 24 * 60 * 60 * 1000 - (Date.now() - new Date(b.confirmedAt).getTime());
         if (rem > 0 && rem <= 12 * 60 * 60 * 1000) {
-          bot.sendMessage(b.chatId, `⚠️ Букет №${b.id} «${esc(b.name)}» скоро скроется. Продлить?`,
+          bot.sendMessage(b.chatId, `⚠️ Букет №${b.shopNumber} «${esc(b.name)}» скоро скроется. Продлить?`,
             { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '🌿 Продлить', callback_data: `extend_${b.id}` }]] } }).catch(() => {});
           await updateBouquetField(b.id, 'reminded', true);
         }
