@@ -83,6 +83,7 @@ const photoUrlCache = {};
 const checkSessions = {};
 const archiveSessions = {};
 const notifiedClicks = {};
+const awaitingAdminMessage = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
 const MAX_LIST_ITEMS = 25;
@@ -183,6 +184,9 @@ function getRemainingDays(shop) {
 function isOwner(shop, chatId) {
   if (!shop || !shop.admins) return false;
   return shop.admins.some(a => a.chatId === chatId && a.role === 'owner');
+}
+function isServiceAdmin(chatId) {
+  return OWNER_CHAT_ID && chatId === OWNER_CHAT_ID;
 }
 function getOwner(shop) {
   if (!shop || !shop.admins) return null;
@@ -585,25 +589,6 @@ async function getArchivedBouquets(shopId) {
   return arch;
 }
 
-function buildArchiveCardText(session) {
-  const total = session.bouquets.length;
-  const b = session.bouquets[session.currentIndex];
-  const s = getBouquetStatus(b);
-  const status = s === 'hidden' ? '🚫 Убран вручную' : '❌ Срок истёк';
-  let dateStr = '';
-  if (b.confirmedAt) {
-    const d = new Date(b.confirmedAt);
-    dateStr = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-  }
-  let txt = `📦 <b>Архив — ${session.currentIndex + 1} из ${total}</b>\n\n`;
-  txt += `<b>№${b.id}</b> ${esc(b.name)}\n`;
-  txt += `💰 <b>${b.price} ₽</b>\n`;
-  txt += `<i>${status}`;
-  if (dateStr) txt += ` · ${dateStr}`;
-  txt += `</i>`;
-  return txt;
-}
-
 async function showArchiveCard(chatId, session) {
   if (session.currentIndex >= session.bouquets.length) {
     const shopId = session.shopId;
@@ -612,7 +597,6 @@ async function showArchiveCard(chatId, session) {
     return bot.sendMessage(chatId, '📦 Архив просмотрен.', shop ? { reply_markup: getMainKeyboard(shop, chatId) } : {}).catch(() => {});
   }
 
-  // На первом показе — скрываем нижнее меню, чтобы фото было крупнее
   if (session.currentIndex === 0 && !session.keyboardHidden) {
     session.keyboardHidden = true;
     await bot.sendMessage(chatId, '📦 <i>Открываю архив — меню вернётся после закрытия.</i>', {
@@ -835,6 +819,29 @@ async function getShopByInvite(inviteCode) {
 async function findUserShop(chatId) {
   const res = await pool.query('SELECT shop_id FROM admins WHERE chat_id = $1 LIMIT 1', [chatId]);
   return res.rows.length > 0 ? res.rows[0].shop_id : null;
+}
+
+async function getAllShopsAdmin() {
+  const res = await pool.query(`
+    SELECT
+      s.shop_id, s.display_name, s.trial_end, s.stats,
+      (SELECT COUNT(*) FROM bouquets b WHERE b.shop_id = s.shop_id AND b.deleted = FALSE) AS bouquets_count,
+      (SELECT COUNT(*) FROM admins a WHERE a.shop_id = s.shop_id) AS team_count
+    FROM shops s
+    ORDER BY s.trial_end DESC NULLS LAST
+  `);
+  return res.rows.map(r => {
+    const stats = r.stats || {};
+    return {
+      shopId: r.shop_id,
+      displayName: r.display_name,
+      trialEnd: r.trial_end,
+      bouquetsCount: parseInt(r.bouquets_count) || 0,
+      teamCount: parseInt(r.team_count) || 0,
+      orders: stats.orders || 0,
+      calls: stats.calls || 0
+    };
+  });
 }
 
 function getMainKeyboard(shop, chatId) {
@@ -1393,12 +1400,12 @@ async function generateUniqueShopId() {
   return generateShopId() + Date.now().toString(36).slice(-4);
 }
 
-async function startRegistration(chatId) {
+async function startRegistration(chatId, userName, userUsername) {
   const existing = userToShop[chatId] || await findUserShop(chatId);
   if (existing) {
     return bot.sendMessage(chatId, '❌ Уже привязаны к магазину.');
   }
-  registrationState[chatId] = { step: 'shopId', data: {}, messageId: null };
+  registrationState[chatId] = { step: 'shopId', data: {}, messageId: null, userName: userName || null, userUsername: userUsername || null };
   await sendRegistrationStep(chatId, registrationState[chatId]);
 }
 
@@ -1503,18 +1510,163 @@ async function regFinish(chatId, state) {
       stats: { views: 0, orders: 0, calls: 0, startedAt: now.toISOString() }
     });
     await addAdminToDb(chatId, d.shopId, 'owner', userName);
-    // Владелец сразу на смене — он только что создал магазин и активно работает
     await setUserOnShift(chatId, d.shopId, true);
     userToShop[chatId] = d.shopId;
     delete registrationState[chatId];
     const shop = await getShopFromDb(d.shopId);
     await bot.sendMessage(chatId, REG_FINAL_TEXT(d.shopId, d.displayName), { parse_mode: 'HTML' });
-    return bot.sendMessage(chatId, '👇', { reply_markup: getMainKeyboard(shop, chatId) });
+    await bot.sendMessage(chatId, '👇', { reply_markup: getMainKeyboard(shop, chatId) });
+
+    // Уведомить админа сервиса о новом магазине
+    if (OWNER_CHAT_ID && OWNER_CHAT_ID !== chatId) {
+      const tgRef = state.userUsername ? '@' + state.userUsername : `chat_id ${chatId}`;
+      const adminTxt =
+        `🎉 <b>Новый магазин зарегистрирован!</b>\n\n` +
+        `🏪 «${esc(d.displayName)}»\n` +
+        `🆔 <code>${esc(d.shopId)}</code>\n` +
+        `👤 ${esc(userName)} (${esc(tgRef)})\n\n` +
+        `🔗 ${SITE_URL}/shop/${d.shopId}\n\n` +
+        `<i>Открыть админ-панель — /admin</i>`;
+      bot.sendMessage(OWNER_CHAT_ID, adminTxt, { parse_mode: 'HTML' }).catch(() => {});
+    }
+    return;
   } catch (e) {
     console.error('Ошибка создания магазина:', e?.message || e);
     delete registrationState[chatId];
     return bot.sendMessage(chatId, '❌ Ошибка при создании магазина. Попробуйте ещё раз /register.');
   }
+}
+
+// ========= АДМИН-ПАНЕЛЬ ВЛАДЕЛЬЦА СЕРВИСА =========
+async function showAdminPanel(chatId, editMessageId = null) {
+  const shops = await getAllShopsAdmin();
+  const total = shops.length;
+  const now = Date.now();
+  const activeTrials = shops.filter(s => s.trialEnd && new Date(s.trialEnd).getTime() > now).length;
+  const expired = total - activeTrials;
+  const totalBouquets = shops.reduce((sum, s) => sum + s.bouquetsCount, 0);
+  const totalOrders = shops.reduce((sum, s) => sum + s.orders, 0);
+  const totalCalls = shops.reduce((sum, s) => sum + s.calls, 0);
+
+  const txt =
+    `🛡 <b>Админ-панель Flowind</b>\n\n` +
+    `🏪 Всего магазинов: <b>${total}</b>\n` +
+    `🟢 Активный триал: <b>${activeTrials}</b>\n` +
+    `🔴 Истёк триал: <b>${expired}</b>\n\n` +
+    `📦 Букетов на витринах: <b>${totalBouquets}</b>\n` +
+    `📩 Заявок (сообщения): <b>${totalOrders}</b>\n` +
+    `📞 Заявок (звонки): <b>${totalCalls}</b>`;
+
+  const buttons = [
+    [{ text: '🏪 Список магазинов', callback_data: 'admin_shops_0' }],
+    [{ text: '🔄 Обновить', callback_data: 'admin_refresh' }]
+  ];
+
+  const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
+
+  if (editMessageId) {
+    return bot.editMessageText(txt, { chat_id: chatId, message_id: editMessageId, ...opts }).catch(() => {});
+  }
+  return bot.sendMessage(chatId, txt, opts);
+}
+
+async function showAdminShopsList(chatId, page = 0, editMessageId = null) {
+  const shops = await getAllShopsAdmin();
+  const PER_PAGE = 10;
+  const totalPages = Math.max(1, Math.ceil(shops.length / PER_PAGE));
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const start = safePage * PER_PAGE;
+  const slice = shops.slice(start, start + PER_PAGE);
+
+  let txt = `🏪 <b>Магазины</b> (${shops.length})\n`;
+  if (totalPages > 1) txt += `Страница ${safePage + 1} из ${totalPages}\n`;
+  txt += `\n<i>Тапните на магазин для подробностей.</i>`;
+
+  const rows = [];
+  const now = Date.now();
+  for (const s of slice) {
+    let emoji = '⚪';
+    if (s.trialEnd) {
+      const daysLeft = Math.ceil((new Date(s.trialEnd).getTime() - now) / (24 * 60 * 60 * 1000));
+      if (daysLeft <= 0) emoji = '🔴';
+      else if (daysLeft <= 7) emoji = '🟡';
+      else emoji = '🟢';
+    }
+    const name = shortName(s.displayName || s.shopId, 22);
+    rows.push([{ text: `${emoji} ${name}`, callback_data: `admin_shop_${s.shopId}` }]);
+  }
+
+  if (totalPages > 1) {
+    const nav = [];
+    if (safePage > 0) nav.push({ text: '⬅️', callback_data: `admin_shops_${safePage - 1}` });
+    nav.push({ text: `${safePage + 1} / ${totalPages}`, callback_data: 'noop' });
+    if (safePage < totalPages - 1) nav.push({ text: '➡️', callback_data: `admin_shops_${safePage + 1}` });
+    rows.push(nav);
+  }
+
+  rows.push([{ text: '⬅️ Назад', callback_data: 'admin_main' }]);
+
+  const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } };
+
+  if (editMessageId) {
+    return bot.editMessageText(txt, { chat_id: chatId, message_id: editMessageId, ...opts }).catch(() => {});
+  }
+  return bot.sendMessage(chatId, txt, opts);
+}
+
+async function showAdminShopCard(chatId, shopId, editMessageId) {
+  const shop = await getShopFromDb(shopId);
+  if (!shop) {
+    return bot.editMessageText('❌ Магазин не найден.', { chat_id: chatId, message_id: editMessageId }).catch(() => {});
+  }
+
+  const all = await getBouquetsFromDb(shopId, false);
+  const active = all.filter(isConfirmedRecently);
+  const stats = shop.stats || {};
+  const orders = stats.orders || 0;
+  const calls = stats.calls || 0;
+  const owner = shop.admins.find(a => a.role === 'owner');
+  const florists = shop.admins.filter(a => a.role !== 'owner');
+
+  const days = getRemainingDays(shop);
+  const trialStatus = days > 0 ? `🟢 ${days} дней` : '🔴 истёк';
+
+  let txt = `🏪 <b>${esc(shop.displayName)}</b>\n`;
+  txt += `<code>${esc(shop.shopId)}</code>\n\n`;
+
+  if (owner) {
+    txt += `👑 Владелец: <b>${esc(owner.name || 'Флорист')}</b>\n`;
+    txt += `🆔 <code>${owner.chatId}</code>\n`;
+    if (shop.telegramUsername) txt += `💬 @${esc(shop.telegramUsername)}\n`;
+    if (shop.phone) txt += `📞 ${esc(formatPhone(shop.phone))}\n`;
+  } else {
+    txt += `⚠️ Владелец не найден\n`;
+  }
+
+  if (florists.length > 0) {
+    txt += `\n👥 Флористы (${florists.length}): ${florists.map(f => esc(f.name || 'без имени')).join(', ')}\n`;
+  } else {
+    txt += `\n👥 Флористы: <i>нет</i>\n`;
+  }
+
+  txt += `\n📦 На витрине: <b>${active.length}</b> из ${all.length}\n`;
+  txt += `📅 Триал: ${trialStatus}\n\n`;
+  txt += `📊 <b>Заявки:</b>\n`;
+  txt += `📩 Сообщения: ${orders}\n`;
+  txt += `📞 Звонки: ${calls}\n`;
+
+  const buttons = [
+    [{ text: '💬 Написать владельцу', callback_data: `admin_msg_${shop.shopId}` }],
+    [{ text: '🛒 Открыть витрину', url: `${SITE_URL}/shop/${shop.shopId}` }],
+    [{ text: '⬅️ К списку', callback_data: 'admin_shops_0' }]
+  ];
+
+  return bot.editMessageText(txt, {
+    chat_id: chatId,
+    message_id: editMessageId,
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  }).catch(() => {});
 }
 
 // ========= /start =========
@@ -1604,6 +1756,13 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   );
 });
 
+// ========= /admin =========
+bot.onText(/\/admin/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isServiceAdmin(chatId)) return;
+  return showAdminPanel(chatId);
+});
+
 // ========= CALLBACK =========
 bot.on('callback_query', async (q) => {
   const chatId = q.from.id;
@@ -1618,7 +1777,7 @@ bot.on('callback_query', async (q) => {
   // Приветствие нового пользователя — обрабатываем ДО проверки shopId
   if (data === 'welcome_create') {
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    return startRegistration(chatId);
+    return startRegistration(chatId, q.from.first_name, q.from.username);
   }
 
   // Пропуск шага регистрации
@@ -1630,6 +1789,40 @@ bot.on('callback_query', async (q) => {
     }
     bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
     return regSkipCurrentStep(chatId, state);
+  }
+
+  // ========= АДМИН-ПАНЕЛЬ =========
+  if (data.startsWith('admin_') && isServiceAdmin(chatId)) {
+    if (data === 'admin_main' || data === 'admin_refresh') {
+      return showAdminPanel(chatId, q.message.message_id);
+    }
+    if (data.startsWith('admin_shops_')) {
+      const page = parseInt(data.replace('admin_shops_', '')) || 0;
+      return showAdminShopsList(chatId, page, q.message.message_id);
+    }
+    if (data.startsWith('admin_shop_')) {
+      const targetShopId = data.replace('admin_shop_', '');
+      return showAdminShopCard(chatId, targetShopId, q.message.message_id);
+    }
+    if (data.startsWith('admin_msg_')) {
+      const targetShopId = data.replace('admin_msg_', '');
+      const targetShop = await getShopFromDb(targetShopId);
+      if (!targetShop) return;
+      const targetOwner = targetShop.admins.find(a => a.role === 'owner');
+      if (!targetOwner) {
+        return bot.sendMessage(chatId, '❌ У этого магазина нет владельца.');
+      }
+      awaitingAdminMessage[chatId] = {
+        targetChatId: targetOwner.chatId,
+        targetName: targetOwner.name || 'Флорист',
+        shopId: targetShopId
+      };
+      return bot.sendMessage(chatId,
+        `💬 Напишите сообщение для <b>${esc(targetOwner.name || 'Флориста')}</b> (магазин «${esc(targetShop.displayName)}»).\n\n` +
+        `Он получит его от бота Flowind.\n\n` +
+        `<i>Отмена — /cancel</i>`,
+        { parse_mode: 'HTML' });
+    }
   }
 
   const shopId = userToShop[chatId] || await findUserShop(chatId);
@@ -2049,6 +2242,24 @@ bot.on('message', async (msg) => {
   const text = msg.text;
   if (!text || text.startsWith('/')) return;
 
+  // Сообщение от админа сервиса владельцу магазина
+  if (awaitingAdminMessage[chatId]) {
+    const target = awaitingAdminMessage[chatId];
+    const textToSend = text.trim();
+    if (textToSend.length > 1000) {
+      return bot.sendMessage(chatId, '❌ Слишком длинное сообщение (максимум 1000 символов).');
+    }
+    delete awaitingAdminMessage[chatId];
+    try {
+      await bot.sendMessage(target.targetChatId,
+        `📩 <b>Сообщение от Flowind</b>\n\n${esc(textToSend)}\n\n<i>Если нужна помощь — пишите @floop10</i>`,
+        { parse_mode: 'HTML' });
+      return bot.sendMessage(chatId, `✅ Отправлено в «${esc(target.targetName)}».`);
+    } catch (e) {
+      return bot.sendMessage(chatId, '❌ Не удалось отправить. Возможно, пользователь не начинал диалог с ботом.');
+    }
+  }
+
   if (MENU_BUTTONS.includes(text)) {
     delete awaitingPrice[chatId];
     delete awaitingName[chatId];
@@ -2260,6 +2471,7 @@ bot.onText(/\/cancel/, async (msg) => {
   const chatId = msg.chat.id;
   delete awaitingUpload[chatId]; delete awaitingInput[chatId]; delete awaitingPrice[chatId];
   delete awaitingName[chatId]; delete awaitingMarkup[chatId];
+  delete awaitingAdminMessage[chatId];
   delete checkSessions[chatId]; delete archiveSessions[chatId];
   delete registrationState[chatId];
   const shopId = userToShop[chatId] || await findUserShop(chatId);
@@ -2298,7 +2510,7 @@ bot.onText(/\/migrate/, async (msg) => {
 });
 
 bot.onText(/\/register/, async (msg) => {
-  await startRegistration(msg.chat.id);
+  await startRegistration(msg.chat.id, msg.from.first_name, msg.from.username);
 });
 
 bot.on('message', async (msg) => {
@@ -2310,6 +2522,9 @@ bot.on('message', async (msg) => {
 
   if (!state.userName && msg.from && msg.from.first_name) {
     state.userName = msg.from.first_name;
+  }
+  if (!state.userUsername && msg.from && msg.from.username) {
+    state.userUsername = msg.from.username;
   }
 
   const cfg = REG_STEPS[state.step];
