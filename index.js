@@ -230,6 +230,68 @@ function formatPhone(normalized) {
   return normalized;
 }
 
+// ========== ТЕГИ (АВТОРАСПОЗНАВАНИЕ) ==========
+const TAG_DICTIONARY = [
+  { tag: 'розы', stems: ['роз'] },
+  { tag: 'пионы', stems: ['пион'] },
+  { tag: 'тюльпаны', stems: ['тюльпан'] },
+  { tag: 'лилии', stems: ['лили'] },
+  { tag: 'хризантемы', stems: ['хризантем'] },
+  { tag: 'герберы', stems: ['гербер'] },
+  { tag: 'гвоздики', stems: ['гвоздик'] },
+  { tag: 'ирисы', stems: ['ирис'] },
+  { tag: 'орхидеи', stems: ['орхиде'] },
+  { tag: 'ромашки', stems: ['ромашк'] },
+  { tag: 'корзины', stems: ['корзин'] },
+  { tag: 'сборные', stems: ['сборн', 'микс'] },
+  { tag: 'букет_невесты', stems: ['невест'] },
+  { tag: 'свадебные', stems: ['свадеб'] },
+  { tag: 'на_выписку', stems: ['выписк'] },
+  { tag: 'монобукет', stems: ['монобукет'] }
+];
+
+function extractTagsFromName(name) {
+  if (!name) return [];
+  const lower = String(name).toLowerCase();
+  const found = [];
+  for (const entry of TAG_DICTIONARY) {
+    for (const stem of entry.stems) {
+      if (lower.includes(stem)) {
+        if (!found.includes(entry.tag)) found.push(entry.tag);
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+function extractCustomTags(text) {
+  if (!text || typeof text !== 'string') return [];
+  const matches = text.match(/#[а-яёa-z0-9_]+/gi) || [];
+  return matches.map(t => t.slice(1).toLowerCase());
+}
+
+function computeAllTags(name, caption) {
+  const auto = extractTagsFromName(name);
+  const custom = extractCustomTags(caption || '');
+  const all = [...auto];
+  for (const t of custom) if (!all.includes(t)) all.push(t);
+  return all;
+}
+
+// Время подтверждения для карточки: только для свежих (за 24 часа)
+function formatConfirmedAt(confirmedAt) {
+  if (!confirmedAt) return null;
+  const ageMs = Date.now() - new Date(confirmedAt).getTime();
+  if (ageMs > 24 * 60 * 60 * 1000) return null;
+  const mins = Math.floor(ageMs / 60000);
+  if (mins < 1) return 'только что';
+  if (mins < 60) return `${mins} ${plural(mins, 'минуту', 'минуты', 'минут')} назад`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs === 1) return 'час назад';
+  return `${hrs} ${plural(hrs, 'час', 'часа', 'часов')} назад`;
+}
+
 // ========== УВЕДОМЛЕНИЯ О КЛИКАХ ==========
 const CLICK_NOTIFY_TTL = 10 * 60 * 1000;
 
@@ -640,7 +702,7 @@ async function showArchiveCard(chatId, session) {
 
 async function showBouquetList(chatId, shopId, action, headerText) {
   const active = await getBouquetsFromDb(shopId);
-  if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
+  if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет бук).етовcatch.');
   active.sort((a, b) => a.shopNumber - b.shopNumber);
   const shown = active.slice(0, MAX_LIST_ITEMS);
   let listTxt = `${headerText}\n\n`;
@@ -666,7 +728,7 @@ async function sendBouquetPreview(chatId, b, headerText, buttons) {
       return;
     } catch (e) { /* фолбэк */ }
   }
-  await bot.sendMessage(chatId, caption, opts).catch(() => {});
+  await bot.sendMessage(chatId, caption, opts(() => {});
 }
 
 async function initDb() {
@@ -723,6 +785,9 @@ async function initDb() {
     );
   `);
   await pool.query(`ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS shop_number INTEGER`);
+  await pool.query(`ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb`);
+
+  // Заполнить shop_number у существующих
   await pool.query(`
     UPDATE bouquets SET shop_number = sub.rn
     FROM (
@@ -731,6 +796,22 @@ async function initDb() {
     ) sub
     WHERE bouquets.id = sub.id
   `);
+
+  // Заполнить теги у существующих букетов (по названию)
+  try {
+    const existing = await pool.query(`SELECT id, name FROM bouquets WHERE tags IS NULL OR tags = '[]'::jsonb`);
+    for (const row of existing.rows) {
+      const tags = extractTagsFromName(row.name);
+      if (tags.length > 0) {
+        await pool.query(`UPDATE bouquets SET tags = $2 WHERE id = $1`, [row.id, JSON.stringify(tags)]);
+      }
+    }
+    if (existing.rows.length > 0) {
+      console.log(`🏷 Проставлены теги у ${existing.rows.length} букетов`);
+    }
+  } catch (e) {
+    console.error('⚠️ Ошибка миграции тегов:', e?.message || e);
+  }
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bouquets_shop_active ON bouquets(shop_id, deleted, is_pinned, confirmed_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bouquets_shop_number ON bouquets(shop_id, shop_number)`);
@@ -806,15 +887,36 @@ async function getBouquetById(shopId, bouquetId) {
   return mapBouquet(res.rows[0]);
 }
 function mapBouquet(b) {
-  return { id: b.id, shopNumber: b.shop_number, name: b.name, price: b.price, description: b.description, photos: b.photos || [], createdAt: b.created_at, confirmedAt: b.confirmed_at, hidden: b.hidden, deleted: b.deleted, isPinned: b.is_pinned, chatId: parseInt(b.chat_id), reminded: b.reminded, clicks: b.clicks };
+  return {
+    id: b.id,
+    shopNumber: b.shop_number,
+    name: b.name,
+    price: b.price,
+    description: b.description,
+    photos: b.photos || [],
+    createdAt: b.created_at,
+    confirmedAt: b.confirmed_at,
+    hidden: b.hidden,
+    deleted: b.deleted,
+    isPinned: b.is_pinned,
+    chatId: parseInt(b.chat_id),
+    reminded: b.reminded,
+    clicks: b.clicks,
+    tags: b.tags || []
+  };
 }
 async function addBouquetToDb(shopId, bouquet) {
   const r = await pool.query('SELECT COALESCE(MAX(shop_number), 0) + 1 AS next FROM bouquets WHERE shop_id = $1', [shopId]);
   const shopNumber = r.rows[0].next;
   const res = await pool.query(`
-    INSERT INTO bouquets (shop_id, shop_number, name, price, description, photos, confirmed_at, is_pinned, chat_id, clicks)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, shop_number
-  `, [shopId, shopNumber, bouquet.name, bouquet.price, bouquet.description, JSON.stringify(bouquet.photos), new Date().toISOString(), bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0]);
+    INSERT INTO bouquets (shop_id, shop_number, name, price, description, photos, confirmed_at, is_pinned, chat_id, clicks, tags)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, shop_number
+  `, [
+    shopId, shopNumber, bouquet.name, bouquet.price, bouquet.description,
+    JSON.stringify(bouquet.photos), new Date().toISOString(),
+    bouquet.isPinned, bouquet.chatId, bouquet.clicks || 0,
+    JSON.stringify(bouquet.tags || [])
+  ]);
   return { id: res.rows[0].id, shopNumber: res.rows[0].shop_number };
 }
 async function updateBouquetField(id, field, value) {
@@ -1857,15 +1959,12 @@ bot.on('callback_query', async (q) => {
       return showAdminShopCard(chatId, targetShopId, q.message.message_id);
     }
     if (data.startsWith('admin_extend_')) {
-      // admin_extend_<days>_<shopId>
       const rest = data.replace('admin_extend_', '');
       const firstUnderscore = rest.indexOf('_');
       const days = parseInt(rest.slice(0, firstUnderscore));
       const targetShopId = rest.slice(firstUnderscore + 1);
       if (!days || !targetShopId) return;
       await extendShopTrial(targetShopId, days);
-      const shop = await getShopFromDb(targetShopId);
-      const newDays = getRemainingDays(shop);
       await bot.answerCallbackQuery(q.id, { text: `✅ Продлено на ${days} дней`, show_alert: false }).catch(() => {});
       return showAdminShopCard(chatId, targetShopId, q.message.message_id);
     }
@@ -2447,10 +2546,18 @@ bot.on('message', async (msg) => {
     if (!shopId) { delete awaitingName[chatId]; return; }
     const newName = text.trim();
     if (newName.length < 2 || newName.length > 80) return bot.sendMessage(chatId, '❌ 2–80 символов. Или нажмите любую кнопку меню, чтобы выйти.');
-    await updateBouquetFields(awaitingName[chatId], { name: newName, is_pinned: newName.startsWith('.') });
+    // Пересчитываем теги из нового названия
+    const newTags = extractTagsFromName(newName);
+    await updateBouquetFields(awaitingName[chatId], {
+      name: newName,
+      is_pinned: newName.startsWith('.'),
+      tags: JSON.stringify(newTags)
+    });
     delete awaitingName[chatId];
     const shop = await getShopFromDb(shopId);
-    return bot.sendMessage(chatId, `✅ Переименовано: «${newName}»`, { reply_markup: getMainKeyboard(shop, chatId) });
+    let msg = `✅ Переименовано: «${newName}»`;
+    if (newTags.length > 0) msg += `\n🏷 Теги: ${newTags.map(t => '#' + t).join(' ')}`;
+    return bot.sendMessage(chatId, msg, { reply_markup: getMainKeyboard(shop, chatId) });
   }
 
   if (awaitingMarkup[chatId]) {
@@ -2515,7 +2622,6 @@ bot.on('message', async (msg) => {
       { reply_markup: getMainKeyboard(updated, chatId) });
   }
   if (text === '🔄 Обновить') {
-    // Сброс всех зависших состояний
     delete awaitingPrice[chatId];
     delete awaitingName[chatId];
     delete awaitingMarkup[chatId];
@@ -2570,6 +2676,9 @@ bot.on('photo', async (msg) => {
       return bot.sendMessage(chatId, PARSE_ERROR_TEXT, { parse_mode: 'HTML' });
     }
 
+    // Считаем теги — автоматом по названию + вручную из #хэштегов в подписи
+    const tags = computeAllTags(finalName, caption);
+
     bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
     const result = await savePhotoToStorage(fileId, shopId);
 
@@ -2581,11 +2690,12 @@ bot.on('photo', async (msg) => {
     const addResult = await addBouquetToDb(shopId, {
       name: finalName, price: price, description: null,
       photos: [result], isPinned: finalName.startsWith('.'),
-      chatId, clicks: archivedClicks
+      chatId, clicks: archivedClicks, tags
     });
     lastBouquetByUser[chatId] = addResult.id;
 
     let reply = `✅ Букет <b>№${addResult.shopNumber}</b> «${esc(finalName)}» добавлен! ${price} ₽`;
+    if (tags.length > 0) reply += `\n🏷 Теги: ${tags.map(t => '#' + t).join(' ')}`;
     if (archivedClicks > 0) reply += `\n\n📊 Учтено прошлых кликов: ${archivedClicks}`;
     reply += `\n\n💡 Ещё фото? Отправьте без подписи.`;
     return bot.sendMessage(chatId, reply, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
@@ -2684,14 +2794,30 @@ app.get('/shop/:shopId', async (req, res) => {
 
     const priceFilter = req.query.price || 'all';
     const sortParam = req.query.sort || 'default';
+    const tagFilter = req.query.tag || 'all';
 
     let all = await getBouquetsFromDb(shop.shopId);
     let active = all.filter(isConfirmedRecently);
 
+    // Считаем счётчики тегов — только по актуальным букетам
+    const tagCounts = {};
+    for (const b of active) {
+      for (const t of (b.tags || [])) {
+        tagCounts[t] = (tagCounts[t] || 0) + 1;
+      }
+    }
+
+    // Применяем фильтр по цене
     if (priceFilter === 'low') active = active.filter(b => b.price < 3000);
     else if (priceFilter === 'mid') active = active.filter(b => b.price >= 3000 && b.price <= 6000);
     else if (priceFilter === 'high') active = active.filter(b => b.price > 6000);
 
+    // Применяем фильтр по тегу
+    if (tagFilter !== 'all') {
+      active = active.filter(b => (b.tags || []).includes(tagFilter));
+    }
+
+    // Сортировка
     if (sortParam === 'asc') {
       active.sort((a, b) => a.price - b.price);
     } else if (sortParam === 'desc') {
@@ -2704,12 +2830,14 @@ app.get('/shop/:shopId', async (req, res) => {
       });
     }
 
-    const buildUrl = (newPrice, newSort) => {
-      const p = newPrice || priceFilter;
-      const s = newSort || sortParam;
+    const buildUrl = (newPrice, newSort, newTag) => {
+      const p = (newPrice !== undefined) ? newPrice : priceFilter;
+      const s = (newSort !== undefined) ? newSort : sortParam;
+      const t = (newTag !== undefined) ? newTag : tagFilter;
       const parts = [];
-      if (p !== 'all') parts.push('price=' + p);
-      if (s !== 'default') parts.push('sort=' + s);
+      if (p && p !== 'all') parts.push('price=' + p);
+      if (s && s !== 'default') parts.push('sort=' + s);
+      if (t && t !== 'all') parts.push('tag=' + encodeURIComponent(t));
       return '/shop/' + shop.shopId + (parts.length ? '?' + parts.join('&') : '');
     };
 
@@ -2718,7 +2846,7 @@ app.get('/shop/:shopId', async (req, res) => {
     const pillIdle = 'background:#f0f0f0;color:#555;';
     const pill = (label, filterValue) => {
       const isActive = priceFilter === filterValue;
-      return `<a href="${buildUrl(filterValue, null)}" style="${pillBase}${isActive ? pillActive : pillIdle}">${label}</a>`;
+      return `<a href="${buildUrl(filterValue, undefined, undefined)}" style="${pillBase}${isActive ? pillActive : pillIdle}">${label}</a>`;
     };
 
     const sortPillBase = 'display:inline-block;padding:6px 12px;margin:4px;border-radius:16px;text-decoration:none;font-size:13px;';
@@ -2726,11 +2854,28 @@ app.get('/shop/:shopId', async (req, res) => {
     const sortPillIdle = 'background:#f5f5f5;color:#666;';
     const sortPill = (label, sortValue) => {
       const isActive = sortParam === sortValue;
-      return `<a href="${buildUrl(null, sortValue)}" style="${sortPillBase}${isActive ? sortPillActive : sortPillIdle}">${label}</a>`;
+      return `<a href="${buildUrl(undefined, sortValue, undefined)}" style="${sortPillBase}${isActive ? sortPillActive : sortPillIdle}">${label}</a>`;
     };
 
+    // Кнопки-теги: показываем только те, что есть у магазина
+    let tagPillsHTML = '';
+    const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+    if (sortedTags.length > 0) {
+      const tagPillBase = 'display:inline-block;padding:6px 12px;margin:4px;border-radius:16px;text-decoration:none;font-size:13px;font-weight:bold;';
+      const tagPillActive = 'background:#27ae60;color:#fff;';
+      const tagPillIdle = 'background:#e8f5e9;color:#2c3e50;';
+      const allActive = tagFilter === 'all';
+      let tagsHTML = `<a href="${buildUrl(undefined, undefined, 'all')}" style="${tagPillBase}${allActive ? tagPillActive : tagPillIdle}">Все</a>`;
+      for (const [tag, count] of sortedTags) {
+        const isActive = tagFilter === tag;
+        tagsHTML += `<a href="${buildUrl(undefined, undefined, tag)}" style="${tagPillBase}${isActive ? tagPillActive : tagPillIdle}">#${esc(tag)} ${count}</a>`;
+      }
+      tagPillsHTML = `<div style="margin:10px 0 6px;">${tagsHTML}</div>`;
+    }
+
     const filtersHTML = `
-      <div style="margin:20px 0 6px;">
+      ${tagPillsHTML}
+      <div style="margin:10px 0 6px;">
         ${pill('Все', 'all')}${pill('До 3000 ₽', 'low')}${pill('3000–6000 ₽', 'mid')}${pill('От 6000 ₽', 'high')}
       </div>
       <div style="margin-bottom:20px;">
@@ -2776,6 +2921,12 @@ app.get('/shop/:shopId', async (req, res) => {
         const cardPadding = useTwoColumns ? '10px' : '16px';
         const cardMargin = useTwoColumns ? '0' : '12px';
 
+        // Зелёная пометка «Обновлено X назад» — только если подтверждено за последние 24 часа
+        const confirmedLine = formatConfirmedAt(b.confirmedAt);
+        const confirmedHTML = confirmedLine
+          ? `<div style="font-size:11px;color:#27ae60;margin:2px 0 4px;">✓ Обновлено ${esc(confirmedLine)}</div>`
+          : '';
+
         cards += `<div style="border:1px solid #eee;border-radius:16px;padding:${cardPadding};margin:${cardMargin};${cardExtraStyle}background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;position:relative;display:flex;flex-direction:column;">
           <div style="position:absolute;top:${useTwoColumns ? '16px' : '24px'};right:${useTwoColumns ? '16px' : '24px'};background:rgba(44,62,80,0.85);color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;z-index:10;">№${b.shopNumber}</div>
           ${gallery}
@@ -2783,6 +2934,7 @@ app.get('/shop/:shopId', async (req, res) => {
           <p style="font-size:${priceFontSize};font-weight:bold;color:#2c3e50;margin:4px 0;">
             ${oldPrice > b.price ? `<span style="text-decoration:line-through;color:#999;font-weight:normal;font-size:${oldPriceFontSize};">${oldPrice} ₽</span>&nbsp;` : ''}${b.price} ₽
           </p>
+          ${confirmedHTML}
           <div style="margin-top:auto;">
             <a href="${contactUrl}" style="display:block;max-width:230px;margin:10px auto 0;background:#e74c3c;color:#fff;padding:12px 16px;border-radius:30px;text-decoration:none;font-weight:bold;text-align:center;font-size:15px;">📞 Связаться</a>
             <div style="margin-top:8px;">
@@ -2799,7 +2951,11 @@ app.get('/shop/:shopId', async (req, res) => {
     const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-attachment:fixed;` : `background:#fafaf8;`;
     const headerHTML = logoUrl ? `<img src="${escAttr(logoUrl)}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
 
-    const titleHTML = `<div style="background:rgba(255,255,255,0.9);border-radius:18px;padding:14px 20px;max-width:560px;margin:0 auto 16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><h1 style="color:#2c3e50;margin:0 0 6px;font-size:24px;">${esc(shop.displayName)}</h1>${(shop.address || shop.hours) ? `<div style="color:#555;font-size:14px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>` : ''}</div>`;
+    // Строка «N букетов в наличии» — считаем по всем активным (без фильтров)
+    const totalActiveCount = all.filter(isConfirmedRecently).length;
+    const countLine = totalActiveCount > 0 ? `<div style="font-size:13px;color:#27ae60;margin-top:6px;">🌸 ${totalActiveCount} ${plural(totalActiveCount, 'букет', 'букета', 'букетов')} в наличии</div>` : '';
+
+    const titleHTML = `<div style="background:rgba(255,255,255,0.9);border-radius:18px;padding:14px 20px;max-width:560px;margin:0 auto 16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><h1 style="color:#2c3e50;margin:0 0 6px;font-size:24px;">${esc(shop.displayName)}</h1>${(shop.address || shop.hours) ? `<div style="color:#555;font-size:14px;">${shop.address ? `📍 ${esc(shop.address)}` : ''} ${shop.hours ? `· 🕐 ${esc(shop.hours)}` : ''}</div>` : ''}${countLine}</div>`;
 
     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${esc(shop.displayName)} — Flowind</title>
       <style>
