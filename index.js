@@ -279,7 +279,6 @@ function computeAllTags(name, caption) {
   return all;
 }
 
-// Время подтверждения для карточки: только для свежих (за 24 часа)
 function formatConfirmedAt(confirmedAt) {
   if (!confirmedAt) return null;
   const ageMs = Date.now() - new Date(confirmedAt).getTime();
@@ -317,7 +316,7 @@ function sendClickNotification(shop, bouquet, type) {
         ? `<i>Ожидайте звонка.</i>`
         : `<i>Возможно, он уже пишет вам — проверьте.</i>`);
     for (const admin of onShiftAdmins) {
-      bot.sendMessage(admin.chatId, text, { parse_mode: 'HTML' }).catch(() => {});
+      bot.sendMessage(admin.chatId, text, { parse_mode: 'HTML' }).catch(function(){});
     }
     return;
   }
@@ -330,7 +329,7 @@ function sendClickNotification(shop, bouquet, type) {
     `Букет <b>№${bouquet.shopNumber}</b> «${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n` +
     `Канал: ${channelName}\n\n` +
     `<i>Напомните флористам отметиться в боте — «✅ Я сегодня работаю».</i>`;
-  bot.sendMessage(owner.chatId, warnText, { parse_mode: 'HTML' }).catch(() => {});
+  bot.sendMessage(owner.chatId, warnText, { parse_mode: 'HTML' }).catch(function(){});
 }
 
 function cleanupNotifiedClicks() {
@@ -547,6 +546,7 @@ async function getPhotoUrl(fileRef) {
   } catch (e) { return null; }
 }const CHECK_PER_PAGE = 25;
 const CHECK_SESSION_TTL = 60 * 60 * 1000;
+const LIST_PER_PAGE = 25;
 
 function estimateCheckMinutes(count) {
   const sec = count * 15;
@@ -655,15 +655,20 @@ async function showArchiveCard(chatId, session) {
     const shopId = session.shopId;
     delete archiveSessions[chatId];
     const shop = shopId ? await getShopFromDb(shopId) : null;
-    return bot.sendMessage(chatId, '📦 Архив просмотрен.', shop ? { reply_markup: getMainKeyboard(shop, chatId) } : {}).catch(() => {});
+    try {
+      await bot.sendMessage(chatId, '📦 Архив просмотрен.', shop ? { reply_markup: getMainKeyboard(shop, chatId) } : {});
+    } catch (e) { /* ignore */ }
+    return;
   }
 
   if (session.currentIndex === 0 && !session.keyboardHidden) {
     session.keyboardHidden = true;
-    await bot.sendMessage(chatId, '📦 <i>Открываю архив — меню вернётся после закрытия.</i>', {
-      parse_mode: 'HTML',
-      reply_markup: { remove_keyboard: true }
-    }).catch(() => {});
+    try {
+      await bot.sendMessage(chatId, '📦 <i>Открываю архив — меню вернётся после закрытия.</i>', {
+        parse_mode: 'HTML',
+        reply_markup: { remove_keyboard: true }
+      });
+    } catch (e) { /* ignore */ }
   }
 
   const b = session.bouquets[session.currentIndex];
@@ -697,23 +702,43 @@ async function showArchiveCard(chatId, session) {
       return;
     } catch (e) { /* фолбэк */ }
   }
-  await bot.sendMessage(chatId, caption, opts);
+  try {
+    await bot.sendMessage(chatId, caption, opts);
+  } catch (e) { /* ignore */ }
 }
 
-async function showBouquetList(chatId, shopId, action, headerText) {
+async function showBouquetList(chatId, shopId, action, headerText, page) {
+  const currentPage = page || 0;
   const active = await getBouquetsFromDb(shopId);
-  if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет бук).етовcatch.');
+  if (active.length === 0) return bot.sendMessage(chatId, '🌿 Нет букетов.');
   active.sort((a, b) => a.shopNumber - b.shopNumber);
-  const shown = active.slice(0, MAX_LIST_ITEMS);
+
+  const totalPages = Math.max(1, Math.ceil(active.length / LIST_PER_PAGE));
+  const safePage = Math.max(0, Math.min(currentPage, totalPages - 1));
+  const start = safePage * LIST_PER_PAGE;
+  const shown = active.slice(start, start + LIST_PER_PAGE);
+
   let listTxt = `${headerText}\n\n`;
   for (const b of shown) {
     listTxt += `<b>№${b.shopNumber}</b> — ${esc(b.name)} — <b>${b.price} ₽</b>\n\n`;
   }
-  if (active.length > shown.length) listTxt += `<i>Показаны первые ${shown.length} из ${active.length}.</i>`;
+  if (totalPages > 1) {
+    listTxt += `<i>Страница ${safePage + 1} из ${totalPages}</i>`;
+  }
+
   const kb = [];
   for (let i = 0; i < shown.length; i += 4) {
     kb.push(shown.slice(i, i + 4).map(b => ({ text: `№${b.shopNumber}`, callback_data: `${action}_${b.id}` })));
   }
+
+  if (totalPages > 1) {
+    const navRow = [];
+    if (safePage > 0) navRow.push({ text: '⬅️ Назад', callback_data: `bqlist_${action}_${safePage - 1}` });
+    navRow.push({ text: `${safePage + 1} / ${totalPages}`, callback_data: 'noop' });
+    if (safePage < totalPages - 1) navRow.push({ text: 'Дальше ➡️', callback_data: `bqlist_${action}_${safePage + 1}` });
+    kb.push(navRow);
+  }
+
   return bot.sendMessage(chatId, listTxt, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
 }
 
@@ -728,7 +753,9 @@ async function sendBouquetPreview(chatId, b, headerText, buttons) {
       return;
     } catch (e) { /* фолбэк */ }
   }
-  await bot.sendMessage(chatId, caption, opts(() => {});
+  try {
+    await bot.sendMessage(chatId, caption, opts);
+  } catch (e) { /* ignore */ }
 }
 
 async function initDb() {
@@ -787,7 +814,6 @@ async function initDb() {
   await pool.query(`ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS shop_number INTEGER`);
   await pool.query(`ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb`);
 
-  // Заполнить shop_number у существующих
   await pool.query(`
     UPDATE bouquets SET shop_number = sub.rn
     FROM (
@@ -797,7 +823,6 @@ async function initDb() {
     WHERE bouquets.id = sub.id
   `);
 
-  // Заполнить теги у существующих букетов (по названию)
   try {
     const existing = await pool.query(`SELECT id, name FROM bouquets WHERE tags IS NULL OR tags = '[]'::jsonb`);
     for (const row of existing.rows) {
@@ -874,7 +899,7 @@ async function addAdminToDb(chatId, shopId, role, name) {
 async function removeAdminFromDb(chatId, shopId) {
   await pool.query('DELETE FROM admins WHERE chat_id = $1 AND shop_id = $2', [chatId, shopId]);
 }
-async function getBouquetsFromDb(shopId, includeDeleted = false) {
+async function getBouquetsFromDb(shopId, includeDeleted) {
   let query = 'SELECT * FROM bouquets WHERE shop_id = $1';
   if (!includeDeleted) query += ' AND deleted = FALSE';
   query += ' ORDER BY is_pinned DESC, confirmed_at DESC NULLS LAST, created_at DESC';
@@ -1658,7 +1683,7 @@ async function regFinish(chatId, state) {
         `👤 ${esc(userName)} (${esc(tgRef)})\n\n` +
         `🔗 ${SITE_URL}/shop/${d.shopId}\n\n` +
         `<i>Открыть админ-панель — /admin</i>`;
-      bot.sendMessage(OWNER_CHAT_ID, adminTxt, { parse_mode: 'HTML' }).catch(() => {});
+      bot.sendMessage(OWNER_CHAT_ID, adminTxt, { parse_mode: 'HTML' }).catch(function(){});
     }
     return;
   } catch (e) {
@@ -1671,7 +1696,7 @@ async function regFinish(chatId, state) {
 // ========= АДМИН-ПАНЕЛЬ ВЛАДЕЛЬЦА СЕРВИСА =========
 const ADMIN_SHOP_PER_PAGE = 25;
 
-async function showAdminPanel(chatId, editMessageId = null) {
+async function showAdminPanel(chatId, editMessageId) {
   const shops = await getAllShopsAdmin();
   const total = shops.length;
   const now = Date.now();
@@ -1700,15 +1725,19 @@ async function showAdminPanel(chatId, editMessageId = null) {
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
 
   if (editMessageId) {
-    return bot.editMessageText(txt, { chat_id: chatId, message_id: editMessageId, ...opts }).catch(() => {});
+    try {
+      await bot.editMessageText(txt, { chat_id: chatId, message_id: editMessageId, ...opts });
+      return;
+    } catch (e) { /* fallthrough */ }
   }
   return bot.sendMessage(chatId, txt, opts);
 }
 
-async function showAdminShopsList(chatId, page = 0, editMessageId = null) {
+async function showAdminShopsList(chatId, page, editMessageId) {
+  const currentPage = page || 0;
   const shops = await getAllShopsAdmin();
   const totalPages = Math.max(1, Math.ceil(shops.length / ADMIN_SHOP_PER_PAGE));
-  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const safePage = Math.max(0, Math.min(currentPage, totalPages - 1));
   const start = safePage * ADMIN_SHOP_PER_PAGE;
   const slice = shops.slice(start, start + ADMIN_SHOP_PER_PAGE);
 
@@ -1744,7 +1773,10 @@ async function showAdminShopsList(chatId, page = 0, editMessageId = null) {
   const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } };
 
   if (editMessageId) {
-    return bot.editMessageText(txt, { chat_id: chatId, message_id: editMessageId, ...opts }).catch(() => {});
+    try {
+      await bot.editMessageText(txt, { chat_id: chatId, message_id: editMessageId, ...opts });
+      return;
+    } catch (e) { /* fallthrough */ }
   }
   return bot.sendMessage(chatId, txt, opts);
 }
@@ -1752,7 +1784,10 @@ async function showAdminShopsList(chatId, page = 0, editMessageId = null) {
 async function showAdminShopCard(chatId, shopId, editMessageId) {
   const shop = await getShopFromDb(shopId);
   if (!shop) {
-    return bot.editMessageText('❌ Магазин не найден.', { chat_id: chatId, message_id: editMessageId }).catch(() => {});
+    try {
+      await bot.editMessageText('❌ Магазин не найден.', { chat_id: chatId, message_id: editMessageId });
+    } catch (e) { /* ignore */ }
+    return;
   }
 
   const all = await getBouquetsFromDb(shopId, false);
@@ -1807,12 +1842,14 @@ async function showAdminShopCard(chatId, shopId, editMessageId) {
     [{ text: '⬅️ К списку', callback_data: 'admin_shops_0' }]
   ];
 
-  return bot.editMessageText(txt, {
-    chat_id: chatId,
-    message_id: editMessageId,
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: buttons }
-  }).catch(() => {});
+  try {
+    await bot.editMessageText(txt, {
+      chat_id: chatId,
+      message_id: editMessageId,
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: buttons }
+    });
+  } catch (e) { /* ignore */ }
 }
 
 // ========= /start =========
@@ -1823,7 +1860,6 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
   delete archiveSessions[chatId];
 
-  // Инвайт через deep-link (?start=inv_CODE)
   if (param && param.startsWith('inv_')) {
     const inviteCode = param.replace('inv_', '').toUpperCase();
     const shopId = await getShopByInvite(inviteCode);
@@ -1849,7 +1885,6 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
   let shopId = userToShop[chatId] || await findUserShop(chatId);
 
-  // Правка 2: preset kupidon только для OWNER_CHAT_ID
   if (!shopId) {
     if (OWNER_CHAT_ID && chatId === OWNER_CHAT_ID) {
       const presetShop = await getShopFromDb(PRESET_SHOP.shopId);
@@ -1922,26 +1957,24 @@ bot.onText(/\/admin/, async (msg) => {
 bot.on('callback_query', async (q) => {
   const chatId = q.from.id;
   const data = q.data;
-  bot.answerCallbackQuery(q.id).catch(() => {});
+  bot.answerCallbackQuery(q.id).catch(function(){});
 
   if (checkSessions[chatId]) {
     checkSessions[chatId].lastActivity = Date.now();
   }
 
-  // Приветствие нового пользователя
   if (data === 'welcome_create') {
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
     return startRegistration(chatId, q.from.first_name, q.from.username);
   }
 
-  // Пропуск шага регистрации
   if (data === 'reg_skip') {
     const state = registrationState[chatId];
     if (!state) {
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
       return;
     }
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
     return regSkipCurrentStep(chatId, state);
   }
 
@@ -1965,7 +1998,7 @@ bot.on('callback_query', async (q) => {
       const targetShopId = rest.slice(firstUnderscore + 1);
       if (!days || !targetShopId) return;
       await extendShopTrial(targetShopId, days);
-      await bot.answerCallbackQuery(q.id, { text: `✅ Продлено на ${days} дней`, show_alert: false }).catch(() => {});
+      await bot.answerCallbackQuery(q.id, { text: `✅ Продлено на ${days} дней`, show_alert: false }).catch(function(){});
       return showAdminShopCard(chatId, targetShopId, q.message.message_id);
     }
     if (data.startsWith('admin_msg_')) {
@@ -2007,7 +2040,7 @@ bot.on('callback_query', async (q) => {
       if (owner) {
         bot.sendMessage(owner.chatId,
           `✅ <b>Магазин разблокирован</b>\n\n«${esc(shop.displayName)}» снова работает.`,
-          { parse_mode: 'HTML' }).catch(() => {});
+          { parse_mode: 'HTML' }).catch(function(){});
       }
       return showAdminShopCard(chatId, targetShopId, q.message.message_id);
     }
@@ -2019,20 +2052,35 @@ bot.on('callback_query', async (q) => {
   if (!shop) return;
   const owner = isOwner(shop, chatId);
 
+  // Пагинация списков букетов (для удалить / переименовать / изменить цену)
+  if (data.startsWith('bqlist_')) {
+    const rest = data.replace('bqlist_', '');
+    const lastUnderscore = rest.lastIndexOf('_');
+    const action = rest.slice(0, lastUnderscore);
+    const page = parseInt(rest.slice(lastUnderscore + 1)) || 0;
+    const headers = {
+      editprice: '✏️ <b>Какой букет изменить цену?</b>\nНажмите на кнопку с номером.',
+      rename: '📝 <b>Какой букет переименовать?</b>\nНажмите на кнопку с номером.',
+      askdel: '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.'
+    };
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+    return showBouquetList(chatId, shopId, action, headers[action] || '', page);
+  }
+
   if (data.startsWith('arch_')) {
     const session = archiveSessions[chatId];
     if (!session) {
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
       return;
     }
     if (data === 'arch_close') {
       delete archiveSessions[chatId];
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
       return bot.sendMessage(chatId, '📦 Архив закрыт.', { reply_markup: getMainKeyboard(shop, chatId) });
     }
     if (data === 'arch_next') {
       session.currentIndex++;
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
       return showArchiveCard(chatId, session);
     }
     if (data === 'arch_restore') {
@@ -2040,23 +2088,29 @@ bot.on('callback_query', async (q) => {
       if (!b) return;
       await updateBouquetFields(b.id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
       session.currentIndex++;
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
       return showArchiveCard(chatId, session);
     }
   }
 
   if (data === 'noop') return;
   if (data === 'menu_link') return bot.sendMessage(chatId, `🔗 Ваша витрина:\n${SITE_URL}/shop/${shopId}`);
-  if (data === 'menu_close') { delete checkSessions[chatId]; delete archiveSessions[chatId]; return bot.deleteMessage(chatId, q.message.message_id).catch(() => {}); }
+  if (data === 'menu_close') { delete checkSessions[chatId]; delete archiveSessions[chatId]; return bot.deleteMessage(chatId, q.message.message_id).catch(function(){}); }
   if (data === 'menu_back') {
     if (!owner) return;
     delete archiveSessions[chatId];
-    return bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...getSettingsMenu(shop, chatId) }).catch(() => {});
+    try {
+      await bot.editMessageText('⚙️ Меню магазина:', { chat_id: chatId, message_id: q.message.message_id, ...getSettingsMenu(shop, chatId) });
+    } catch (e) { /* ignore */ }
+    return;
   }
   if (data === 'menu_shopdata') {
     if (!owner) return;
     const { text, options } = buildShopDataMessage(shop);
-    return bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options }).catch(() => {});
+    try {
+      await bot.editMessageText(text, { chat_id: chatId, message_id: q.message.message_id, ...options });
+    } catch (e) { /* ignore */ }
+    return;
   }
   if (data.startsWith('edit_shop_')) {
     if (!owner) return;
@@ -2121,8 +2175,8 @@ bot.on('callback_query', async (q) => {
     const name = target ? (target.name || 'Флорист') : 'Флорист';
     await removeAdminFromDb(targetChatId, shopId);
     delete userToShop[targetChatId];
-    bot.editMessageText(`✅ Доступ для «${name}» удалён.`, { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
-    bot.sendMessage(targetChatId, `🚫 Ваш доступ к витрине «${shop.displayName}» удалён.`).catch(() => {});
+    bot.editMessageText(`✅ Доступ для «${name}» удалён.`, { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
+    bot.sendMessage(targetChatId, `🚫 Ваш доступ к витрине «${shop.displayName}» удалён.`).catch(function(){});
     return;
   }
   if (data === 'menu_stats') {
@@ -2177,7 +2231,8 @@ bot.on('callback_query', async (q) => {
     const percent = parseInt(data.replace('markup_set_', ''));
     shop.settings.markupPercent = percent;
     await saveShopSettings(shopId, shop.settings);
-    return bot.editMessageText(`✅ <b>Наценка: ${percent}%</b>`, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } }).catch(() => {});
+    bot.editMessageText(`✅ <b>Наценка: ${percent}%</b>`, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } }).catch(function(){});
+    return;
   }
   if (data === 'markup_custom') {
     if (!owner) return;
@@ -2213,15 +2268,16 @@ bot.on('callback_query', async (q) => {
   }
   if (data === 'setlogo_now') { if (!owner) return; awaitingUpload[chatId] = 'logo'; return bot.sendMessage(chatId, '📷 Отправьте фото логотипа.'); }
   if (data === 'setbg_now') { if (!owner) return; awaitingUpload[chatId] = 'background'; return bot.sendMessage(chatId, '📷 Отправьте фото фона.'); }
-  if (data === 'resetlogo_now') { if (!owner) return; shop.settings.logo = null; await saveShopSettings(shopId, shop.settings); return bot.editMessageText('✅ Логотип убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {}); }
-  if (data === 'resetbg_now') { if (!owner) return; shop.settings.background = null; await saveShopSettings(shopId, shop.settings); return bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {}); }
+  if (data === 'resetlogo_now') { if (!owner) return; shop.settings.logo = null; await saveShopSettings(shopId, shop.settings); bot.editMessageText('✅ Логотип убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){}); return; }
+  if (data === 'resetbg_now') { if (!owner) return; shop.settings.background = null; await saveShopSettings(shopId, shop.settings); bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){}); return; }
 
   if (data === 'check_start') {
     const bouquets = await getCheckableBouquets(shopId);
     if (bouquets.length === 0) {
-      return bot.editMessageText('🌿 На витрине нет букетов — проверять нечего.', {
+      bot.editMessageText('🌿 На витрине нет букетов — проверять нечего.', {
         chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML'
-      }).catch(() => {});
+      }).catch(function(){});
+      return;
     }
     checkSessions[chatId] = {
       shopId,
@@ -2235,34 +2291,41 @@ bot.on('callback_query', async (q) => {
     const session = checkSessions[chatId];
     const txt = buildCheckListText(session);
     const kb = { inline_keyboard: buildCheckListKeyboard(session) };
-    return bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+    bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: kb }).catch(function(){});
+    return;
   }
 
   if (data === 'check_cancel') {
     delete checkSessions[chatId];
-    return bot.editMessageText('❌ Проверка отменена.', { chat_id: chatId, message_id: q.message.message_id }).catch(() => {});
+    bot.editMessageText('❌ Проверка отменена.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
+    return;
   }
 
   if (data === 'check_finish') {
     delete checkSessions[chatId];
-    return bot.editMessageText('✅ Проверка завершена.', { chat_id: chatId, message_id: q.message.message_id, reply_markup: getMainKeyboard(shop, chatId) }).catch(() => {
-      bot.sendMessage(chatId, '✅ Проверка завершена.', { reply_markup: getMainKeyboard(shop, chatId) });
-    });
+    try {
+      await bot.editMessageText('✅ Проверка завершена.', { chat_id: chatId, message_id: q.message.message_id, reply_markup: getMainKeyboard(shop, chatId) });
+    } catch (e) {
+      bot.sendMessage(chatId, '✅ Проверка завершена.', { reply_markup: getMainKeyboard(shop, chatId) }).catch(function(){});
+    }
+    return;
   }
 
   if (data.startsWith('check_page_')) {
     const session = checkSessions[chatId];
     if (!session) {
-      return bot.editMessageText('⚠️ Сессия проверки истекла. Начните заново.', {
+      bot.editMessageText('⚠️ Сессия проверки истекла. Начните заново.', {
         chat_id: chatId, message_id: q.message.message_id
-      }).catch(() => {});
+      }).catch(function(){});
+      return;
     }
     const newPage = parseInt(data.replace('check_page_', ''));
     if (!isNaN(newPage)) session.currentPage = newPage;
     session.lastActivity = Date.now();
     const txt = buildCheckListText(session);
     const kb = { inline_keyboard: buildCheckListKeyboard(session) };
-    return bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: kb }).catch(() => {});
+    bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: kb }).catch(function(){});
+    return;
   }
 
   if (data.startsWith('check_show_')) {
@@ -2283,7 +2346,7 @@ bot.on('callback_query', async (q) => {
   }
 
   if (data === 'check_back') {
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
     return bot.sendMessage(chatId, '👆 Вернуться к списку — выше. Нажмите на любой букет.');
   }
 
@@ -2297,7 +2360,7 @@ bot.on('callback_query', async (q) => {
     session.order = [id, ...session.order.filter(x => x !== id)];
     session.currentBouquetId = null;
     session.lastActivity = Date.now();
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
     return refreshCheckList(chatId, session);
   }
 
@@ -2311,7 +2374,7 @@ bot.on('callback_query', async (q) => {
     session.order = [id, ...session.order.filter(x => x !== id)];
     session.currentBouquetId = null;
     session.lastActivity = Date.now();
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
     return refreshCheckList(chatId, session);
   }
 
@@ -2347,8 +2410,8 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, `✏️ Напишите новую цену для букета <b>№${b.shopNumber}</b> (${esc(b.name)}).\nТекущая: <b>${b.price} ₽</b>\n<i>Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
   if (data.startsWith('editprice_no_')) {
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    return showBouquetList(chatId, shopId, 'editprice', '✏️ <b>Какой букет изменить цену?</b>\nНажмите на кнопку с номером.');
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+    return showBouquetList(chatId, shopId, 'editprice', '✏️ <b>Какой букет изменить цену?</b>\nНажмите на кнопку с номером.', 0);
   }
   if (data.startsWith('editprice_')) {
     const id = parseInt(data.split('_')[1]);
@@ -2368,8 +2431,8 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, `📝 Напишите новое название для букета <b>№${b.shopNumber}</b>.\nТекущее: <b>${esc(b.name)}</b>\n<i>Точка в начале — закрепить. Отмена — /cancel</i>`, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   }
   if (data.startsWith('rename_no_')) {
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    return showBouquetList(chatId, shopId, 'rename', '📝 <b>Какой букет переименовать?</b>\nНажмите на кнопку с номером.');
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+    return showBouquetList(chatId, shopId, 'rename', '📝 <b>Какой букет переименовать?</b>\nНажмите на кнопку с номером.', 0);
   }
   if (data.startsWith('rename_')) {
     const id = parseInt(data.split('_')[1]);
@@ -2397,12 +2460,12 @@ bot.on('callback_query', async (q) => {
     const b = await getBouquetById(shopId, id);
     const num = b ? b.shopNumber : id;
     await updateBouquetField(id, 'deleted', true);
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    return showBouquetList(chatId, shopId, 'askdel', `✅ <b>Букет №${num} удалён с витрины.</b>\n\n🗑 Какой удалить ещё?`);
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+    return showBouquetList(chatId, shopId, 'askdel', `✅ <b>Букет №${num} удалён с витрины.</b>\n\n🗑 Какой удалить ещё?`, 0);
   }
   if (data === 'canceldel') {
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.');
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+    return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.', 0);
   }
 });async function refreshCheckList(chatId, session) {
   const total = session.bouquets.length;
@@ -2414,7 +2477,7 @@ bot.on('callback_query', async (q) => {
         chat_id: chatId, message_id: session.listMessageId, parse_mode: 'HTML'
       });
     } catch (e) {
-      await bot.sendMessage(chatId, `🎉 Проверка завершена! Все ${total} букетов проверены.`, { parse_mode: 'HTML' });
+      bot.sendMessage(chatId, `🎉 Проверка завершена! Все ${total} букетов проверены.`, { parse_mode: 'HTML' }).catch(function(){});
     }
     return;
   }
@@ -2426,7 +2489,7 @@ bot.on('callback_query', async (q) => {
     try {
       const msg = await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: kb });
       session.listMessageId = msg.message_id;
-    } catch (e2) { /* ничего */ }
+    } catch (e2) { /* ignore */ }
   }
 }
 
@@ -2454,7 +2517,7 @@ bot.on('message', async (msg) => {
         `🚫 <b>Магазин заблокирован</b>\n\n` +
         `Причина: <i>${esc(reason)}</i>\n\n` +
         `Если это ошибка — напишите @floop10.`,
-        { parse_mode: 'HTML' }).catch(() => {});
+        { parse_mode: 'HTML' }).catch(function(){});
     }
     return bot.sendMessage(chatId, `✅ Магазин «${esc(shop.displayName)}» заблокирован.`);
   }
@@ -2546,7 +2609,6 @@ bot.on('message', async (msg) => {
     if (!shopId) { delete awaitingName[chatId]; return; }
     const newName = text.trim();
     if (newName.length < 2 || newName.length > 80) return bot.sendMessage(chatId, '❌ 2–80 символов. Или нажмите любую кнопку меню, чтобы выйти.');
-    // Пересчитываем теги из нового названия
     const newTags = extractTagsFromName(newName);
     await updateBouquetFields(awaitingName[chatId], {
       name: newName,
@@ -2590,14 +2652,14 @@ bot.on('message', async (msg) => {
     return bot.sendMessage(chatId, t, options);
   }
   if (text === '✏️ Изменить цену') {
-    return showBouquetList(chatId, shopId, 'editprice', '✏️ <b>Какой букет изменить цену?</b>\nНажмите на кнопку с номером.');
+    return showBouquetList(chatId, shopId, 'editprice', '✏️ <b>Какой букет изменить цену?</b>\nНажмите на кнопку с номером.', 0);
   }
   if (text === '📝 Переименовать') {
-    return showBouquetList(chatId, shopId, 'rename', '📝 <b>Какой букет переименовать?</b>\nНажмите на кнопку с номером.');
+    return showBouquetList(chatId, shopId, 'rename', '📝 <b>Какой букет переименовать?</b>\nНажмите на кнопку с номером.', 0);
   }
   if (text === '🗑 Удалить букет') {
     if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Только владелец.');
-    return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.');
+    return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.', 0);
   }
   if (text === '📦 Архив') {
     const arch = await getArchivedBouquets(shopId);
@@ -2653,7 +2715,7 @@ bot.on('photo', async (msg) => {
   if (awaitingUpload[chatId]) {
     const which = awaitingUpload[chatId];
     if (which === 'logo' || which === 'background') {
-      bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
+      bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(function(){});
       const result = await savePhotoToStorage(fileId, shopId);
       shop.settings[which] = result;
       await saveShopSettings(shopId, shop.settings);
@@ -2676,10 +2738,9 @@ bot.on('photo', async (msg) => {
       return bot.sendMessage(chatId, PARSE_ERROR_TEXT, { parse_mode: 'HTML' });
     }
 
-    // Считаем теги — автоматом по названию + вручную из #хэштегов в подписи
     const tags = computeAllTags(finalName, caption);
 
-    bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
+    bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(function(){});
     const result = await savePhotoToStorage(fileId, shopId);
 
     const norm = normalizeName(finalName);
@@ -2706,7 +2767,7 @@ bot.on('photo', async (msg) => {
   const b = await getBouquetById(shopId, lastId);
   if (!b) return bot.sendMessage(chatId, '❌ Букет не найден.');
 
-  bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(() => {});
+  bot.sendMessage(chatId, '⏳ Загружаю фото...').catch(function(){});
   const result = await savePhotoToStorage(fileId, shopId);
 
   const photos = b.photos || [];
@@ -2799,7 +2860,6 @@ app.get('/shop/:shopId', async (req, res) => {
     let all = await getBouquetsFromDb(shop.shopId);
     let active = all.filter(isConfirmedRecently);
 
-    // Считаем счётчики тегов — только по актуальным букетам
     const tagCounts = {};
     for (const b of active) {
       for (const t of (b.tags || [])) {
@@ -2807,17 +2867,14 @@ app.get('/shop/:shopId', async (req, res) => {
       }
     }
 
-    // Применяем фильтр по цене
     if (priceFilter === 'low') active = active.filter(b => b.price < 3000);
     else if (priceFilter === 'mid') active = active.filter(b => b.price >= 3000 && b.price <= 6000);
     else if (priceFilter === 'high') active = active.filter(b => b.price > 6000);
 
-    // Применяем фильтр по тегу
     if (tagFilter !== 'all') {
       active = active.filter(b => (b.tags || []).includes(tagFilter));
     }
 
-    // Сортировка
     if (sortParam === 'asc') {
       active.sort((a, b) => a.price - b.price);
     } else if (sortParam === 'desc') {
@@ -2831,9 +2888,9 @@ app.get('/shop/:shopId', async (req, res) => {
     }
 
     const buildUrl = (newPrice, newSort, newTag) => {
-      const p = (newPrice !== undefined) ? newPrice : priceFilter;
-      const s = (newSort !== undefined) ? newSort : sortParam;
-      const t = (newTag !== undefined) ? newTag : tagFilter;
+      const p = (newPrice !== undefined && newPrice !== null) ? newPrice : priceFilter;
+      const s = (newSort !== undefined && newSort !== null) ? newSort : sortParam;
+      const t = (newTag !== undefined && newTag !== null) ? newTag : tagFilter;
       const parts = [];
       if (p && p !== 'all') parts.push('price=' + p);
       if (s && s !== 'default') parts.push('sort=' + s);
@@ -2846,7 +2903,7 @@ app.get('/shop/:shopId', async (req, res) => {
     const pillIdle = 'background:#f0f0f0;color:#555;';
     const pill = (label, filterValue) => {
       const isActive = priceFilter === filterValue;
-      return `<a href="${buildUrl(filterValue, undefined, undefined)}" style="${pillBase}${isActive ? pillActive : pillIdle}">${label}</a>`;
+      return `<a href="${buildUrl(filterValue, null, null)}" style="${pillBase}${isActive ? pillActive : pillIdle}">${label}</a>`;
     };
 
     const sortPillBase = 'display:inline-block;padding:6px 12px;margin:4px;border-radius:16px;text-decoration:none;font-size:13px;';
@@ -2854,10 +2911,9 @@ app.get('/shop/:shopId', async (req, res) => {
     const sortPillIdle = 'background:#f5f5f5;color:#666;';
     const sortPill = (label, sortValue) => {
       const isActive = sortParam === sortValue;
-      return `<a href="${buildUrl(undefined, sortValue, undefined)}" style="${sortPillBase}${isActive ? sortPillActive : sortPillIdle}">${label}</a>`;
+      return `<a href="${buildUrl(null, sortValue, null)}" style="${sortPillBase}${isActive ? sortPillActive : sortPillIdle}">${label}</a>`;
     };
 
-    // Кнопки-теги: показываем только те, что есть у магазина
     let tagPillsHTML = '';
     const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
     if (sortedTags.length > 0) {
@@ -2865,10 +2921,10 @@ app.get('/shop/:shopId', async (req, res) => {
       const tagPillActive = 'background:#27ae60;color:#fff;';
       const tagPillIdle = 'background:#e8f5e9;color:#2c3e50;';
       const allActive = tagFilter === 'all';
-      let tagsHTML = `<a href="${buildUrl(undefined, undefined, 'all')}" style="${tagPillBase}${allActive ? tagPillActive : tagPillIdle}">Все</a>`;
+      let tagsHTML = `<a href="${buildUrl(null, null, 'all')}" style="${tagPillBase}${allActive ? tagPillActive : tagPillIdle}">Все</a>`;
       for (const [tag, count] of sortedTags) {
         const isActive = tagFilter === tag;
-        tagsHTML += `<a href="${buildUrl(undefined, undefined, tag)}" style="${tagPillBase}${isActive ? tagPillActive : tagPillIdle}">#${esc(tag)} ${count}</a>`;
+        tagsHTML += `<a href="${buildUrl(null, null, tag)}" style="${tagPillBase}${isActive ? tagPillActive : tagPillIdle}">#${esc(tag)} ${count}</a>`;
       }
       tagPillsHTML = `<div style="margin:10px 0 6px;">${tagsHTML}</div>`;
     }
@@ -2921,7 +2977,6 @@ app.get('/shop/:shopId', async (req, res) => {
         const cardPadding = useTwoColumns ? '10px' : '16px';
         const cardMargin = useTwoColumns ? '0' : '12px';
 
-        // Зелёная пометка «Обновлено X назад» — только если подтверждено за последние 24 часа
         const confirmedLine = formatConfirmedAt(b.confirmedAt);
         const confirmedHTML = confirmedLine
           ? `<div style="font-size:11px;color:#27ae60;margin:2px 0 4px;">✓ Обновлено ${esc(confirmedLine)}</div>`
@@ -2951,7 +3006,6 @@ app.get('/shop/:shopId', async (req, res) => {
     const bodyStyle = bgUrl ? `background-image:url('${bgUrl}');background-size:cover;background-attachment:fixed;` : `background:#fafaf8;`;
     const headerHTML = logoUrl ? `<img src="${escAttr(logoUrl)}" style="max-height:90px;display:block;margin:0 auto 12px;">` : '';
 
-    // Строка «N букетов в наличии» — считаем по всем активным (без фильтров)
     const totalActiveCount = all.filter(isConfirmedRecently).length;
     const countLine = totalActiveCount > 0 ? `<div style="font-size:13px;color:#27ae60;margin-top:6px;">🌸 ${totalActiveCount} ${plural(totalActiveCount, 'букет', 'букета', 'букетов')} в наличии</div>` : '';
 
@@ -3022,7 +3076,7 @@ async function checkAndNotify() {
         const rem = 3 * 24 * 60 * 60 * 1000 - (Date.now() - new Date(b.confirmedAt).getTime());
         if (rem > 0 && rem <= 12 * 60 * 60 * 1000) {
           bot.sendMessage(b.chatId, `⚠️ Букет №${b.shopNumber} «${esc(b.name)}» скоро скроется. Продлить?`,
-            { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '🌿 Продлить', callback_data: `extend_${b.id}` }]] } }).catch(() => {});
+            { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '🌿 Продлить', callback_data: `extend_${b.id}` }]] } }).catch(function(){});
           await updateBouquetField(b.id, 'reminded', true);
         }
       }
