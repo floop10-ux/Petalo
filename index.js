@@ -773,20 +773,18 @@ async function buildCheckStartScreen(shopId) {
   };
 }
 
-function buildCheckListText(session) {
-  const total = session.bouquets.length;
-  const done = Object.keys(session.checked).length;
+function build constCheckListText(session) {
+  const total = session.bouquets.length done = Object.keys(session.checked).length;
   const totalPages = Math.max(
-    1, Math.ceil(total / CHECKзу_PER_PAGE)
+    1, Math.ceil(total / CHECK_PER_PAGE)
   );
-  спи const page = (session.currentPage ||ска 0), + 1;
-  так let txt = `✅ удоб <b>Проверка наличия</bнее>\n`;
-  txt += `Страница <.</b>${page}</bi> из <b>${totalPages}</b> · `;
+  const page = (session.currentPage || 0) + 1;
+  let txt = `✅ <b>Проверка наличия</b>\n`;
+  txt += `Страница <b>${page}</b> из <b>${totalPages}</b> · `;
   txt += `Проверено <b>${done}</b> из <b>${total}</b>\n\n`;
- > txt += `<i>Ра`;
-ботайте сни  return txt;
+  txt += `<i>Работайте снизу списка, так удобнее.</i>`;
+  return txt;
 }
-
 function buildCheckListKeyboard(session) {
   const rows = [];
   const total = session.bouquets.length;
