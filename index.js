@@ -4409,3 +4409,1182 @@ bot.on('callback_query', async (q) => {
     );
   }
 });
+// ========== MESSAGE ==========
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+  if (!text || text.startsWith('/')) return;
+
+  if (awaitingAdminBlockReason[chatId]) {
+    const target = awaitingAdminBlockReason[chatId];
+    const reason = text.trim();
+    if (!reason || reason.length < 3) {
+      return bot.sendMessage(chatId,
+        '❌ Причина слишком короткая (минимум ' +
+        '3 символа). Напишите понятнее или /cancel.'
+      );
+    }
+    if (reason.length > 300) {
+      return bot.sendMessage(chatId,
+        '❌ Слишком длинная причина ' +
+        '(максимум 300 символов).'
+      );
+    }
+    delete awaitingAdminBlockReason[chatId];
+    await blockShop(target.shopId, reason);
+    const shop = await getShopFromDb(target.shopId);
+    const owner = shop.admins.find(a => a.role === 'owner');
+    if (owner) {
+      let notice = '🚫 <b>Магазин заблокирован</b>\n\n';
+      notice += 'Причина: <i>' + esc(reason) + '</i>\n\n';
+      notice += 'Если это ошибка — напишите @floop10.';
+      bot.sendMessage(owner.chatId, notice, {
+        parse_mode: 'HTML'
+      }).catch(function(){});
+    }
+    return bot.sendMessage(chatId,
+      '✅ Магазин «' + esc(shop.displayName) +
+      '» заблокирован.'
+    );
+  }
+
+  if (awaitingAdminMessage[chatId]) {
+    const target = awaitingAdminMessage[chatId];
+    const textToSend = text.trim();
+    if (textToSend.length > 1000) {
+      return bot.sendMessage(chatId,
+        '❌ Слишком длинное сообщение ' +
+        '(максимум 1000 символов).'
+      );
+    }
+    delete awaitingAdminMessage[chatId];
+    try {
+      let body = '📩 <b>Сообщение от Flowind</b>\n\n';
+      body += esc(textToSend) + '\n\n';
+      body += '<i>Если нужна помощь — пишите @floop10</i>';
+      await bot.sendMessage(target.targetChatId, body, {
+        parse_mode: 'HTML'
+      });
+      return bot.sendMessage(chatId,
+        '✅ Отправлено в «' + esc(target.targetName) + '».'
+      );
+    } catch (e) {
+      return bot.sendMessage(chatId,
+        '❌ Не удалось отправить. Возможно, ' +
+        'пользователь не начинал диалог с ботом.'
+      );
+    }
+  }
+
+  if (MENU_BUTTONS.includes(text)) {
+    delete awaitingPrice[chatId];
+    delete awaitingName[chatId];
+    delete awaitingMarkup[chatId];
+    delete awaitingInput[chatId];
+    delete awaitingUpload[chatId];
+    delete archiveSessions[chatId];
+    delete awaitingAdminMessage[chatId];
+    delete awaitingAdminBlockReason[chatId];
+  }
+
+  const shopId = userToShop[chatId] ||
+    await findUserShop(chatId);
+
+  const input = awaitingInput[chatId];
+  if (input && shopId) {
+    const shop = await getShopFromDb(shopId);
+    if (!shop) { delete awaitingInput[chatId]; return; }
+    if (!isOwner(shop, chatId)) {
+      delete awaitingInput[chatId];
+      return bot.sendMessage(chatId, '🚫 Только владелец.');
+    }
+
+    let value = text.trim();
+    if (value.toLowerCase() === 'нет') value = null;
+
+    if (input.field === 'telegram_username' && value) {
+      value = value.replace(/^@/, '').toLowerCase();
+    }
+    if (input.field === 'max_username' && value) {
+      if (!/^https?:\/\/max\.ru\//.test(value)) {
+        return bot.sendMessage(chatId,
+          '❌ Ссылка должна начинаться с ' +
+          '<code>https://max.ru/u/...</code>\n\n' +
+          'Попробуйте ещё раз или нажмите /cancel.',
+          { parse_mode: 'HTML' }
+        );
+      }
+    }
+    if ((input.field === 'phone' ||
+         input.field === 'whatsapp_phone') && value) {
+      const norm = normalizePhone(value);
+      if (!norm) {
+        return bot.sendMessage(chatId,
+          '❌ Похоже на опечатку. Пришлите номер ' +
+          'целиком.\nНапример: ' +
+          '<i>+7 962 402-51-75</i>\n\n' +
+          'Или напишите "нет" и нажмите /cancel.',
+          { parse_mode: 'HTML' }
+        );
+      }
+      value = norm;
+    }
+
+    if (input.field === 'display_name' && value) {
+      if (value.length < 2 || value.length > 60) {
+        return bot.sendMessage(chatId, '❌ 2–60 символов.');
+      }
+    }
+    if (input.field === 'telegram_username' && value) {
+      if (!/^[a-z0-9_]{3,32}$/.test(value)) {
+        return bot.sendMessage(chatId,
+          '❌ Только латиница, цифры, _, ' +
+          'от 3 до 32 символов.'
+        );
+      }
+    }
+
+    await updateShopField(shopId, input.field, value);
+    delete awaitingInput[chatId];
+
+    const updatedShop = await getShopFromDb(shopId);
+    const { text: t, options } =
+      buildShopDataMessage(updatedShop);
+    return bot.sendMessage(
+      chatId,
+      '✅ Сохранено!\n\n' + t,
+      { ...options, reply_markup: getMainKeyboard(
+        updatedShop, chatId
+      ) }
+    );
+  }
+
+  if (awaitingPrice[chatId]) {
+    if (!shopId) { delete awaitingPrice[chatId]; return; }
+    const b = await getBouquetById(
+      shopId, awaitingPrice[chatId]
+    );
+    if (!b) {
+      delete awaitingPrice[chatId];
+      return bot.sendMessage(chatId, '❌ Букет не найден.');
+    }
+    const newPrice = parseFloat(
+      text.replace(/[^\d.,]/g, '').replace(',', '.')
+    );
+    if (isNaN(newPrice) || newPrice <= 0) {
+      return bot.sendMessage(chatId,
+        '❌ Введите число. Или нажмите любую ' +
+        'кнопку меню, чтобы выйти.'
+      );
+    }
+    const oldPrice = b.price;
+    await updateBouquetField(
+      b.id, 'price', Math.round(newPrice)
+    );
+    delete awaitingPrice[chatId];
+    const shop = await getShopFromDb(shopId);
+    return bot.sendMessage(chatId,
+      '✅ Цена обновлена: ' + oldPrice + ' → ' +
+      Math.round(newPrice) + ' ₽',
+      { reply_markup: getMainKeyboard(shop, chatId) }
+    );
+  }
+
+  if (awaitingName[chatId]) {
+    if (!shopId) { delete awaitingName[chatId]; return; }
+    const newName = text.trim();
+    if (newName.length < 2 || newName.length > 80) {
+      return bot.sendMessage(chatId,
+        '❌ 2–80 символов. Или нажмите любую ' +
+        'кнопку меню, чтобы выйти.'
+      );
+    }
+    const newTags = extractTagsFromName(newName);
+    await updateBouquetFields(awaitingName[chatId], {
+      name: newName,
+      is_pinned: newName.startsWith('.'),
+      tags: JSON.stringify(newTags)
+    });
+    delete awaitingName[chatId];
+    const shop = await getShopFromDb(shopId);
+    let reply = '✅ Переименовано: «' + newName + '»';
+    if (newTags.length > 0) {
+      reply += '\n🏷 Теги: ' +
+        newTags.map(t => '#' + t).join(' ');
+    }
+    return bot.sendMessage(chatId, reply, {
+      reply_markup: getMainKeyboard(shop, chatId)
+    });
+  }
+
+  if (awaitingMarkup[chatId]) {
+    if (!shopId) { delete awaitingMarkup[chatId]; return; }
+    const pct = parseInt(text.replace(/[^\d]/g, ''));
+    if (isNaN(pct) || pct < 0 || pct > 200) {
+      return bot.sendMessage(chatId,
+        '❌ 0–200. Или нажмите любую кнопку ' +
+        'меню, чтобы выйти.'
+      );
+    }
+    const shop = await getShopFromDb(shopId);
+    shop.settings.markupPercent = pct;
+    await saveShopSettings(shopId, shop.settings);
+    delete awaitingMarkup[chatId];
+    return bot.sendMessage(chatId,
+      '✅ Наценка: ' + pct + '%',
+      { reply_markup: getMainKeyboard(shop, chatId) }
+    );
+  }
+
+  if (!shopId) return;
+  const shop = await getShopFromDb(shopId);
+
+  if (text === '📷 Добавить букет') {
+    return bot.sendMessage(chatId, ADD_BOUQUET_HINT, {
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(shop, chatId)
+    });
+  }
+  if (text === '✅ Что в наличии?') {
+    if (!isSubscriptionActive(shop)) {
+      return bot.sendMessage(chatId, '❌ Подписка истекла.');
+    }
+    const existing = checkSessions[chatId];
+    if (existing &&
+        (Date.now() - (existing.lastActivity || 0))
+          < CHECK_SESSION_TTL) {
+      existing.lastActivity = Date.now();
+      const t = buildCheckListText(existing);
+      const kb = {
+        inline_keyboard: buildCheckListKeyboard(existing)
+      };
+      const sent = await bot.sendMessage(chatId, t, {
+        parse_mode: 'HTML',
+        reply_markup: kb
+      });
+      existing.listMessageId = sent.message_id;
+      return;
+    }
+    const { text: t, options } =
+      await buildCheckStartScreen(shopId);
+    return bot.sendMessage(chatId, t, options);
+  }
+  if (text === '✏️ Изменить цену') {
+    return showBouquetList(
+      chatId, shopId, 'editprice',
+      '✏️ <b>Какой букет изменить цену?</b>\n' +
+      'Нажмите на кнопку с номером.',
+      0
+    );
+  }
+  if (text === '📝 Переименовать') {
+    return showBouquetList(
+      chatId, shopId, 'rename',
+      '📝 <b>Какой букет переименовать?</b>\n' +
+      'Нажмите на кнопку с номером.',
+      0
+    );
+  }
+  if (text === '🗑 Удалить букет') {
+    if (!isOwner(shop, chatId)) {
+      return bot.sendMessage(chatId, '🚫 Только владелец.');
+    }
+    return showBouquetList(
+      chatId, shopId, 'askdel',
+      '🗑 <b>Какой букет удалить?</b>\n' +
+      'Нажмите на кнопку с номером.',
+      0
+    );
+  }
+  if (text === '📦 Архив') {
+    return buildArchiveModeSelection(chatId, shopId);
+  }
+  if (text === '✅ Я сегодня работаю') {
+    await setUserOnShift(chatId, shopId, true);
+    const updated = await getShopFromDb(shopId);
+    let t = '✅ Отлично! Вы <b>на смене</b>.\n\n';
+    t += 'Теперь все уведомления о клиентах ';
+    t += 'будут приходить вам. Через 14 часов ';
+    t += 'статус сбросится автоматически.';
+    return bot.sendMessage(chatId, t, {
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(updated, chatId)
+    });
+  }
+  if (text === '🚪 Закончить работу') {
+    await setUserOnShift(chatId, shopId, false);
+    const updated = await getShopFromDb(shopId);
+    let t = '👋 Хорошего отдыха!\n\n';
+    t += 'Уведомления больше не приходят. ';
+    t += 'Вернётесь — нажмите ';
+    t += '«✅ Я сегодня работаю».';
+    return bot.sendMessage(chatId, t, {
+      reply_markup: getMainKeyboard(updated, chatId)
+    });
+  }
+  if (text === '🔄 Обновить') {
+    delete awaitingPrice[chatId];
+    delete awaitingName[chatId];
+    delete awaitingMarkup[chatId];
+    delete awaitingInput[chatId];
+    delete awaitingUpload[chatId];
+    delete archiveSessions[chatId];
+    delete awaitingAdminMessage[chatId];
+    delete awaitingAdminBlockReason[chatId];
+    delete registrationState[chatId];
+    const updated = await getShopFromDb(shopId);
+    let t = '🔄 <b>Обновлено</b>\n\n';
+    t += 'Вернулись в главное меню. ';
+    t += 'Все данные на месте.';
+    return bot.sendMessage(chatId, t, {
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(updated, chatId)
+    });
+  }
+  if (text === '⚙️ Меню') {
+    return bot.sendMessage(
+      chatId, '⚙️ Меню магазина:',
+      getSettingsMenu(shop, chatId)
+    );
+  }
+});
+
+// ========== PHOTO ==========
+bot.on('photo', async (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = userToShop[chatId] ||
+    await findUserShop(chatId);
+  if (!shopId) return bot.sendMessage(chatId, '❌ /start');
+  const shop = await getShopFromDb(shopId);
+
+  if (shop.blocked) {
+    return bot.sendMessage(chatId,
+      '🚫 Магазин заблокирован. Напишите @floop10.'
+    );
+  }
+
+  const photo = msg.photo[msg.photo.length - 1];
+  const fileId = photo.file_id;
+
+  if (awaitingUpload[chatId]) {
+    const which = awaitingUpload[chatId];
+    if (which === 'logo' || which === 'background') {
+      bot.sendMessage(chatId, '⏳ Загружаю фото...')
+        .catch(function(){});
+      const result = await savePhotoToStorage(
+        fileId, shopId
+      );
+      shop.settings[which] = result;
+      await saveShopSettings(shopId, shop.settings);
+      delete awaitingUpload[chatId];
+      const label = which === 'logo' ? 'Логотип' : 'Фон';
+      return bot.sendMessage(chatId,
+        '✅ ' + label + ' установлен!',
+        { reply_markup: getMainKeyboard(shop, chatId) }
+      );
+    }
+  }
+
+  if (!isSubscriptionActive(shop)) {
+    return bot.sendMessage(chatId, '❌ Подписка истекла.');
+  }
+
+  const caption = (msg.caption || '').trim();
+
+  if (caption) {
+    const words = caption.split(/\s+/)
+      .filter(w => w.length > 0);
+    const lastWord = words[words.length - 1] || '';
+    const price = /^\d+$/.test(lastWord)
+      ? parseInt(lastWord, 10)
+      : 0;
+    const finalName = words.slice(0, -1).join(' ').trim();
+
+    if (price <= 0 || !finalName) {
+      return bot.sendMessage(chatId, PARSE_ERROR_TEXT, {
+        parse_mode: 'HTML'
+      });
+    }
+
+    const tags = computeAllTags(finalName, caption);
+
+    bot.sendMessage(chatId, '⏳ Загружаю фото...')
+      .catch(function(){});
+    const result = await savePhotoToStorage(
+      fileId, shopId
+    );
+
+    const norm = normalizeName(finalName);
+    const all = await getBouquetsFromDb(shopId, true);
+    let archivedClicks = 0;
+    for (const old of all) {
+      if (old.deleted &&
+          normalizeName(old.name) === norm) {
+        archivedClicks += (old.clicks || 0);
+      }
+    }
+
+    const addResult = await addBouquetToDb(shopId, {
+      name: finalName,
+      price: price,
+      description: null,
+      photos: [result],
+      isPinned: finalName.startsWith('.'),
+      chatId,
+      clicks: archivedClicks,
+      tags
+    });
+    lastBouquetByUser[chatId] = addResult.id;
+
+    let reply = '✅ Букет <b>№' +
+      addResult.shopNumber + '</b> «' +
+      esc(finalName) + '» добавлен! ' + price + ' ₽';
+    if (tags.length > 0) {
+      reply += '\n🏷 Теги: ' +
+        tags.map(t => '#' + t).join(' ');
+    }
+    if (archivedClicks > 0) {
+      reply += '\n\n📊 Учтено прошлых кликов: ' +
+        archivedClicks;
+    }
+    reply += '\n\n💡 Ещё фото? Отправьте без подписи.';
+    return bot.sendMessage(chatId, reply, {
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(shop, chatId)
+    });
+  }
+
+  const lastId = lastBouquetByUser[chatId];
+  if (!lastId) {
+    return bot.sendMessage(chatId,
+      '❌ Отправьте фото с подписью.\n\n' +
+      ADD_BOUQUET_HINT,
+      { parse_mode: 'HTML' }
+    );
+  }
+  const b = await getBouquetById(shopId, lastId);
+  if (!b) {
+    return bot.sendMessage(chatId, '❌ Букет не найден.');
+  }
+
+  bot.sendMessage(chatId, '⏳ Загружаю фото...')
+    .catch(function(){});
+  const result = await savePhotoToStorage(fileId, shopId);
+
+  const photos = b.photos || [];
+  photos.push(result);
+  await updateBouquetField(
+    lastId, 'photos', JSON.stringify(photos)
+  );
+  return bot.sendMessage(chatId,
+    '📸 Фото добавлено. Всего: ' + photos.length,
+    { reply_markup: getMainKeyboard(shop, chatId) }
+  );
+});
+
+// ========== /cancel ==========
+bot.onText(/\/cancel/, async (msg) => {
+  const chatId = msg.chat.id;
+  delete awaitingUpload[chatId];
+  delete awaitingInput[chatId];
+  delete awaitingPrice[chatId];
+  delete awaitingName[chatId];
+  delete awaitingMarkup[chatId];
+  delete awaitingAdminMessage[chatId];
+  delete awaitingAdminBlockReason[chatId];
+  delete checkSessions[chatId];
+  delete archiveSessions[chatId];
+  delete registrationState[chatId];
+  const shopId = userToShop[chatId] ||
+    await findUserShop(chatId);
+  if (shopId) {
+    const shop = await getShopFromDb(shopId);
+    return bot.sendMessage(chatId, '❌ Отменено.', {
+      reply_markup: getMainKeyboard(shop, chatId)
+    });
+  }
+  bot.sendMessage(chatId, '❌ Отменено.');
+});
+
+// ========== /migrate ==========
+bot.onText(/\/migrate/, async (msg) => {
+  const chatId = msg.chat.id;
+  const shopId = userToShop[chatId] ||
+    await findUserShop(chatId);
+  if (!shopId) {
+    return bot.sendMessage(chatId, '❌ Сначала /start');
+  }
+  const shop = await getShopFromDb(shopId);
+  if (!shop) return;
+  if (!isOwner(shop, chatId)) {
+    return bot.sendMessage(chatId, '🚫 Только владелец.');
+  }
+  if (!S3_ENABLED) {
+    return bot.sendMessage(chatId,
+      '❌ Yandex S3 не настроен. Проверьте ' +
+      'переменные YC_* на Render.'
+    );
+  }
+
+  await bot.sendMessage(chatId,
+    '⏳ Начинаю миграцию фото в Yandex S3.\n' +
+    'Это может занять 1–2 минуты. Не выключайте.'
+  );
+  try {
+    const r = await migratePhotosToS3(shopId);
+    let txt = '✅ <b>Миграция завершена</b>\n\n';
+    txt += '📤 Перенесено: <b>' + r.migrated + '</b>\n';
+    txt += '⏭ Уже было в S3: <b>' + r.skipped + '</b>\n';
+    txt += '❌ Ошибок: <b>' + r.failed + '</b>\n\n';
+    if (r.failed > 0) {
+      txt += '<i>Часть фото не удалось перенести — ' +
+        'они останутся через Telegram, будут ' +
+        'грузиться медленнее.</i>\n\n';
+    }
+    txt += 'Откройте витрину — старые фото теперь ' +
+      'тоже должны грузиться быстро.';
+    return bot.sendMessage(chatId, txt, {
+      parse_mode: 'HTML'
+    });
+  } catch (e) {
+    console.error('Ошибка миграции:', e?.message || e);
+    return bot.sendMessage(chatId,
+      '❌ Ошибка во время миграции. ' +
+      'Проверьте логи Render.'
+    );
+  }
+});
+
+// ========== /register ==========
+bot.onText(/\/register/, async (msg) => {
+  await startRegistration(
+    msg.chat.id, msg.from.first_name, msg.from.username
+  );
+});
+
+// ========== ВТОРОЙ MESSAGE (регистрация) ==========
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+  if (!text || text.startsWith('/')) return;
+  const state = registrationState[chatId];
+  if (!state) return;
+
+  if (!state.userName && msg.from && msg.from.first_name) {
+    state.userName = msg.from.first_name;
+  }
+  if (!state.userUsername && msg.from && msg.from.username) {
+    state.userUsername = msg.from.username;
+  }
+
+  const cfg = REG_STEPS[state.step];
+  if (!cfg) {
+    delete registrationState[chatId];
+    return;
+  }
+
+  if (text.trim().toLowerCase() === 'нет' &&
+      !cfg.mandatory) {
+    return regSkipCurrentStep(chatId, state);
+  }
+  return regSaveValue(chatId, state, text);
+});
+
+// ========== ВИТРИНА ==========
+app.get('/shop/:shopId', async (req, res) => {
+  try {
+    const shop = await getShopFromDb(req.params.shopId);
+    if (!shop) {
+      return res.status(404).send('Магазин не найден');
+    }
+    if (shop.blocked) {
+      let h = '<html><body style="font-family:';
+      h += '-apple-system,sans-serif;text-align:center;';
+      h += 'padding:50px;">';
+      h += '<h1>🚫 Магазин временно недоступен</h1>';
+      h += '<p style="color:#666;">Приносим извинения ';
+      h += 'за неудобства.</p></body></html>';
+      return res.send(h);
+    }
+    if (!isSubscriptionActive(shop)) {
+      let h = '<html><body style="font-family:';
+      h += '-apple-system,sans-serif;text-align:center;';
+      h += 'padding:50px;">';
+      h += '<h1>🌸 ' + esc(shop.displayName) + '</h1>';
+      h += '<p>Витрина приостановлена.</p>';
+      h += '</body></html>';
+      return res.send(h);
+    }
+
+    const priceFilter = req.query.price || 'all';
+    const sortParam = req.query.sort || 'default';
+    const tagFilter = req.query.tag || 'all';
+
+    const all = await getBouquetsFromDb(shop.shopId);
+    let active = all.filter(isConfirmedRecently);
+
+    const tagCounts = {};
+    for (const b of active) {
+      for (const t of (b.tags || [])) {
+        tagCounts[t] = (tagCounts[t] || 0) + 1;
+      }
+    }
+
+    if (priceFilter === 'low') {
+      active = active.filter(b => b.price < 3000);
+    } else if (priceFilter === 'mid') {
+      active = active.filter(
+        b => b.price >= 3000 && b.price <= 6000
+      );
+    } else if (priceFilter === 'high') {
+      active = active.filter(b => b.price > 6000);
+    }
+
+    if (tagFilter !== 'all') {
+      active = active.filter(
+        b => (b.tags || []).includes(tagFilter)
+      );
+    }
+
+    if (sortParam === 'asc') {
+      active.sort((a, b) => a.price - b.price);
+    } else if (sortParam === 'desc') {
+      active.sort((a, b) => b.price - a.price);
+    } else {
+      active.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        const da = new Date(
+          b.confirmedAt || b.createdAt
+        );
+        const db = new Date(
+          a.confirmedAt || a.createdAt
+        );
+        return da - db;
+      });
+    }
+
+    const buildUrl = (newPrice, newSort, newTag) => {
+      const p = (newPrice !== undefined &&
+                 newPrice !== null)
+        ? newPrice : priceFilter;
+      const s = (newSort !== undefined &&
+                 newSort !== null)
+        ? newSort : sortParam;
+      const t = (newTag !== undefined &&
+                 newTag !== null)
+        ? newTag : tagFilter;
+      const parts = [];
+      if (p && p !== 'all') parts.push('price=' + p);
+      if (s && s !== 'default') parts.push('sort=' + s);
+      if (t && t !== 'all') {
+        parts.push('tag=' + encodeURIComponent(t));
+      }
+      return '/shop/' + shop.shopId +
+        (parts.length ? '?' + parts.join('&') : '');
+    };
+
+    const pillBase = 'display:inline-block;';
+    const pillBase2 = 'padding:8px 16px;margin:4px;';
+    const pillBase3 = 'border-radius:20px;';
+    const pillBase4 = 'text-decoration:none;';
+    const pillBase5 = 'font-size:14px;font-weight:bold;';
+    const pillCommon = pillBase + pillBase2 + pillBase3 +
+      pillBase4 + pillBase5;
+    const pillActive = 'background:#e74c3c;color:#fff;';
+    const pillIdle = 'background:#f0f0f0;color:#555;';
+
+    const pill = (label, filterValue) => {
+      const isActive = priceFilter === filterValue;
+      const style = pillCommon +
+        (isActive ? pillActive : pillIdle);
+      const href = buildUrl(filterValue, null, null);
+      return '<a href="' + href + '" style="' +
+        style + '">' + label + '</a>';
+    };
+
+    const sortBase = 'display:inline-block;';
+    const sortBase2 = 'padding:6px 12px;margin:4px;';
+    const sortBase3 = 'border-radius:16px;';
+    const sortBase4 = 'text-decoration:none;font-size:13px;';
+    const sortCommon = sortBase + sortBase2 +
+      sortBase3 + sortBase4;
+    const sortActive = 'background:#3498db;color:#fff;';
+    const sortIdle = 'background:#f5f5f5;color:#666;';
+
+    const sortPill = (label, sortValue) => {
+      const isActive = sortParam === sortValue;
+      const style = sortCommon +
+        (isActive ? sortActive : sortIdle);
+      const href = buildUrl(null, sortValue, null);
+      return '<a href="' + href + '" style="' +
+        style + '">' + label + '</a>';
+    };
+
+    let tagPillsHTML = '';
+    const sortedTags = Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1]);
+    if (sortedTags.length > 0) {
+      const tagBase = 'display:inline-block;';
+      const tagBase2 = 'padding:6px 12px;margin:4px;';
+      const tagBase3 = 'border-radius:16px;';
+      const tagBase4 = 'text-decoration:none;';
+      const tagBase5 = 'font-size:13px;font-weight:bold;';
+      const tagCommon = tagBase + tagBase2 +
+        tagBase3 + tagBase4 + tagBase5;
+      const tagActive = 'background:#27ae60;color:#fff;';
+      const tagIdle = 'background:#e8f5e9;color:#2c3e50;';
+      const allActive = tagFilter === 'all';
+      let tagsHTML = '<a href="' +
+        buildUrl(null, null, 'all') +
+        '" style="' + tagCommon +
+        (allActive ? tagActive : tagIdle) +
+        '">Все</a>';
+      for (const [tag, count] of sortedTags) {
+        const isActive = tagFilter === tag;
+        const style = tagCommon +
+          (isActive ? tagActive : tagIdle);
+        tagsHTML += '<a href="' +
+          buildUrl(null, null, tag) +
+          '" style="' + style + '">#' +
+          esc(tag) + ' ' + count + '</a>';
+      }
+      tagPillsHTML = '<div style="margin:10px 0 6px;">' +
+        tagsHTML + '</div>';
+    }
+
+    let filtersHTML = tagPillsHTML;
+    filtersHTML += '<div style="margin:10px 0 6px;">';
+    filtersHTML += pill('Все', 'all');
+    filtersHTML += pill('До 3000 ₽', 'low');
+    filtersHTML += pill('3000–6000 ₽', 'mid');
+    filtersHTML += pill('От 6000 ₽', 'high');
+    filtersHTML += '</div>';
+    filtersHTML += '<div style="margin-bottom:20px;">';
+    filtersHTML += sortPill('↓ Сначала дешевле', 'asc');
+    filtersHTML += sortPill('↑ Сначала дороже', 'desc');
+    filtersHTML += '</div>';
+
+    const useTwoColumns =
+      active.length > TWO_COLUMNS_THRESHOLD;
+    const gridStyle = useTwoColumns
+      ? 'display:grid;grid-template-columns:' +
+        'minmax(0,1fr) minmax(0,1fr);gap:8px;' +
+        'max-width:760px;margin:0 auto;' +
+        'align-items:stretch;'
+      : 'display:flex;flex-wrap:wrap;' +
+        'justify-content:center;';
+    const cardExtra = useTwoColumns
+      ? 'width:100%;box-sizing:border-box;min-width:0;'
+      : 'max-width:300px;';
+
+    let cards = '';
+    if (active.length === 0) {
+      cards = '<div style="text-align:center;' +
+        'padding:50px;font-size:20px;color:#888;' +
+        'grid-column:1/-1;">' +
+        '🌿 По этому фильтру букетов нет.</div>';
+    } else {
+      for (const b of active) {
+        const photoRefsList = [];
+        for (const p of b.photos) {
+          const r = getPhotoRefs(p);
+          if (r.primary) photoRefsList.push(r);
+        }
+        let gallery = '';
+        if (photoRefsList.length === 0) {
+          gallery = '<div style="width:100%;' +
+            'aspect-ratio:1/1;background:#f0f0f0;' +
+            'border-radius:12px;display:flex;' +
+            'align-items:center;' +
+            'justify-content:center;color:#aaa;' +
+            'font-size:40px;">📷</div>';
+        } else if (photoRefsList.length === 1) {
+          gallery = renderImgTag(
+            photoRefsList[0],
+            'width:100%;border-radius:12px;' +
+            'aspect-ratio:1/1;object-fit:cover;'
+          );
+        } else {
+          const slideStyle = 'height:220px;width:auto;' +
+            'border-radius:12px;flex-shrink:0;';
+          let slides = '';
+          for (const r of photoRefsList) {
+            slides += renderImgTag(r, slideStyle);
+          }
+          gallery = '<div style="display:flex;' +
+            'overflow-x:auto;gap:6px;' +
+            'margin-bottom:4px;max-width:100%;' +
+            'min-width:0;">' + slides + '</div>';
+        }
+
+        const oldPrice = calculateOldPrice(
+          b.price, shop.settings.markupPercent
+        );
+        const bouquetUrl = SITE_URL + '/shop/' +
+          shop.shopId + '/b/' + b.id;
+        const contactUrl = '/contact/' +
+          shop.shopId + '/' + b.id;
+        const bouquetUrlJs = JSON.stringify(bouquetUrl);
+        const bouquetNameJs = JSON.stringify(b.name);
+        const bouquetPriceJs = b.price;
+
+        const titleFS = useTwoColumns ? '15px' : '18px';
+        const priceFS = useTwoColumns ? '18px' : '22px';
+        const oldFS = useTwoColumns ? '14px' : '18px';
+        const cardP = useTwoColumns ? '10px' : '16px';
+        const cardM = useTwoColumns ? '0' : '12px';
+
+        const confirmedLine =
+          formatConfirmedAt(b.confirmedAt);
+        const confirmedHTML = confirmedLine
+          ? '<div style="font-size:11px;' +
+            'color:#27ae60;margin:2px 0 4px;">' +
+            '✓ Обновлено ' +
+            esc(confirmedLine) + '</div>'
+          : '';
+
+        let card = '<div style="border:1px solid #eee;';
+        card += 'border-radius:16px;padding:' + cardP + ';';
+        card += 'margin:' + cardM + ';' + cardExtra;
+        card += 'background:#fff;';
+        card += 'box-shadow:0 2px 8px rgba(0,0,0,0.08);';
+        card += 'text-align:center;position:relative;';
+        card += 'display:flex;flex-direction:column;">';
+        const numTop = useTwoColumns ? '16px' : '24px';
+        const numRight = useTwoColumns ? '16px' : '24px';
+        card += '<div style="position:absolute;top:' +
+          numTop + ';right:' + numRight + ';';
+        card += 'background:rgba(44,62,80,0.85);';
+        card += 'color:#fff;padding:3px 10px;';
+        card += 'border-radius:20px;font-size:12px;';
+        card += 'font-weight:bold;z-index:10;">';
+        card += '№' + b.shopNumber + '</div>';
+        card += gallery;
+        card += '<h3 style="margin:10px 0 4px;';
+        card += 'font-size:' + titleFS + ';';
+        card += 'line-height:1.25;word-wrap:break-word;';
+        card += 'overflow-wrap:break-word;">';
+        card += esc(b.name) + '</h3>';
+        card += '<p style="font-size:' + priceFS + ';';
+        card += 'font-weight:bold;color:#2c3e50;';
+        card += 'margin:4px 0;">';
+        if (oldPrice > b.price) {
+          card += '<span style="';
+          card += 'text-decoration:line-through;';
+          card += 'color:#999;font-weight:normal;';
+          card += 'font-size:' + oldFS + ';">';
+          card += oldPrice + ' ₽</span>&nbsp;';
+        }
+        card += b.price + ' ₽</p>';
+        card += confirmedHTML;
+        card += '<div style="margin-top:auto;">';
+        card += '<a href="' + contactUrl + '" style="';
+        card += 'display:block;max-width:230px;';
+        card += 'margin:10px auto 0;background:#e74c3c;';
+        card += 'color:#fff;padding:12px 16px;';
+        card += 'border-radius:30px;text-decoration:none;';
+        card += 'font-weight:bold;text-align:center;';
+        card += 'font-size:15px;">📞 Связаться</a>';
+        card += '<div style="margin-top:8px;">';
+        card += '<a href="#" onclick=\'shareBouquet' +
+          '(event, ' + bouquetUrlJs + ', ' +
+          bouquetNameJs + ', ' + bouquetPriceJs +
+          '); return false;\' style="';
+        card += 'display:inline-block;color:#888;';
+        card += 'font-size:12px;text-decoration:none;';
+        card += 'padding:5px 10px;border-radius:16px;';
+        card += 'background:#f5f5f5;">📤 Поделиться</a>';
+        card += '</div></div></div>';
+        cards += card;
+      }
+    }
+
+    const logoUrl = shop.settings.logo
+      ? await getPhotoUrl(shop.settings.logo)
+      : null;
+    const bgRefs = shop.settings.background
+      ? getPhotoRefs(shop.settings.background)
+      : null;
+    const bgUrl = bgRefs ? bgRefs.primary : null;
+    const bodyStyle = bgUrl
+      ? 'background-image:url(\'' + bgUrl + '\');' +
+        'background-size:cover;' +
+        'background-attachment:fixed;'
+      : 'background:#fafaf8;';
+    const headerHTML = logoUrl
+      ? '<img src="' + escAttr(logoUrl) +
+        '" style="max-height:90px;display:block;' +
+        'margin:0 auto 12px;">'
+      : '';
+
+    const totalActiveCount =
+      all.filter(isConfirmedRecently).length;
+    const cntWord = plural(
+      totalActiveCount, 'букет', 'букета', 'букетов'
+    );
+    const countLine = totalActiveCount > 0
+      ? '<div style="font-size:13px;color:#27ae60;' +
+        'margin-top:6px;">🌸 ' +
+        totalActiveCount + ' ' + cntWord +
+        ' в наличии</div>'
+      : '';
+
+    let titleHTML = '<div style="';
+    titleHTML += 'background:rgba(255,255,255,0.9);';
+    titleHTML += 'border-radius:18px;padding:14px 20px;';
+    titleHTML += 'max-width:560px;margin:0 auto 16px;';
+    titleHTML += 'box-shadow:0 2px 12px rgba(0,0,0,0.08);">';
+    titleHTML += '<h1 style="color:#2c3e50;margin:0 0 6px;';
+    titleHTML += 'font-size:24px;">';
+    titleHTML += esc(shop.displayName) + '</h1>';
+    if (shop.address || shop.hours) {
+      titleHTML += '<div style="color:#555;';
+      titleHTML += 'font-size:14px;">';
+      if (shop.address) {
+        titleHTML += '📍 ' + esc(shop.address);
+      }
+      if (shop.hours) {
+        titleHTML += ' · 🕐 ' + esc(shop.hours);
+      }
+      titleHTML += '</div>';
+    }
+    titleHTML += countLine + '</div>';
+
+    let html = '';
+    html += '<!DOCTYPE html><html><head>';
+    html += '<meta charset="UTF-8">';
+    html += '<meta name="viewport" ';
+    html += 'content="width=device-width, ';
+    html += 'initial-scale=1.0">';
+    html += '<title>' + esc(shop.displayName) +
+      ' — Flowind</title>';
+    html += '<style>';
+    html += 'body{font-family:-apple-system,sans-serif;';
+    html += 'margin:0;padding:20px;text-align:center;';
+    html += bodyStyle + '}\n';
+    html += 'h1{color:#2c3e50;}\n';
+    html += '.container{max-width:1200px;margin:0 auto;}\n';
+    html += '.shop-grid img{cursor:zoom-in;}\n';
+    html += '</style></head><body>';
+    html += '<div class="container">';
+    html += headerHTML + titleHTML + filtersHTML;
+    html += '<div class="shop-grid" style="' +
+      gridStyle + '">' + cards + '</div></div>';
+    html += '<div id="lightbox" onclick="closeLightbox()" ';
+    html += 'style="display:none;position:fixed;inset:0;';
+    html += 'background:rgba(0,0,0,0.92);z-index:9999;';
+    html += 'align-items:center;justify-content:center;';
+    html += 'padding:20px;box-sizing:border-box;">';
+    html += '<img id="lightbox-img" src="" alt="" style="';
+    html += 'max-width:100%;max-height:100%;';
+    html += 'border-radius:10px;';
+    html += 'box-shadow:0 8px 40px rgba(0,0,0,0.6);">';
+    html += '<button onclick="closeLightbox()" style="';
+    html += 'position:fixed;top:20px;right:20px;';
+    html += 'background:rgba(255,255,255,0.95);border:none;';
+    html += 'width:44px;height:44px;border-radius:50%;';
+    html += 'font-size:22px;cursor:pointer;';
+    html += 'font-weight:bold;color:#333;';
+    html += 'box-shadow:0 2px 8px rgba(0,0,0,0.4);">';
+    html += '✕</button></div>';
+    html += '<script>\n';
+    html += 'function shareBouquet(e, url, name, price) {\n';
+    html += '  if (e) { e.preventDefault(); }\n';
+    html += '  var text = name + " — " + price + " ₽";\n';
+    html += '  if (navigator.share) {\n';
+    html += '    navigator.share({ title: name, ';
+    html += 'text: text, url: url })';
+    html += '.catch(function(){});\n';
+    html += '  } else if (navigator.clipboard && ';
+    html += 'navigator.clipboard.writeText) {\n';
+    html += '    navigator.clipboard.writeText(url)';
+    html += '.then(function(){ ';
+    html += 'alert("Ссылка скопирована — вставьте ';
+    html += 'её в мессенджер"); ';
+    html += '}).catch(function(){ ';
+    html += 'prompt("Скопируйте ссылку:", url); });\n';
+    html += '  } else { ';
+    html += 'prompt("Скопируйте ссылку:", url); }\n';
+    html += '}\n';
+    html += 'function openLightbox(src) {\n';
+    html += '  var lb = document.getElementById("lightbox");\n';
+    html += '  var img = ';
+    html += 'document.getElementById("lightbox-img");\n';
+    html += '  img.src = src;\n';
+    html += '  lb.style.display = "flex";\n';
+    html += '  document.body.style.overflow = "hidden";\n';
+    html += '}\n';
+    html += 'function closeLightbox() {\n';
+    html += '  document.getElementById("lightbox")';
+    html += '.style.display = "none";\n';
+    html += '  document.getElementById("lightbox-img")';
+    html += '.src = "";\n';
+    html += '  document.body.style.overflow = "";\n';
+    html += '}\n';
+    html += 'document.addEventListener("click", ';
+    html += 'function(e) {\n';
+    html += '  var img = ';
+    html += 'e.target.closest(".shop-grid img");\n';
+    html += '  if (!img) return;\n';
+    html += '  e.preventDefault();\n';
+    html += '  e.stopPropagation();\n';
+    html += '  openLightbox(img.src);\n';
+    html += '});\n';
+    html += 'document.addEventListener("keydown", ';
+    html += 'function(e) {\n';
+    html += '  if (e.key === "Escape") closeLightbox();\n';
+    html += '});\n';
+    html += '</script></body></html>';
+    res.send(html);
+  } catch (e) {
+    console.error('Ошибка витрины:', e?.message || e);
+    res.status(500).send('Ошибка');
+  }
+});
+
+app.get('/', (req, res) => {
+  let h = '<html><body style="font-family:sans-serif;';
+  h += 'text-align:center;padding:50px;">';
+  h += '<h1>🌸 Flowind</h1></body></html>';
+  res.send(h);
+});
+
+// ========== ФОНОВЫЕ ЗАДАЧИ ==========
+async function checkAndNotify() {
+  try {
+    const shops = await pool.query(
+      'SELECT shop_id, hours FROM shops ' +
+      'WHERE blocked = FALSE'
+    );
+    for (const s of shops.rows) {
+      if (!isWithinWorkingHours(s.hours)) continue;
+
+      const active = await getBouquetsFromDb(s.shop_id);
+      for (const b of active) {
+        if (b.isPinned || b.hidden ||
+            b.reminded || !b.confirmedAt) continue;
+        const rem = 3 * 24 * 60 * 60 * 1000 -
+          (Date.now() - new Date(b.confirmedAt).getTime());
+        if (rem > 0 && rem <= 12 * 60 * 60 * 1000) {
+          let n = '⚠️ Букет №' + b.shopNumber + ' «';
+          n += esc(b.name) + '» скоро скроется. ';
+          n += 'Продлить?';
+          bot.sendMessage(b.chatId, n, {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[{
+                text: '🌿 Продлить',
+                callback_data: 'extend_' + b.id
+              }]]
+            }
+          }).catch(function(){});
+          await updateBouquetField(b.id, 'reminded', true);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Notify error:', e?.message || e);
+  }
+}
+
+function cleanupExpiredCheckSessions() {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const chatId of Object.keys(checkSessions)) {
+    const s = checkSessions[chatId];
+    if (!s || !s.lastActivity ||
+        now - s.lastActivity > CHECK_SESSION_TTL) {
+      delete checkSessions[chatId];
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    console.log(
+      '🧹 Очищено сессий проверки: ' + cleaned
+    );
+  }
+}
+
+// ========== ЗАПУСК ==========
+initDb().then(async () => {
+  const existing = await getShopFromDb(PRESET_SHOP.shopId);
+  if (!existing) {
+    const now = new Date();
+    const trialEnd = new Date(now);
+    trialEnd.setMonth(
+      trialEnd.getMonth() + PRESET_SHOP.trialMonths
+    );
+    const inviteCode = generateInviteCode();
+    await createShopInDb({
+      shopId: PRESET_SHOP.shopId,
+      name: PRESET_SHOP.shopId,
+      displayName: PRESET_SHOP.displayName,
+      address: PRESET_SHOP.address,
+      hours: PRESET_SHOP.hours,
+      phone: normalizePhone(PRESET_SHOP.phone),
+      telegramUsername: PRESET_SHOP.telegramUsername,
+      whatsappPhone: normalizePhone(
+        PRESET_SHOP.whatsappPhone
+      ),
+      maxLink: PRESET_SHOP.maxLink,
+      inviteCode,
+      trialStart: now.toISOString(),
+      trialEnd: trialEnd.toISOString(),
+      settings: {
+        logo: null, background: null,
+        markupPercent: PRESET_SHOP.markupPercent,
+        aiEnabled: false
+      },
+      stats: {
+        views: 0, orders: 0, calls: 0,
+        startedAt: now.toISOString()
+      }
+    });
+    console.log(
+      '✅ Preset-магазин ' + PRESET_SHOP.shopId + ' создан'
+    );
+  } else {
+    console.log(
+      '✅ Preset-магазин ' + PRESET_SHOP.shopId + ' найден'
+    );
+    if (!existing.maxLink) {
+      await updateShopField(
+        PRESET_SHOP.shopId, 'max_username',
+        PRESET_SHOP.maxLink
+      );
+      console.log(
+        '✅ MAX-ссылка для ' + PRESET_SHOP.shopId +
+        ' установлена'
+      );
+    }
+  }
+
+  const WEBHOOK_URL = SITE_URL + WEBHOOK_PATH;
+  console.log('🔗 Устанавливаем webhook...');
+  try {
+    await bot.deleteWebHook();
+    await bot.setWebHook(WEBHOOK_URL);
+    console.log('✅ Webhook установлен');
+  } catch (e) {
+    console.error(
+      '❌ Ошибка установки webhook:', e?.message || e
+    );
+  }
+
+  setInterval(checkAndNotify, 10 * 60 * 1000);
+  setInterval(cleanupExpiredCheckSessions, 5 * 60 * 1000);
+  setInterval(cleanupNotifiedClicks, 5 * 60 * 1000);
+
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(
+      '🚀 Flowind на порту ' + PORT + ' (webhook)'
+    );
+  });
+}).catch(err => {
+  console.error(
+    '❌ Ошибка инициализации:', err.message
+  );
+  process.exit(1);
+});
