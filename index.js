@@ -777,14 +777,14 @@ function buildCheckListText(session) {
   const total = session.bouquets.length;
   const done = Object.keys(session.checked).length;
   const totalPages = Math.max(
-    1, Math.ceil(total / CHECK_PER_PAGE)
+    1, Math.ceil(total / CHECKзу_PER_PAGE)
   );
-  const page = (session.currentPage || 0) + 1;
-  let txt = `✅ <b>Проверка наличия</b>\n`;
-  txt += `Страница <b>${page}</b> из <b>${totalPages}</b> · `;
+  спи const page = (session.currentPage ||ска 0), + 1;
+  так let txt = `✅ удоб <b>Проверка наличия</bнее>\n`;
+  txt += `Страница <.</b>${page}</bi> из <b>${totalPages}</b> · `;
   txt += `Проверено <b>${done}</b> из <b>${total}</b>\n\n`;
-  txt += `<i>Работайте снизу списка, так удобнее.</i>`;
-  return txt;
+ > txt += `<i>Ра`;
+ботайте сни  return txt;
 }
 
 function buildCheckListKeyboard(session) {
@@ -1007,7 +1007,11 @@ async function showArchiveItemCard(chatId, session, itemId) {
         text: '📋 К списку',
         callback_data: 'arch_list_back'
       }
-    ]
+    ],
+    [{
+      text: '📸 Скачать фото',
+      callback_data: `dlphoto_${b.id}`
+    }]
   ];
   const opts = {
     parse_mode: 'HTML',
@@ -1091,7 +1095,11 @@ async function showArchiveCard(chatId, session) {
         text: '⏹ Закрыть',
         callback_data: 'arch_close'
       }
-    ]
+    ],
+    [{
+      text: '📸 Скачать фото',
+      callback_data: `dlphoto_${b.id}`
+    }]
   ];
   const opts = {
     parse_mode: 'HTML',
@@ -1110,6 +1118,78 @@ async function showArchiveCard(chatId, session) {
   try {
     await bot.sendMessage(chatId, caption, opts);
   } catch (e) { /* ignore */ }
+}
+
+// ========== СКАЧАТЬ ФОТО (ПРАВКА 18) ==========
+async function sendBouquetPhotoAsFile(chatId, b) {
+  if (!b.photos || b.photos.length === 0) {
+    return bot.sendMessage(chatId, '❌ У букета нет фото.');
+  }
+  const firstPhoto = b.photos[0];
+  const num = b.shopNumber || b.id;
+  const rawName = String(b.name || 'buket');
+  const safeName = rawName
+    .replace(/[^\wа-яА-ЯёЁ\- ]/g, '')
+    .trim()
+    .slice(0, 40) || 'buket';
+  const fileName = `buket_${num}_${safeName}.jpg`;
+  const caption = `📸 Оригинал — №${num} «${b.name}»`;
+
+  try {
+    let docRef = null;
+
+    if (typeof firstPhoto === 'object' && firstPhoto.tg) {
+      docRef = firstPhoto.tg;
+    } else if (typeof firstPhoto === 'string' &&
+               isValidFileId(firstPhoto)) {
+      docRef = firstPhoto;
+    } else if (typeof firstPhoto === 'object' && firstPhoto.s3) {
+      const key = s3UrlToKey(firstPhoto.s3);
+      if (key) docRef = SITE_URL + '/photo/s3/' + key;
+    } else if (typeof firstPhoto === 'string' &&
+               firstPhoto.startsWith('http')) {
+      docRef = firstPhoto;
+    }
+
+    if (!docRef) {
+      return bot.sendMessage(chatId, '❌ Фото недоступно.');
+    }
+
+    await bot.sendDocument(chatId, docRef, { caption }, {
+      filename: fileName,
+      contentType: 'image/jpeg'
+    });
+  } catch (e) {
+    console.error('Ошибка отправки фото файлом:', e?.message || e);
+    return bot.sendMessage(chatId,
+      '❌ Не удалось отправить фото.'
+    );
+  }
+}
+
+// ========== КНОПКИ ДЕЙСТВИЙ (ПРАВКА 19) ==========
+function buildBouquetActionButtons(b, okText, okAction, noAction) {
+  const rows = [];
+  rows.push([
+    { text: okText, callback_data: okAction },
+    { text: '↩️ Нет, к списку', callback_data: noAction }
+  ]);
+  if (b.hidden) {
+    rows.push([{
+      text: '▶️ Вернуть на витрину',
+      callback_data: `unpause_${b.id}`
+    }]);
+  } else {
+    rows.push([{
+      text: '⏸ Пауза (скрыть)',
+      callback_data: `pause_${b.id}`
+    }]);
+  }
+  rows.push([{
+    text: '📸 Скачать фото',
+    callback_data: `dlphoto_${b.id}`
+  }]);
+  return rows;
 }
 
 async function showBouquetList(chatId, shopId, action, headerText, page) {
@@ -1131,7 +1211,8 @@ async function showBouquetList(chatId, shopId, action, headerText, page) {
 
   let listTxt = `${headerText}\n\n`;
   for (const b of shown) {
-    listTxt += `<b>№${b.shopNumber}</b> — `;
+    const paused = b.hidden ? ' ⏸' : '';
+    listTxt += `<b>№${b.shopNumber}</b>${paused} — `;
     listTxt += `${esc(b.name)} — <b>${b.price} ₽</b>\n\n`;
   }
   if (totalPages > 1) {
@@ -1168,6 +1249,11 @@ async function showBouquetList(chatId, shopId, action, headerText, page) {
     }
     kb.push(navRow);
   }
+
+  kb.push([{
+    text: '❌ Закрыть',
+    callback_data: 'bqlist_close'
+  }]);
 
   return bot.sendMessage(chatId, listTxt, {
     parse_mode: 'HTML',
@@ -3373,6 +3459,69 @@ bot.on('callback_query', async (q) => {
   if (!shop) return;
   const owner = isOwner(shop, chatId);
 
+  // ========== НОВОЕ (ПРАВКА 31): закрыть список ==========
+  if (data === 'bqlist_close') {
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    return bot.sendMessage(
+      chatId,
+      '⚙️ Меню магазина:',
+      getMainKeyboard(shop, chatId)
+    );
+  }
+
+  // ========== НОВОЕ (ПРАВКА 18): скачать фото ==========
+  if (data.startsWith('dlphoto_')) {
+    const id = parseInt(data.replace('dlphoto_', ''));
+    if (!id || isNaN(id)) return;
+    const b = await getBouquetById(shopId, id);
+    if (!b) {
+      return bot.sendMessage(chatId, '❌ Букет не найден.');
+    }
+    return sendBouquetPhotoAsFile(chatId, b);
+  }
+
+  // ========== НОВОЕ (ПРАВКА 19): пауза / вернуть ==========
+  if (data.startsWith('pause_')) {
+    const id = parseInt(data.replace('pause_', ''));
+    if (!id || isNaN(id)) return;
+    const b = await getBouquetById(shopId, id);
+    if (!b) {
+      return bot.sendMessage(chatId, '❌ Букет не найден.');
+    }
+    await updateBouquetField(id, 'hidden', true);
+    let t = '⏸ Букет <b>№' + b.shopNumber + '</b> «';
+    t += esc(b.name) + '» скрыт с витрины.\n\n';
+    t += '<i>Клиенты его не видят. Вернуть можно ';
+    t += 'кнопкой «▶️ Вернуть» в карточке или ';
+    t += 'через «📦 Архив».</i>';
+    return bot.sendMessage(chatId, t, {
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(shop, chatId)
+    });
+  }
+
+  if (data.startsWith('unpause_')) {
+    const id = parseInt(data.replace('unpause_', ''));
+    if (!id || isNaN(id)) return;
+    const b = await getBouquetById(shopId, id);
+    if (!b) {
+      return bot.sendMessage(chatId, '❌ Букет не найден.');
+    }
+    await updateBouquetFields(id, {
+      hidden: false,
+      confirmed_at: new Date().toISOString(),
+      reminded: false
+    });
+    let t = '▶️ Букет <b>№' + b.shopNumber + '</b> «';
+    t += esc(b.name) + '» снова на витрине.\n\n';
+    t += '<i>Обновлён на 3 дня вперёд.</i>';
+    return bot.sendMessage(chatId, t, {
+      parse_mode: 'HTML',
+      reply_markup: getMainKeyboard(shop, chatId)
+    });
+  }
+
   // ========== ПАГИНАЦИЯ СПИСКОВ БУКЕТОВ ==========
   if (data.startsWith('bqlist_')) {
     const rest = data.replace('bqlist_', '');
@@ -4160,6 +4309,10 @@ bot.on('callback_query', async (q) => {
         callback_data: 'check_no_' + b.id
       }],
       [{
+        text: '📸 Скачать фото',
+        callback_data: 'dlphoto_' + b.id
+      }],
+      [{
         text: '↩️ К списку',
         callback_data: 'check_back'
       }]
@@ -4275,6 +4428,7 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, t, { parse_mode: 'HTML' });
   }
 
+  // ========== ИЗМЕНИТЬ ЦЕНУ (ПРАВКА 19) ==========
   if (data.startsWith('editprice_ok_')) {
     const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
@@ -4306,20 +4460,18 @@ bot.on('callback_query', async (q) => {
     if (!b) {
       return bot.sendMessage(chatId, '❌ Букет не найден.');
     }
+    const btns = buildBouquetActionButtons(
+      b,
+      '✅ Да, менять цену',
+      'editprice_ok_' + b.id,
+      'editprice_no_' + b.id
+    );
     return sendBouquetPreview(
-      chatId, b, '✏️ <b>Изменить цену?</b>', [
-        [{
-          text: '✅ Да, менять цену',
-          callback_data: 'editprice_ok_' + b.id
-        }],
-        [{
-          text: '↩️ Нет, к списку',
-          callback_data: 'editprice_no_' + b.id
-        }]
-      ]
+      chatId, b, '✏️ <b>Изменить цену?</b>', btns
     );
   }
 
+  // ========== ПЕРЕИМЕНОВАТЬ (ПРАВКА 19) ==========
   if (data.startsWith('rename_ok_')) {
     const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
@@ -4351,36 +4503,31 @@ bot.on('callback_query', async (q) => {
     if (!b) {
       return bot.sendMessage(chatId, '❌ Букет не найден.');
     }
+    const btns = buildBouquetActionButtons(
+      b,
+      '✅ Да, менять название',
+      'rename_ok_' + b.id,
+      'rename_no_' + b.id
+    );
     return sendBouquetPreview(
-      chatId, b, '📝 <b>Переименовать этот букет?</b>', [
-        [{
-          text: '✅ Да, менять название',
-          callback_data: 'rename_ok_' + b.id
-        }],
-        [{
-          text: '↩️ Нет, к списку',
-          callback_data: 'rename_no_' + b.id
-        }]
-      ]
+      chatId, b, '📝 <b>Переименовать этот букет?</b>', btns
     );
   }
 
+  // ========== УДАЛИТЬ (ПРАВКА 19) ==========
   if (data.startsWith('askdel_')) {
     if (!owner) return;
     const id = parseInt(data.split('_')[1]);
     const b = await getBouquetById(shopId, id);
     if (!b) return;
+    const btns = buildBouquetActionButtons(
+      b,
+      '🗑 Да, удалить',
+      'confirmdel_' + b.id,
+      'canceldel'
+    );
     return sendBouquetPreview(
-      chatId, b, '🗑 <b>Удалить этот букет?</b>', [
-        [{
-          text: '🗑 Да, удалить',
-          callback_data: 'confirmdel_' + b.id
-        }],
-        [{
-          text: '↩️ Нет, к списку',
-          callback_data: 'canceldel'
-        }]
-      ]
+      chatId, b, '🗑 <b>Удалить этот букет?</b>', btns
     );
   }
   if (data.startsWith('confirmdel_')) {
@@ -4408,8 +4555,7 @@ bot.on('callback_query', async (q) => {
       0
     );
   }
-});
-// ========== MESSAGE ==========
+});// ========== MESSAGE ==========
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
