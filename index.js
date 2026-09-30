@@ -685,6 +685,7 @@ function buildCheckListKeyboard(session) {
   return rows;
 }
 
+// ========== АРХИВ (ПРАВКА 22) ==========
 async function getArchivedBouquets(shopId) {
   const all = await getBouquetsFromDb(shopId);
   const arch = all.filter(b => {
@@ -693,6 +694,94 @@ async function getArchivedBouquets(shopId) {
   });
   arch.sort((a, b) => new Date(b.confirmedAt || b.createdAt) - new Date(a.confirmedAt || a.createdAt));
   return arch;
+}
+
+async function buildArchiveModeSelection(chatId, shopId) {
+  const arch = await getArchivedBouquets(shopId);
+  if (arch.length === 0) {
+    return bot.sendMessage(chatId, '📦 В архиве пусто — все букеты на витрине.');
+  }
+  const total = arch.length;
+  return bot.sendMessage(chatId,
+    `📦 <b>Архив</b> · ${total} ${plural(total, 'букет', 'букета', 'букетов')}\n\n` +
+    `<i>Как удобнее смотреть?</i>`,
+    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: '📋 Списком', callback_data: 'arch_mode_list' }],
+      [{ text: '🖼 По одному (с фото)', callback_data: 'arch_mode_card' }],
+      [{ text: '❌ Отмена', callback_data: 'arch_close' }]
+    ] } });
+}
+
+async function showArchiveList(chatId, session, editMessageId) {
+  const total = session.bouquets.length;
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PER_PAGE));
+  const page = Math.max(0, Math.min(session.page || 0, totalPages - 1));
+  session.page = page;
+  const start = page * LIST_PER_PAGE;
+  const end = Math.min(start + LIST_PER_PAGE, total);
+  const slice = session.bouquets.slice(start, end);
+
+  let txt = `📦 <b>Архив</b> · ${total} ${plural(total, 'букет', 'букета', 'букетов')}\n`;
+  if (totalPages > 1) txt += `Страница <b>${page + 1}</b> из <b>${totalPages}</b>\n`;
+  txt += `\n<i>Тапните на букет — откроется карточка с фото.</i>`;
+
+  const rows = [];
+  for (const b of slice) {
+    const s = getBouquetStatus(b);
+    const emoji = s === 'hidden' ? '🚫' : '❌';
+    rows.push([{ text: `${emoji} №${b.shopNumber} ${shortName(b.name, 22)} — ${b.price} ₽`, callback_data: `arch_item_${b.id}` }]);
+  }
+
+  if (totalPages > 1) {
+    const nav = [];
+    if (page > 0) nav.push({ text: '⬅️ Назад', callback_data: `arch_list_page_${page - 1}` });
+    nav.push({ text: `${page + 1} / ${totalPages}`, callback_data: 'noop' });
+    if (page < totalPages - 1) nav.push({ text: 'Дальше ➡️', callback_data: `arch_list_page_${page + 1}` });
+    rows.push(nav);
+  }
+  rows.push([{ text: '⏹ Закрыть архив', callback_data: 'arch_close' }]);
+
+  const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } };
+  if (editMessageId) {
+    try { await bot.editMessageText(txt, { chat_id: chatId, message_id: editMessageId, ...opts }); return; }
+    catch (e) { /* fallthrough */ }
+  }
+  return bot.sendMessage(chatId, txt, opts);
+}
+
+async function showArchiveItemCard(chatId, session, itemId) {
+  const b = session.bouquets.find(x => x.id === itemId);
+  if (!b) return bot.sendMessage(chatId, '⚠️ Букет не найден в архиве.');
+  const s = getBouquetStatus(b);
+  const statusEmoji = s === 'hidden' ? '🚫' : '❌';
+  let dateStr = '';
+  if (b.confirmedAt) {
+    const d = new Date(b.confirmedAt);
+    dateStr = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  }
+  const caption =
+    `📦 <b>№${b.shopNumber}</b>\n` +
+    `${esc(b.name)} — <b>${b.price} ₽</b>\n` +
+    `<i>${statusEmoji} ${dateStr ? dateStr + ' · ' : ''}${s === 'hidden' ? 'убран вручную' : 'срок истёк'}</i>`;
+
+  const buttons = [
+    [
+      { text: '↩️ Вернуть на витрину', callback_data: `arch_restore_${b.id}` },
+      { text: '📋 К списку', callback_data: 'arch_list_back' }
+    ]
+  ];
+  const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } };
+  const firstPhoto = (b.photos && b.photos.length > 0) ? b.photos[0] : null;
+  const tgRef = getTelegramPhotoRef(firstPhoto);
+  if (tgRef) {
+    try {
+      await bot.sendPhoto(chatId, tgRef, { caption, ...opts });
+      return;
+    } catch (e) { /* фолбэк */ }
+  }
+  try {
+    await bot.sendMessage(chatId, caption, opts);
+  } catch (e) { /* ignore */ }
 }
 
 async function showArchiveCard(chatId, session) {
@@ -732,7 +821,7 @@ async function showArchiveCard(chatId, session) {
 
   const buttons = [
     [
-      { text: '↩️ Вернуть', callback_data: 'arch_restore' },
+      { text: '↩️ Вернуть', callback_data: `arch_restore_${b.id}` },
       { text: '⏭ Дальше', callback_data: 'arch_next' },
       { text: '⏹ Закрыть', callback_data: 'arch_close' }
     ]
@@ -1048,7 +1137,7 @@ async function unblockShop(shopId) {
   await pool.query(`UPDATE shops SET blocked = FALSE, blocked_reason = NULL WHERE shop_id = $1`, [shopId]);
 }
 
-// ========== UI-КОНСТРУКТОРЫ (без HTML) ==========
+// ========== UI-КОНСТРУКТОРЫ ==========
 function getMainKeyboard(shop, chatId) {
   const owner = isOwner(shop, chatId);
   const me = shop && shop.admins ? shop.admins.find(a => a.chatId === chatId) : null;
@@ -1164,14 +1253,14 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   <div class="container">
     <h1>${messengerEmoji} Перейти в ${messengerName}</h1>
     <div class="sub">Букет №${bouquet.shopNumber} — ${bouquetNameEsc} — ${bouquet.price} ₽</div>
-    <div class="ordercard">
+    <div class="card">
       <div class="steps">
-        <Textb>1.</b> Скопируйте"> текст ниже<br>
-        <b>${2.</b> Нажмите «Открытьorder ${messengerName}»<brText>
-        <b>3.</b> ВставьтеEsc текст в чат и отправьте}</
+        <b>1.</b> Скопируйте текст ниже<br>
+        <b>2.</b> Нажмите «Открыть ${messengerName}»<br>
+        <b>3.</b> Вставьте текст в чат и отправьте
       </div>
-      <divdiv class="quote">
- id="      <button class="btn btn-copy" id="copyBtn" onclick="copyOrder()">📋 Скопировать текст</button>
+      <div class="quote">${orderTextEsc}</div>
+      <button class="btn btn-copy" id="copyBtn" onclick="copyOrder()">📋 Скопировать текст</button>
       <a class="btn btn-open" href="${externalLink}" target="_blank" rel="noopener">${messengerEmoji} Открыть ${messengerName}</a>
     </div>
     <a class="back" href="/shop/${shopIdEsc}">← Вернуться на витрину</a>
@@ -1203,7 +1292,7 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
 
 function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const bouquetNameEsc = esc(bouquet.name);
-  const bouquetIdEsc = esc(shop.shopId);
+  const shopIdEsc = esc(shop.shopId);
   const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
   const bouquetUrl = `${SITE_URL}/shop/${esc(shop.shopId)}/b/${bouquet.id}`;
   const title = `${bouquetNameEsc} — ${esc(shop.displayName)}`;
@@ -1258,7 +1347,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
 </head>
 <body>
   <div class="container">
-    <a class="back" href="/shop/${bouquetIdEsc}">← К витрине</a>
+    <a class="back" href="/shop/${shopIdEsc}">← К витрине</a>
     <div>${mainPhotoHtml}</div>
     ${thumbsHtml}
     <h1>${bouquetNameEsc}</h1>
@@ -1285,7 +1374,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
 
 function buildContactPage({ shop, bouquet, photoRefs }) {
   const bouquetNameEsc = esc(bouquet.name);
-  const bouquetIdEsc = esc(shop.shopId);
+  const shopIdEsc = esc(shop.shopId);
   const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
   const orderText = `Здравствуйте! Пишу с вашей витрины. Хочу заказать букет №${bouquet.shopNumber} «${bouquet.name}» — ${bouquet.price} ₽.`;
   const orderTextJs = JSON.stringify(orderText);
@@ -1334,7 +1423,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
 </head>
 <body>
   <div class="container">
-    <a class="back" href="/shop/${bouquetIdEsc}">← К витрине</a>
+    <a class="back" href="/shop/${shopIdEsc}">← К витрине</a>
 
     <div>${mainPhotoHtml}</div>
     <h1>${bouquetNameEsc}</h1>
@@ -1991,7 +2080,9 @@ bot.onText(/\/admin/, async (msg) => {
   const chatId = msg.chat.id;
   if (!isServiceAdmin(chatId)) return;
   return showAdminPanel(chatId);
-});// ========== ОБНОВЛЕНИЕ СПИСКА ПРОВЕРКИ ==========
+});
+
+// ========== ОБНОВЛЕНИЕ СПИСКА ПРОВЕРКИ ==========
 async function refreshCheckList(chatId, session) {
   const total = session.bouquets.length;
   const done = Object.keys(session.checked).length;
@@ -2132,7 +2223,93 @@ bot.on('callback_query', async (q) => {
     return showBouquetList(chatId, shopId, action, headers[action] || '', page);
   }
 
-  // ========== АРХИВ ==========
+  // ========== АРХИВ (ПРАВКА 22) ==========
+  if (data === 'arch_mode_list') {
+    const arch = await getArchivedBouquets(shopId);
+    if (arch.length === 0) {
+      bot.editMessageText('📦 В архиве пусто.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
+      return;
+    }
+    archiveSessions[chatId] = { mode: 'list', bouquets: arch, page: 0, shopId, keyboardHidden: false };
+    if (!archiveSessions[chatId].keyboardHidden) {
+      archiveSessions[chatId].keyboardHidden = true;
+      bot.sendMessage(chatId, '📦 <i>Открываю архив — меню вернётся после закрытия.</i>', {
+        parse_mode: 'HTML', reply_markup: { remove_keyboard: true }
+      }).catch(function(){});
+    }
+    return showArchiveList(chatId, archiveSessions[chatId], q.message.message_id);
+  }
+
+  if (data === 'arch_mode_card') {
+    const arch = await getArchivedBouquets(shopId);
+    if (arch.length === 0) {
+      bot.editMessageText('📦 В архиве пусто.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
+      return;
+    }
+    archiveSessions[chatId] = { mode: 'card', bouquets: arch, currentIndex: 0, shopId, keyboardHidden: false };
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+    return showArchiveCard(chatId, archiveSessions[chatId]);
+  }
+
+  if (data.startsWith('arch_list_page_')) {
+    const session = archiveSessions[chatId];
+    if (!session || session.mode !== 'list') {
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+      return;
+    }
+    const newPage = parseInt(data.replace('arch_list_page_', '')) || 0;
+    session.page = newPage;
+    return showArchiveList(chatId, session, q.message.message_id);
+  }
+
+  if (data.startsWith('arch_item_')) {
+    const session = archiveSessions[chatId];
+    if (!session || session.mode !== 'list') {
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+      return;
+    }
+    const itemId = parseInt(data.replace('arch_item_', ''));
+    if (!itemId || isNaN(itemId)) return;
+    return showArchiveItemCard(chatId, session, itemId);
+  }
+
+  if (data === 'arch_list_back') {
+    const session = archiveSessions[chatId];
+    if (!session || session.mode !== 'list') {
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+      return;
+    }
+    bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+    return showArchiveList(chatId, session);
+  }
+
+  if (data.startsWith('arch_restore_')) {
+    const session = archiveSessions[chatId];
+    const itemId = parseInt(data.replace('arch_restore_', ''));
+    const b = session ? session.bouquets.find(x => x.id === itemId) : null;
+    if (b) {
+      await updateBouquetFields(b.id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
+      session.bouquets = session.bouquets.filter(x => x.id !== itemId);
+    }
+    if (session && session.mode === 'list') {
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+      if (session.bouquets.length === 0) {
+        delete archiveSessions[chatId];
+        bot.sendMessage(chatId, '📦 Архив пуст.', { reply_markup: getMainKeyboard(shop, chatId) }).catch(function(){});
+        return;
+      }
+      const totalPages = Math.max(1, Math.ceil(session.bouquets.length / LIST_PER_PAGE));
+      if (session.page >= totalPages) session.page = totalPages - 1;
+      return showArchiveList(chatId, session);
+    }
+    if (session && session.mode === 'card') {
+      session.currentIndex++;
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+      return showArchiveCard(chatId, session);
+    }
+    return;
+  }
+
   if (data.startsWith('arch_')) {
     const session = archiveSessions[chatId];
     if (!session) {
@@ -2149,14 +2326,17 @@ bot.on('callback_query', async (q) => {
       bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
       return showArchiveCard(chatId, session);
     }
-    if (data === 'arch_restore') {
-      const b = session.bouquets[session.currentIndex];
-      if (!b) return;
-      await updateBouquetFields(b.id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
+  }if (data === 'arch_next') {
       session.currentIndex++;
       bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
       return showArchiveCard(chatId, session);
     }
+    if (data === 'arch_close') {
+      delete archiveSessions[chatId];
+      bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
+      return bot.sendMessage(chatId, '📦 Архив закрыт.', { reply_markup: getMainKeyboard(shop, chatId) });
+    }
+    return;
   }
 
   if (data === 'noop') return;
@@ -2713,10 +2893,7 @@ bot.on('message', async (msg) => {
     return showBouquetList(chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на кнопку с номером.', 0);
   }
   if (text === '📦 Архив') {
-    const arch = await getArchivedBouquets(shopId);
-    if (arch.length === 0) return bot.sendMessage(chatId, '📦 В архиве пусто — все букеты на витрине.', { reply_markup: getMainKeyboard(shop, chatId) });
-    archiveSessions[chatId] = { bouquets: arch, currentIndex: 0, shopId, keyboardHidden: false };
-    return showArchiveCard(chatId, archiveSessions[chatId]);
+    return buildArchiveModeSelection(chatId, shopId);
   }
   if (text === '✅ Я сегодня работаю') {
     await setUserOnShift(chatId, shopId, true);
