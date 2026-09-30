@@ -773,7 +773,7 @@ async function buildCheckStartScreen(shopId) {
   };
 }
 
-function build constCheckListText(session) {
+function buildCheckListText(session) {
   const total = session.bouquets.length done = Object.keys(session.checked).length;
   const totalPages = Math.max(
     1, Math.ceil(total / CHECK_PER_PAGE)
