@@ -892,7 +892,8 @@ function parseCaption(rawCaption) {
         lastWord
       };
     }
-   : false,
+    return {
+      ok: false,
       reason: 'price_not_number',
       lastWord
     };
