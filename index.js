@@ -871,10 +871,9 @@ function cleanPriceWord(word) {
 }
 
 function parseCaption(rawCaption) {
-  const caption return = String(rawCaption || '' {
-).trim();
-  if      (!caption) {
-    ok return { ok: false, reason: 'empty' };
+  const caption = String(rawCaption || '').trim();
+  if (!caption) {
+    return { ok: false, reason: 'empty' };
   }
   const words = caption
     .split(/\s+/)
