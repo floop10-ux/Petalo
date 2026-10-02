@@ -115,6 +115,8 @@ const searchSessions = {};
 const notifiedClicks = {};
 const awaitingAdminMessage = {};
 const awaitingAdminBlockReason = {};
+const morningReminderSent = {};
+const visualReminderSent = {};
 
 const MAX_BUTTONS_PER_SECTION = 20;
 const MAX_LIST_ITEMS = 25;
@@ -129,14 +131,6 @@ const MENU_BUTTONS = [
   '⚙️ Меню'
 ];
 
-const PARSE_ERROR_TEXT =
-  `❌ <b>Не могу разобрать подпись.</b>\n\n` +
-  `Правильно: <b>31 роза 3500</b>\n` +
-  `(название, потом цена — последним словом)\n\n` +
-  `Неправильно: 31 роза 3500 сорт Аваланж цена\n` +
-  `(после цены не должно быть слов)\n\n` +
-  `Попробуйте ещё раз или нажмите /cancel`;
-
 const ADD_BOUQUET_HINT =
   `📷 <b>Пришлите фото букета с подписью.</b>\n\n` +
   `В подписи: название + цена.\n` +
@@ -150,9 +144,7 @@ const ADD_BOUQUET_HINT =
   `  31 роза 3500 сорт Аваланж цена\n` +
   `     (после цены есть слова)\n` +
   `  3500 31 роза\n` +
-  `     (цена в начале)\n` +
-  `  31 роза 3500₽ за штуку\n` +
-  `     (символы и слова после цены)\n\n` +
+  `     (цена в начале)\n\n` +
   `💡 Ещё фото — без подписи.`;
 
 function esc(s) {
@@ -553,7 +545,6 @@ function getPhotoRefs(photo) {
   return { primary: null, fallback: null };
 }
 
-// ПРАВКА 36: s3 приоритетнее tg
 function getTelegramPhotoRef(photo) {
   if (!photo) return null;
   if (typeof photo === 'string') {
@@ -716,7 +707,506 @@ async function getPhotoUrl(fileRef) {
   } catch (e) {
     return null;
   }
-}// ========== ПРОВЕРКА НАЛИЧИЯ ==========
+}// ========== ПРЕСЕТЫ ФОНОВ (ПРАВКА 53) ==========
+const PRESET_BACKGROUNDS = [
+  {
+    id: 1,
+    name: 'Тёплый крем',
+    emoji: '🍦',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%)'
+  },
+  {
+    id: 2,
+    name: 'Чистый белый',
+    emoji: '⚪',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#ffffff 0%,#fafafa 60%,#f5f5f5 100%)'
+  },
+  {
+    id: 3,
+    name: 'Нежный розовый',
+    emoji: '🌸',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#fdf2f5 0%,#fbe8ef 50%,#f7dae5 100%)'
+  },
+  {
+    id: 4,
+    name: 'Ботанический',
+    emoji: '🌿',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#f2f7f0 0%,#e8f0e5 50%,#dfe8db 100%)'
+  },
+  {
+    id: 5,
+    name: 'Серо-голубой',
+    emoji: '💎',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#f5f7fa 0%,#eaeef3 50%,#dee5ec 100%)'
+  },
+  {
+    id: 6,
+    name: 'Акварель',
+    emoji: '🎨',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#fdf5f0 0%,#f9e8de 50%,#f4dcd0 100%)'
+  },
+  {
+    id: 7,
+    name: 'Мрамор',
+    emoji: '🏛',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#fbfaf8 0%,#f2eeea 50%,#e8e3dc 100%)'
+  },
+  {
+    id: 8,
+    name: 'Новогодний',
+    emoji: '❄️',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#f5f7fa 0%,#e8edf3 50%,#dce3ea 100%)'
+  },
+  {
+    id: 9,
+    name: 'Весенний',
+    emoji: '🌷',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#fff5f7 0%,#fce4ea 50%,#f8d5de 100%)'
+  },
+  {
+    id: 10,
+    name: 'Осенний',
+    emoji: '🍂',
+    gradient:
+      'linear-gradient(180deg,' +
+      '#fdf4ea 0%,#f8e4cf 50%,#f2d4b6 100%)'
+  }
+];
+
+function findPresetById(id) {
+  const n = parseInt(id, 10);
+  if (isNaN(n)) return null;
+  return PRESET_BACKGROUNDS.find(b => b.id === n) || null;
+}
+
+function getBackgroundStyle(bgSetting) {
+  if (!bgSetting) {
+    return 'background:linear-gradient(180deg,' +
+      '#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%);' +
+      'background-attachment:fixed;';
+  }
+  if (typeof bgSetting === 'object' && bgSetting.type === 'preset') {
+    const preset = findPresetById(bgSetting.id);
+    if (preset) {
+      return 'background:' + preset.gradient + ';' +
+        'background-attachment:fixed;';
+    }
+    return 'background:linear-gradient(180deg,' +
+      '#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%);' +
+      'background-attachment:fixed;';
+  }
+  const refs = getPhotoRefs(bgSetting);
+  if (refs && refs.primary) {
+    return "background-image:url('" + refs.primary + "');" +
+      'background-size:cover;' +
+      'background-attachment:fixed;';
+  }
+  return 'background:linear-gradient(180deg,' +
+    '#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%);' +
+    'background-attachment:fixed;';
+}
+
+function isPresetBackground(bgSetting) {
+  if (!bgSetting) return false;
+  if (typeof bgSetting !== 'object') return false;
+  return bgSetting.type === 'preset';
+}
+
+function hasAnyBackground(shop) {
+  if (!shop || !shop.settings) return false;
+  const bg = shop.settings.background;
+  if (!bg) return false;
+  if (isPresetBackground(bg)) return true;
+  if (typeof bg === 'object' &&
+      (bg.s3 || bg.tg)) return true;
+  return false;
+}
+
+function hasAnyLogo(shop) {
+  if (!shop || !shop.settings) return false;
+  return !!shop.settings.logo;
+}
+
+// ========== ПАРСЕР ЦЕНЫ (ПРАВКА 50) ==========
+const CURRENCY_SUFFIXES = [
+  'рублей', 'рубля', 'рубль', 'руб',
+  'р', '₽'
+];
+
+function cleanPriceWord(word) {
+  if (!word) return null;
+  let w = String(word).trim().toLowerCase();
+  w = w.replace(/\s+/g, '');
+  w = w.replace(/[,]/g, '');
+  for (const suf of CURRENCY_SUFFIXES) {
+    if (w.endsWith(suf)) {
+      w = w.slice(0, -suf.length);
+      break;
+    }
+  }
+  w = w.trim();
+  if (!w) return null;
+  if (!/^\d+$/.test(w)) return null;
+  const n = parseInt(w, 10);
+  if (isNaN(n) || n <= 0) return null;
+  return n;
+}
+
+function parseCaption(rawCaption) {
+  const caption return = String(rawCaption || '' {
+).trim();
+  if      (!caption) {
+    ok return { ok: false, reason: 'empty' };
+  }
+  const words = caption
+    .split(/\s+/)
+    .filter(w => w.length > 0);
+  if (words.length < 2) {
+    return { ok: false, reason: 'too_short' };
+  }
+  const lastWord = words[words.length - 1];
+  const price = cleanPriceWord(lastWord);
+  if (price === null) {
+    const digitsOnly = lastWord.replace(/[^\d]/g, '');
+    if (digitsOnly.length > 0) {
+      return {
+        ok: false,
+        reason: 'price_with_extra',
+        lastWord
+      };
+    }
+   : false,
+      reason: 'price_not_number',
+      lastWord
+    };
+  }
+  const name = words.slice(0, -1).join(' ').trim();
+  if (name.length < 2) {
+    return { ok: false, reason: 'name_too_short' };
+  }
+  return { ok: true, name, price };
+}
+
+function buildParseErrorText(parseResult, rawCaption) {
+  const reason = parseResult && parseResult.reason
+    ? parseResult.reason
+    : 'unknown';
+
+  if (reason === 'price_with_extra') {
+    const lw = parseResult.lastWord || '';
+    let t = '❌ <b>Не могу разобрать цену.</b>\n\n';
+    t += 'Последнее слово: <code>' + esc(lw) + '</code>\n\n';
+    t += 'Цена должна быть <b>только цифрами</b>.\n\n';
+    t += '✅ <b>Правильно:</b>\n';
+    t += '  <code>31 роза 3500</code>\n';
+    t += '  <code>51 хризантема 10000</code>\n\n';
+    t += '❌ <b>Неправильно:</b>\n';
+    t += '  <code>31 роза 3500₽</code>\n';
+    t += '  <code>31 роза 3500р</code>\n';
+    t += '  <code>31 роза 3500 руб</code>\n';
+    t += '  <code>31 роза 3500.50</code>\n\n';
+    t += '💡 Просто уберите символы —\n';
+    t += 'оставьте только цифры.';
+    return t;
+  }
+
+  if (reason === 'price_not_number') {
+    let t = '❌ <b>Не могу найти цену.</b>\n\n';
+    t += 'Последнее слово должно быть <b>ценой</b> —\n';
+    t += 'одним числом.\n\n';
+    t += '✅ <b>Правильно:</b>\n';
+    t += '  <code>31 роза 3500</code>\n';
+    t += '  <code>Пионы 4500</code>\n';
+    t += '  <code>Микс 2800</code>\n\n';
+    t += '❌ <b>Неправильно:</b>\n';
+    t += '  <code>31 роза 3500 сорт Аваланж</code>\n';
+    t += '     (цена не последняя)\n';
+    t += '  <code>31 роза — цена 3500</code>\n';
+    t += '     (после цены ещё слова)\n\n';
+    t += '💡 Формат: <b>название + цена последним словом</b>';
+    return t;
+  }
+
+  if (reason === 'too_short' || reason === 'empty') {
+    let t = '❌ <b>Слишком короткая подпись.</b>\n\n';
+    t += 'В подписи должно быть <b>название и цена</b>.\n\n';
+    t += '✅ <b>Пример:</b>\n';
+    t += '  <code>31 роза 3500</code>\n';
+    t += '  <code>Пионы 4500</code>\n\n';
+    t += '💡 Или нажмите /cancel, чтобы отменить.';
+    return t;
+  }
+
+  if (reason === 'name_too_short') {
+    let t = '❌ <b>Название слишком короткое.</b>\n\n';
+    t += 'Перед ценой напишите название букета —\n';
+    t += 'минимум 2 символа.\n\n';
+    t += '✅ <b>Пример:</b>\n';
+    t += '  <code>31 роза 3500</code>\n';
+    t += '  <code>Пионы 4500</code>';
+    return t;
+  }
+
+  let t = '❌ <b>Не могу разобрать подпись.</b>\n\n';
+  t += 'Правильно: <b>31 роза 3500</b>\n';
+  t += '(название, потом цена — последним словом)\n\n';
+  t += 'Попробуйте ещё раз или нажмите /cancel';
+  return t;
+}// ========== СПРАВКА / HELP (ПРАВКА 55) ==========
+function buildHelpMenu() {
+  let t = '📖 <b>Помощь</b>\n\n';
+  t += 'Что вы хотите узнать?\n\n';
+  t += '🎓 <b>Как пользоваться</b> — пошаговый гайд\n';
+  t += '❓ <b>Частые вопросы</b> — короткие ответы\n';
+  t += '💬 <b>Написать в поддержку</b> — если что-то сломалось';
+  return {
+    text: t,
+    options: {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{
+            text: '🎓 Как пользоваться ботом',
+            callback_data: 'help_guide'
+          }],
+          [{
+            text: '❓ Частые вопросы',
+            callback_data: 'help_faq'
+          }],
+          [{
+            text: '💬 Написать в поддержку',
+            callback_data: 'help_support'
+          }],
+          [{
+            text: '❌ Закрыть',
+            callback_data: 'help_close'
+          }]
+        ]
+      }
+    }
+  };
+}
+
+function buildHelpGuide() {
+  let t = '🎓 <b>Как пользоваться Flowind</b>\n\n';
+  t += '1️⃣ <b>Добавить букет</b>\n';
+  t += 'Нажмите «📷 Добавить букет» и отправьте ' +
+       'фото с подписью.\n';
+  t += 'В подписи: название + цена последним словом.\n';
+  t += '<code>31 роза 3500</code>\n\n';
+  t += '2️⃣ <b>Проверить наличие</b>\n';
+  t += 'Раз в 3 дня бот напомнит. Открывайте ' +
+       '«✅ Что в наличии?» и отмечайте — есть или нет.\n\n';
+  t += '3️⃣ <b>Найти букет</b>\n';
+  t += '«✏️ Мои букеты» → «🔍 Найти букет».\n';
+  t += 'Ищет по слову из названия или по номеру.\n\n';
+  t += '4️⃣ <b>Изменить букет</b>\n';
+  t += 'Из карточки букета: цена, переименовать, ' +
+       'убрать с витрины, удалить.\n\n';
+  t += '5️⃣ <b>Ссылка для клиентов</b>\n';
+  t += '«🔗 Витрина» — она показывается на кнопке. ' +
+       'Отправляйте клиентам, открывается в любом ' +
+       'браузере.\n\n';
+  t += '6️⃣ <b>Пригласить флориста</b>\n';
+  t += '«⚙️ Настройки → 🔑 Пригласить флориста».\n';
+  t += 'Он кликнет по ссылке и сразу попадёт в команду.\n\n';
+  t += '<i>Если что-то непонятно — /help снова.</i>';
+  return {
+    text: t,
+    options: {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[{
+          text: '⬅️ К помощи',
+          callback_data: 'help_back'
+        }]]
+      }
+    }
+  };
+}
+
+function buildHelpFAQ() {
+  let t = '❓ <b>Частые вопросы</b>\n\n';
+  t += 'Выберите вопрос:';
+  return {
+    text: t,
+    options: {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{
+            text: '🤔 Почему бот не принимает цену?',
+            callback_data: 'faq_price'
+          }],
+          [{
+            text: '⏰ Что будет, если не подтверждать?',
+            callback_data: 'faq_expire'
+          }],
+          [{
+            text: '📥 Как убрать букет с витрины?',
+            callback_data: 'faq_hide'
+          }],
+          [{
+            text: '🖼 Как поменять фон витрины?',
+            callback_data: 'faq_bg'
+          }],
+          [{
+            text: '👥 Как добавить флориста?',
+            callback_data: 'faq_team'
+          }],
+          [{
+            text: '🔗 Где ссылка для клиентов?',
+            callback_data: 'faq_link'
+          }],
+          [{
+            text: '🔔 Почему не приходят уведомления?',
+            callback_data: 'faq_notify'
+          }],
+          [{
+            text: '⬅️ К помощи',
+            callback_data: 'help_back'
+          }]
+        ]
+      }
+    }
+  };
+}
+
+function buildFaqAnswer(key) {
+  const answers = {
+    faq_price: {
+      title: '🤔 Почему бот не принимает цену?',
+      body:
+        'Цена должна быть <b>последним словом</b> ' +
+        'в подписи и только <b>цифрами</b>.\n\n' +
+        '✅ <b>Правильно:</b>\n' +
+        '<code>31 роза 3500</code>\n' +
+        '<code>51 хризантема 10000</code>\n\n' +
+        '❌ <b>Неправильно:</b>\n' +
+        '<code>31 роза 3500 сорт Аваланж</code>\n' +
+        '   (после цены ещё слова)\n' +
+        '<code>3500 31 роза</code>\n' +
+        '   (цена в начале)\n\n' +
+        '💡 Если запутались — /cancel и заново.'
+    },
+    faq_expire: {
+      title: '⏰ Что будет, если не подтверждать?',
+      body:
+        'Через 3 дня после добавления букет ' +
+        '<b>уйдёт в архив</b> — исчезнет с витрины.\n\n' +
+        'Перед этим за 12 часов бот напомнит.\n\n' +
+        'Вернуть из архива можно в любой момент:\n' +
+        '«✏️ Мои букеты → 📦 Архив» → «✅ Вернуть».'
+    },
+    faq_hide: {
+      title: '📥 Как убрать букет с витрины?',
+      body:
+        'Откройте карточку букета и нажмите ' +
+        '«📥 Убрать с витрины».\n\n' +
+        'Клиенты его больше не увидят, а вернуть ' +
+        'можно из архива.\n\n' +
+        'Не путайте с «🗑 Удалить» — там букет ' +
+        'исчезает совсем.'
+    },
+    faq_bg: {
+      title: '🖼 Как поменять фон витрины?',
+      body:
+        '«⚙️ Настройки → 🖼 Фон».\n\n' +
+        'Можно выбрать один из 10 готовых фонов ' +
+        'или загрузить свою картинку.\n\n' +
+        'Готовые фоны — CSS-градиенты: ' +
+        'безопасные, не мешают карточкам ' +
+        'и грузятся мгновенно.'
+    },
+    faq_team: {
+      title: '👥 Как добавить флориста?',
+      body:
+        '«⚙️ Настройки → 🔑 Пригласить флориста».\n\n' +
+        'Бот выдаст ссылку. Отправьте её флористу — ' +
+        'он кликнет, и сразу попадёт в вашу команду.\n\n' +
+        'Управлять составом: ' +
+        '«⚙️ Настройки → 👥 Команда».'
+    },
+    faq_link: {
+      title: '🔗 Где ссылка для клиентов?',
+      body:
+        'Кнопка «🔗 Витрина» в главном меню.\n\n' +
+        'Ссылка кликабельная — можно переслать ' +
+        'клиенту. Он откроет в любом браузере ' +
+        'без VPN.'
+    },
+    faq_notify: {
+      title: '🔔 Почему не приходят уведомления?',
+      body:
+        'Уведомления приходят только тем, кто ' +
+        '«на смене».\n\n' +
+        'Нажмите в главном меню ' +
+        '«✅ Я сегодня работаю» — и всё заработает.\n\n' +
+        'Статус сбрасывается через 14 часов, ' +
+        'поэтому каждое утро его нужно включать.'
+    }
+  };
+  const a = answers[key];
+  if (!a) return null;
+  return {
+    text: '<b>' + a.title + '</b>\n\n' + a.body,
+    options: {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{
+            text: '❓ К вопросам',
+            callback_data: 'help_faq'
+          }],
+          [{
+            text: '💬 Поддержка',
+            callback_data: 'help_support'
+          }]
+        ]
+      }
+    }
+  };
+}
+
+function buildHelpSupport() {
+  let t = '💬 <b>Поддержка Flowind</b>\n\n';
+  t += 'Если что-то не работает или непонятно — ' +
+       'напишите напрямую:\n\n';
+  t += '👤 @floop10\n\n';
+  t += '<i>Постараемся ответить в течение дня.</i>';
+  return {
+    text: t,
+    options: {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[{
+          text: '⬅️ К помощи',
+          callback_data: 'help_back'
+        }]]
+      }
+    }
+  };
+}
+
+// ========== ПРОВЕРКА НАЛИЧИЯ ==========
 const CHECK_PER_PAGE = 25;
 const CHECK_SESSION_TTL = 60 * 60 * 1000;
 const LIST_PER_PAGE = 25;
@@ -980,7 +1470,6 @@ async function showArchiveList(chatId, session, editMessageId) {
   return bot.sendMessage(chatId, txt, opts);
 }
 
-// ПРАВКА 48: в карточке архива теперь есть «Удалить»
 async function showArchiveItemCard(chatId, session, itemId) {
   const b = session.bouquets.find(x => x.id === itemId);
   if (!b) {
@@ -1042,10 +1531,7 @@ async function showArchiveItemCard(chatId, session, itemId) {
   try {
     await bot.sendMessage(chatId, caption, opts);
   } catch (e) { /* ignore */ }
-}
-
-// ПРАВКА 48: в карточке-листалке тоже добавлено «Удалить»
-async function showArchiveCard(chatId, session) {
+}async function showArchiveCard(chatId, session) {
   if (session.currentIndex >= session.bouquets.length) {
     const shopId = session.shopId;
     delete archiveSessions[chatId];
@@ -1141,7 +1627,7 @@ async function showArchiveCard(chatId, session) {
   } catch (e) { /* ignore */ }
 }
 
-// ========== СКАЧАТЬ ФОТО (ПРАВКА 36) ==========
+// ========== СКАЧАТЬ ФОТО ==========
 async function sendBouquetPhotoAsFile(chatId, b) {
   if (!b.photos || b.photos.length === 0) {
     return bot.sendMessage(chatId, '❌ У букета нет фото.');
@@ -1159,7 +1645,6 @@ async function sendBouquetPhotoAsFile(chatId, b) {
   try {
     let docRef = null;
 
-    // ПРАВКА 36: сначала s3, потом tg
     if (typeof firstPhoto === 'object' && firstPhoto.s3) {
       const key = s3UrlToKey(firstPhoto.s3);
       if (key) {
@@ -1319,14 +1804,12 @@ async function searchBouquets(shopId, query) {
   return { all, results };
 }
 
-// ПРАВКА 35: новая логика отметки
 function statusMark(b) {
   if (isConfirmedRecently(b)) return '✅';
   if (b.hidden) return '📥';
   return '❌';
 }
 
-// ПРАВКА 35: новая сводка + легенда
 async function renderSearchResults(chatId, shopId, query, results) {
   const qEsc = esc(query);
   if (results.length === 0) {
@@ -1393,7 +1876,6 @@ async function renderSearchResults(chatId, shopId, query, results) {
     txt += `из ${total}.</i>\n`;
   }
 
-  // Легенда — только если есть неактивные
   const hasNonActive = (total - activeCount) > 0;
   if (hasNonActive) {
     txt += `\n<i>✅ на витрине · 📥 в архиве · ❌ устарел</i>`;
@@ -1612,7 +2094,6 @@ async function sendBouquetPreview(chatId, b, headerText, buttons) {
   } catch (e) { /* ignore */ }
 }
 
-// ========== ПРОВЕРКА ФОТО (ПРАВКА 37) ==========
 function validatePhotoSaved(photoResult) {
   if (!photoResult) return false;
   if (typeof photoResult === 'object') {
@@ -1626,9 +2107,7 @@ function validatePhotoSaved(photoResult) {
     if (isValidFileId(photoResult)) return true;
   }
   return false;
-}
-
-// ========== ИНИЦИАЛИЗАЦИЯ БД ==========
+}// ========== ИНИЦИАЛИЗАЦИЯ БД ==========
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS shops (
@@ -2029,7 +2508,6 @@ async function unblockShop(shopId) {
 
 // ========== UI-КОНСТРУКТОРЫ ==========
 function getMainKeyboard(shop, chatId) {
-  const owner = isOwner(shop, chatId);
   const me = shop && shop.admins
     ? shop.admins.find(a => a.chatId === chatId)
     : null;
@@ -2096,6 +2574,10 @@ function getSettingsMenu(shop, chatId) {
         callback_data: 'menu_renew'
       }],
       [{
+        text: '📖 Помощь',
+        callback_data: 'help_menu'
+      }],
+      [{
         text: '❌ Закрыть',
         callback_data: 'menu_close'
       }]
@@ -2105,6 +2587,10 @@ function getSettingsMenu(shop, chatId) {
     [{
       text: '📋 Статус магазина',
       callback_data: 'menu_status'
+    }],
+    [{
+      text: '📖 Помощь',
+      callback_data: 'help_menu'
     }],
     [{
       text: '❌ Закрыть',
@@ -2397,6 +2883,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const bouquetUrlJs = JSON.stringify(bouquetUrl);
   const noContacts = '<div style="color:#888;padding:10px;">';
   const noContacts2 = 'Контакты временно недоступны</div>';
+  const bodyBg = getBackgroundStyle(shop.settings.background);
 
   let html = '';
   html += '<!DOCTYPE html>\n<html lang="ru">\n<head>\n';
@@ -2421,8 +2908,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += ogTags + '\n<style>\n';
   html += 'body{font-family:-apple-system,sans-serif;';
   html += 'margin:0;padding:20px;';
-  html += 'background:linear-gradient(180deg,';
-  html += '#fdf9f3 0%,#fafaf8 60%,#f7f5f1 100%);';
+  html += bodyBg;
   html += 'text-align:center;color:#2c3e50;}\n';
   html += '.container{max-width:560px;margin:0 auto;';
   html += 'padding:12px 0;}\n';
@@ -2551,6 +3037,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
 
   const noContacts = '<div style="color:#888;padding:10px;">';
   const noContacts2 = 'Контакты временно недоступны</div>';
+  const bodyBg = getBackgroundStyle(shop.settings.background);
 
   let html = '';
   html += '<!DOCTYPE html>\n<html lang="ru">\n<head>\n';
@@ -2561,8 +3048,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   html += '<style>\n';
   html += 'body{font-family:-apple-system,sans-serif;';
   html += 'margin:0;padding:20px;';
-  html += 'background:linear-gradient(180deg,';
-  html += '#fdf9f3 0%,#fafaf8 60%,#f7f5f1 100%);';
+  html += bodyBg;
   html += 'text-align:center;color:#2c3e50;}\n';
   html += '.container{max-width:500px;margin:0 auto;';
   html += 'padding:12px 0;}\n';
@@ -2636,9 +3122,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   html += '}\n';
   html += '</script>\n</body>\n</html>';
   return html;
-}
-
-// ========== ПРОКСИ S3 ==========
+}// ========== ПРОКСИ S3 ==========
 app.get('/photo/s3/*', async (req, res) => {
   try {
     const key = req.params[0];
@@ -2826,7 +3310,9 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     console.error('Ошибка страницы букета:', e?.message || e);
     res.status(500).send('Ошибка');
   }
-});// ========== РЕГИСТРАЦИЯ ==========
+});
+
+// ========== РЕГИСТРАЦИЯ ==========
 const REG_STEPS = {
   shopId: {
     text: '📝 <b>Шаг 1 из 8. Короткое название для ссылки</b>\n\n' +
@@ -2923,13 +3409,11 @@ function buildRegFinalText(shopId, displayName) {
   t += '⚙️ Чтобы заполнить адрес, телефон и другое — ' +
        '«Меню» → «🏪 Данные магазина»\n\n';
   t += '💡 Если что-то непонятно — напишите ' +
-       '<code>/cancel</code> и начните заново.\n\n';
+       '<code>/help</code>.\n\n';
   t += '<b>Попробуйте прямо сейчас — отправьте ' +
        'первый букет.</b>';
   return t;
-}
-
-async function generateUniqueShopId() {
+}async function generateUniqueShopId() {
   for (let i = 0; i < 20; i++) {
     const id = generateShopId();
     if (!(await getShopFromDb(id))) return id;
@@ -3124,6 +3608,11 @@ async function regFinish(chatId, state) {
       reply_markup: getMainKeyboard(shop, chatId)
     });
 
+    // ПРАВКА 54: напоминание про лого и фон
+    setTimeout(function() {
+      sendVisualReminder(chatId, d.shopId);
+    }, 2500);
+
     if (OWNER_CHAT_ID && OWNER_CHAT_ID !== chatId) {
       const tgRef = state.userUsername
         ? '@' + state.userUsername
@@ -3151,6 +3640,49 @@ async function regFinish(chatId, state) {
     return bot.sendMessage(chatId,
       '❌ Ошибка при создании магазина. ' +
       'Попробуйте ещё раз /register.'
+    );
+  }
+}
+
+// ========== НАПОМИНАНИЕ ПРО ЛОГО+ФОН (ПРАВКА 54) ==========
+async function sendVisualReminder(chatId, shopId) {
+  try {
+    const shop = await getShopFromDb(shopId);
+    if (!shop) return;
+    if (hasAnyLogo(shop) && hasAnyBackground(shop)) return;
+
+    let missing = [];
+    if (!hasAnyLogo(shop)) missing.push('логотип');
+    if (!hasAnyBackground(shop)) missing.push('фон');
+
+    let txt = '🎨 <b>Последний штрих</b>\n\n';
+    txt += 'Витрина работает, но пока выглядит ';
+    txt += 'просто.\n\n';
+    txt += 'Чтобы она выглядела законченно — ';
+    txt += 'добавьте ' + missing.join(' и ') + '.\n\n';
+    txt += 'С готовыми фонами это секунда — ';
+    txt += 'просто выберете из 10 вариантов.\n\n';
+    txt += '<i>Можно сделать позже — витрина уже работает.</i>';
+
+    await bot.sendMessage(chatId, txt, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{
+            text: '🖼 Настроить витрину',
+            callback_data: 'menu_background'
+          }],
+          [{
+            text: '⏭ Позже',
+            callback_data: 'visual_later'
+          }]
+        ]
+      }
+    });
+    visualReminderSent[shopId] = Date.now();
+  } catch (e) {
+    console.error(
+      'Ошибка sendVisualReminder:', e?.message || e
     );
   }
 }
@@ -3580,6 +4112,13 @@ bot.onText(/\/admin/, async (msg) => {
   return showAdminPanel(chatId);
 });
 
+// ========== /help ==========
+bot.onText(/\/help/, async (msg) => {
+  const chatId = msg.chat.id;
+  const menu = buildHelpMenu();
+  return bot.sendMessage(chatId, menu.text, menu.options);
+});
+
 // ========== ОБНОВЛЕНИЕ СПИСКА ПРОВЕРКИ ==========
 async function refreshCheckList(chatId, session) {
   const total = session.bouquets.length;
@@ -3657,6 +4196,86 @@ bot.on('callback_query', async (q) => {
     bot.deleteMessage(chatId, q.message.message_id)
       .catch(function(){});
     return regSkipCurrentStep(chatId, state);
+  }
+
+  if (data === 'visual_later') {
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    return;
+  }
+
+  // ========== HELP ==========
+  if (data === 'help_menu') {
+    const menu = buildHelpMenu();
+    try {
+      await bot.editMessageText(menu.text, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        ...menu.options
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+  if (data === 'help_back') {
+    const menu = buildHelpMenu();
+    try {
+      await bot.editMessageText(menu.text, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        ...menu.options
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+  if (data === 'help_close') {
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    return;
+  }
+  if (data === 'help_guide') {
+    const g = buildHelpGuide();
+    try {
+      await bot.editMessageText(g.text, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        ...g.options
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+  if (data === 'help_faq') {
+    const f = buildHelpFAQ();
+    try {
+      await bot.editMessageText(f.text, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        ...f.options
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+  if (data === 'help_support') {
+    const s = buildHelpSupport();
+    try {
+      await bot.editMessageText(s.text, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        ...s.options
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+  if (data.startsWith('faq_')) {
+    const ans = buildFaqAnswer(data);
+    if (!ans) return;
+    try {
+      await bot.editMessageText(ans.text, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        ...ans.options
+      });
+    } catch (e) { /* ignore */ }
+    return;
   }
 
   // ========== АДМИН-ПАНЕЛЬ ==========
@@ -4002,7 +4621,6 @@ bot.on('callback_query', async (q) => {
     return showArchiveList(chatId, session);
   }
 
-  // ПРАВКА 48: удаление прямо из архива (с подтверждением)
   if (data.startsWith('arch_del_')) {
     if (!owner) return;
     const id = parseInt(data.replace('arch_del_', ''));
@@ -4576,20 +5194,32 @@ bot.on('callback_query', async (q) => {
       }
     });
   }
+
+  // ПРАВКА 53: меню фона — теперь с пресетами
   if (data === 'menu_background') {
     if (!owner) return;
-    const cur = shop.settings.background
-      ? '🖼 Фон установлен.'
-      : '🖼 Фон не установлен.';
-    return bot.sendMessage(chatId, cur, {
+    let curText = '🖼 Фон не установлен.';
+    if (isPresetBackground(shop.settings.background)) {
+      const p = findPresetById(shop.settings.background.id);
+      if (p) {
+        curText = '🖼 Сейчас: ' + p.emoji + ' ' + p.name;
+      }
+    } else if (hasAnyBackground(shop)) {
+      curText = '🖼 Свой фон установлен.';
+    }
+    return bot.sendMessage(chatId, curText, {
       reply_markup: {
         inline_keyboard: [
           [{
-            text: '📷 Загрузить',
+            text: '🎨 Выбрать из готовых',
+            callback_data: 'bg_presets'
+          }],
+          [{
+            text: '📷 Загрузить свой',
             callback_data: 'setbg_now'
           }],
           [{
-            text: '🗑 Убрать',
+            text: '🗑 Убрать фон',
             callback_data: 'resetbg_now'
           }],
           [{
@@ -4600,15 +5230,111 @@ bot.on('callback_query', async (q) => {
       }
     });
   }
-  if (data === 'setlogo_now') {
+
+  if (data === 'bg_presets') {
     if (!owner) return;
-    awaitingUpload[chatId] = 'logo';
-    return bot.sendMessage(chatId, '📷 Отправьте фото логотипа.');
+    let txt = '🎨 <b>Готовые фоны</b>\n\n';
+    txt += 'Тапните на номер — увидите превью, ';
+    txt += 'потом примените.';
+    const rows = [];
+    for (let i = 0; i < PRESET_BACKGROUNDS.length; i += 2) {
+      const row = [];
+      const b1 = PRESET_BACKGROUNDS[i];
+      row.push({
+        text: b1.emoji + ' ' + b1.id + '. ' + b1.name,
+        callback_data: 'bg_view_' + b1.id
+      });
+      if (i + 1 < PRESET_BACKGROUNDS.length) {
+        const b2 = PRESET_BACKGROUNDS[i + 1];
+        row.push({
+          text: b2.emoji + ' ' + b2.id + '. ' + b2.name,
+          callback_data: 'bg_view_' + b2.id
+        });
+      }
+      rows.push(row);
+    }
+    rows.push([{
+      text: '⬅️ Назад',
+      callback_data: 'menu_background'
+    }]);
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: rows }
+      });
+    } catch (e) { /* ignore */ }
+    return;
   }
+
+  if (data.startsWith('bg_view_')) {
+    if (!owner) return;
+    const pid = parseInt(data.replace('bg_view_', ''));
+    const preset = findPresetById(pid);
+    if (!preset) return;
+    let txt = preset.emoji + ' <b>' + preset.name + '</b>\n\n';
+    txt += 'Применить этот фон к витрине?';
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{
+              text: '✅ Применить',
+              callback_data: 'bg_apply_' + pid
+            }],
+            [{
+              text: '⬅️ Выбрать другой',
+              callback_data: 'bg_presets'
+            }]
+          ]
+        }
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+  if (data.startsWith('bg_apply_')) {
+    if (!owner) return;
+    const pid = parseInt(data.replace('bg_apply_', ''));
+    const preset = findPresetById(pid);
+    if (!preset) return;
+    shop.settings.background = {
+      type: 'preset',
+      id: pid
+    };
+    await saveShopSettings(shopId, shop.settings);
+    let txt = '✅ Фон применён!\n\n';
+    txt += preset.emoji + ' ' + preset.name + '\n\n';
+    txt += 'Откройте витрину — изменения уже там.';
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{
+            text: '🏠 Готово',
+            callback_data: 'menu_close'
+          }]]
+        }
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
   if (data === 'setbg_now') {
     if (!owner) return;
     awaitingUpload[chatId] = 'background';
     return bot.sendMessage(chatId, '📷 Отправьте фото фона.');
+  }
+  if (data === 'setlogo_now') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'logo';
+    return bot.sendMessage(chatId, '📷 Отправьте фото логотипа.');
   }
   if (data === 'resetlogo_now') {
     if (!owner) return;
@@ -4944,7 +5670,7 @@ bot.on('callback_query', async (q) => {
     );
   }
 
-  // ========== ПРОДЛЕНИЕ (напоминание) ==========
+  // ========== ПРОДЛЕНИЕ ==========
   if (data.startsWith('extend_')) {
     const id = parseInt(data.split('_')[1]);
     const b = await getBouquetById(shopId, id);
@@ -4963,7 +5689,7 @@ bot.on('callback_query', async (q) => {
     return bot.sendMessage(chatId, t, { parse_mode: 'HTML' });
   }
 
-  // ========== СТАРЫЕ ВЕТКИ (совместимость) ==========
+  // ========== СТАРЫЕ ВЕТКИ ==========
   if (data.startsWith('confirm_')) {
     const id = parseInt(data.split('_')[1]);
     await updateBouquetFields(id, {
@@ -4998,7 +5724,9 @@ bot.on('callback_query', async (q) => {
       ' возвращён на витрину.'
     );
   }
-});// ========== КАРТОЧКА БУКЕТА ==========
+});
+
+// ========== КАРТОЧКА БУКЕТА (из поиска) ==========
 async function showBouquetCard(chatId, b, shopId) {
   const rows = [];
   rows.push([
@@ -5121,7 +5849,7 @@ bot.on('message', async (msg) => {
   const shopId = userToShop[chatId] ||
     await findUserShop(chatId);
 
-  // ========== ПОИСК БУКЕТОВ ==========
+  // ========== ПОИСК ==========
   if (awaitingSearch[chatId] && shopId) {
     delete awaitingSearch[chatId];
     const query = text.trim();
@@ -5319,7 +6047,6 @@ bot.on('message', async (msg) => {
   if (text === '✏️ Мои букеты') {
     return buildMyBouquetsMenu(chatId, shopId);
   }
-  // ПРАВКА 34: ссылка без <code>, кликабельная
   if (text === '🔗 Витрина') {
     const link = SITE_URL + '/shop/' + shopId;
     let t = '🔗 <b>Ссылка на вашу витрину:</b>\n\n';
@@ -5404,6 +6131,13 @@ bot.on('photo', async (msg) => {
       const result = await savePhotoToStorage(
         fileId, shopId
       );
+      if (!validatePhotoSaved(result)) {
+        delete awaitingUpload[chatId];
+        return bot.sendMessage(chatId,
+          '❌ Фото не удалось сохранить. ' +
+          'Попробуйте ещё раз.'
+        );
+      }
       shop.settings[which] = result;
       await saveShopSettings(shopId, shop.settings);
       delete awaitingUpload[chatId];
@@ -5422,20 +6156,17 @@ bot.on('photo', async (msg) => {
   const caption = (msg.caption || '').trim();
 
   if (caption) {
-    const words = caption.split(/\s+/)
-      .filter(w => w.length > 0);
-    const lastWord = words[words.length - 1] || '';
-    const price = /^\d+$/.test(lastWord)
-      ? parseInt(lastWord, 10)
-      : 0;
-    const finalName = words.slice(0, -1).join(' ').trim();
-
-    if (price <= 0 || !finalName) {
-      return bot.sendMessage(chatId, PARSE_ERROR_TEXT, {
-        parse_mode: 'HTML'
-      });
+    const parsed = parseCaption(caption);
+    if (!parsed.ok) {
+      return bot.sendMessage(
+        chatId,
+        buildParseErrorText(parsed, caption),
+        { parse_mode: 'HTML' }
+      );
     }
 
+    const finalName = parsed.name;
+    const price = parsed.price;
     const tags = computeAllTags(finalName, caption);
 
     bot.sendMessage(chatId, '⏳ Загружаю фото...')
@@ -5444,7 +6175,6 @@ bot.on('photo', async (msg) => {
       fileId, shopId
     );
 
-    // ПРАВКА 37: не создаём букет, если фото не сохранилось
     if (!validatePhotoSaved(result)) {
       return bot.sendMessage(chatId,
         '❌ Фото не удалось сохранить. ' +
@@ -5510,7 +6240,6 @@ bot.on('photo', async (msg) => {
     .catch(function(){});
   const result = await savePhotoToStorage(fileId, shopId);
 
-  // ПРАВКА 37: и для доп-фото тоже проверка
   if (!validatePhotoSaved(result)) {
     return bot.sendMessage(chatId,
       '❌ Фото не удалось сохранить. ' +
@@ -5637,7 +6366,9 @@ bot.on('message', async (msg) => {
     return regSkipCurrentStep(chatId, state);
   }
   return regSaveValue(chatId, state, text);
-});// ========== ВИТРИНА ==========
+});
+
+// ========== ВИТРИНА ==========
 app.get('/shop/:shopId', async (req, res) => {
   try {
     const shop = await getShopFromDb(req.params.shopId);
@@ -5966,17 +6697,7 @@ app.get('/shop/:shopId', async (req, res) => {
     const logoUrl = shop.settings.logo
       ? await getPhotoUrl(shop.settings.logo)
       : null;
-    const bgRefs = shop.settings.background
-      ? getPhotoRefs(shop.settings.background)
-      : null;
-    const bgUrl = bgRefs ? bgRefs.primary : null;
-    const bodyStyle = bgUrl
-      ? 'background-image:url(\'' + bgUrl + '\');' +
-        'background-size:cover;' +
-        'background-attachment:fixed;'
-      : 'background:linear-gradient(180deg,' +
-        '#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%);' +
-        'background-attachment:fixed;';
+    const bodyBg = getBackgroundStyle(shop.settings.background);
     const headerHTML = logoUrl
       ? '<img src="' + escAttr(logoUrl) +
         '" style="max-height:90px;display:block;' +
@@ -6019,7 +6740,6 @@ app.get('/shop/:shopId', async (req, res) => {
     }
     titleHTML += countLine + '</div>';
 
-    // ПРАВКА 38: анимации + reduced-motion
     let html = '';
     html += '<!DOCTYPE html><html><head>';
     html += '<meta charset="UTF-8">';
@@ -6031,25 +6751,21 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '<style>';
     html += 'body{font-family:-apple-system,sans-serif;';
     html += 'margin:0;padding:24px 16px;';
-    html += 'text-align:center;' + bodyStyle + '}\n';
+    html += 'text-align:center;' + bodyBg + '}\n';
     html += 'h1{color:#2c3e50;}\n';
     html += '.container{max-width:1200px;margin:0 auto;}\n';
     html += '.shop-grid img{cursor:zoom-in;}\n';
-    // Анимация появления карточек
     html += '.card{opacity:0;';
     html += 'transform:translateY(14px);}\n';
     html += '.card.visible{opacity:1;';
     html += 'transform:translateY(0);}\n';
-    // Hover только на устройствах с курсором
     html += '@media (hover: hover){';
     html += '.card:hover{';
     html += 'transform:translateY(-3px);';
     html += 'box-shadow:0 10px 32px rgba(0,0,0,0.12) !important;';
     html += '}}\n';
-    // Tap-подъём на мобильных
     html += '.card:active{';
     html += 'transform:translateY(-2px);}\n';
-    // Уважение к prefers-reduced-motion
     html += '@media (prefers-reduced-motion: reduce){';
     html += '.card{opacity:1;';
     html += 'transform:none;';
@@ -6126,7 +6842,6 @@ app.get('/shop/:shopId', async (req, res) => {
     html += 'function(e) {\n';
     html += '  if (e.key === "Escape") closeLightbox();\n';
     html += '});\n';
-    // IntersectionObserver для fade-in
     html += 'if ("IntersectionObserver" in window) {\n';
     html += '  var obs = new IntersectionObserver(';
     html += 'function(entries){\n';
@@ -6140,7 +6855,6 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '  document.querySelectorAll(".card")';
     html += '.forEach(function(c){ obs.observe(c); });\n';
     html += '} else {\n';
-    // Fallback для старых браузеров
     html += '  document.querySelectorAll(".card")';
     html += '.forEach(function(c){ ';
     html += 'c.classList.add("visible"); });\n';
@@ -6198,15 +6912,90 @@ async function checkAndNotify() {
   }
 }
 
+// ========== УТРЕННЕЕ НАПОМИНАНИЕ (ПРАВКА 52) ==========
+async function morningReminder() {
+  try {
+    const now = getNowMoscow();
+    const todayKey = now.toISOString().slice(0, 10);
+
+    const shops = await pool.query(
+      'SELECT shop_id, hours FROM shops ' +
+      'WHERE blocked = FALSE'
+    );
+
+    for (const s of shops.rows) {
+      const parsed = parseShopHours(s.hours);
+      let openH = 8;
+      let openM = 0;
+      if (parsed) {
+        openH = parsed.openH;
+        openM = parsed.openM;
+      }
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const openMinutes = openH * 60 + openM;
+      const diffMin = nowMinutes - openMinutes;
+
+      // Отправляем в течение 15 минут после открытия
+      if (diffMin < 0 || diffMin > 15) continue;
+
+      const sentKey = s.shop_id + ':' + todayKey;
+      if (morningReminderSent[sentKey]) continue;
+
+      const shop = await getShopFromDb(s.shop_id);
+      if (!shop) continue;
+      if (!isSubscriptionActive(shop)) continue;
+
+      const all = await getBouquetsFromDb(s.shop_id);
+      const active = all.filter(isConfirmedRecently);
+      if (active.length < 3) continue;
+
+      const targets = shop.admins.filter(
+        a => a.role === 'owner' || a.onShift
+      );
+      const unique = new Set();
+      const text =
+        '🌸 <b>Доброе утро!</b>\n\n' +
+        'Магазин открылся. Проверьте, что на ' +
+        'витрине — всё актуально?\n\n' +
+        '<i>Это займёт минуту.</i>';
+      const kb = {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{
+              text: '✅ Проверить наличие',
+              callback_data: 'check_start'
+            }],
+            [{
+              text: '⏰ Позже',
+              callback_data: 'morning_later'
+            }]
+          ]
+        }
+      };
+      for (const admin of targets) {
+        if (unique.has(admin.chatId)) continue;
+        unique.add(admin.chatId);
+        bot.sendMessage(admin.chatId, text, kb)
+          .catch(function(){});
+      }
+      morningReminderSent[sentKey] = Date.now();
+      console.log('🌅 Утреннее напоминание: ' + s.shop_id);
+    }
+  } catch (e) {
+    console.error(
+      'Ошибка morningReminder:', e?.message || e
+    );
+  }
+}
+
 // ========== ОТЧЁТ ЗА НЕДЕЛЮ (ПРАВКА 42) ==========
 const weeklyReportSent = {};
 
 async function weeklyReport() {
   try {
     const now = getNowMoscow();
-    // Воскресенье = 0
     if (now.getDay() !== 0) return;
-    // Отправляем в 19:00 (по МСК)
     if (now.getHours() !== 19) return;
 
     const weekAgo = new Date(
@@ -6222,14 +7011,12 @@ async function weeklyReport() {
       if (!shop) continue;
       if (!isSubscriptionActive(shop)) continue;
 
-      // Защита от дубля в ту же неделю
       const lastSent = weeklyReportSent[s.shop_id];
       if (lastSent &&
           (Date.now() - lastSent) < 6 * 24 * 60 * 60 * 1000) {
         continue;
       }
 
-      // Добавлено за неделю
       const addedRes = await pool.query(
         `SELECT COUNT(*) AS cnt FROM bouquets ` +
         `WHERE shop_id = $1 AND created_at >= $2 ` +
@@ -6238,7 +7025,6 @@ async function weeklyReport() {
       );
       const addedCount = parseInt(addedRes.rows[0].cnt) || 0;
 
-      // Клики за неделю (по букетам, обновлённым за неделю)
       const clicksRes = await pool.query(
         `SELECT COALESCE(SUM(clicks), 0) AS total ` +
         `FROM bouquets ` +
@@ -6247,7 +7033,6 @@ async function weeklyReport() {
       );
       const totalClicks = parseInt(clicksRes.rows[0].total) || 0;
 
-      // Топ-3 по кликам
       const topRes = await pool.query(
         `SELECT shop_number, name, clicks ` +
         `FROM bouquets ` +
@@ -6257,7 +7042,6 @@ async function weeklyReport() {
         [s.shop_id]
       );
 
-      // В архиве
       const archRes = await pool.query(
         `SELECT COUNT(*) AS cnt FROM bouquets ` +
         `WHERE shop_id = $1 AND deleted = FALSE ` +
@@ -6266,11 +7050,9 @@ async function weeklyReport() {
       );
       const archCount = parseInt(archRes.rows[0].cnt) || 0;
 
-      // Активных на витрине сейчас
       const all = await getBouquetsFromDb(s.shop_id);
       const activeNow = all.filter(isConfirmedRecently).length;
 
-      // Формируем текст
       let txt = '📊 <b>Итоги недели «';
       txt += esc(shop.displayName) + '»</b>\n\n';
       txt += '📷 Добавлено букетов: <b>' +
@@ -6296,7 +7078,6 @@ async function weeklyReport() {
       txt += '🌿 Продолжайте — витрина работает!\n';
       txt += SITE_URL + '/shop/' + s.shop_id;
 
-      // Отправляем владельцу и всем на смене
       const targetAdmins = shop.admins.filter(
         a => a.role === 'owner' || a.onShift
       );
@@ -6365,7 +7146,8 @@ initDb().then(async () => {
       trialStart: now.toISOString(),
       trialEnd: trialEnd.toISOString(),
       settings: {
-        logo: null, background: null,
+        logo: null,
+        background: { type: 'preset', id: 1 },
         markupPercent: PRESET_SHOP.markupPercent,
         aiEnabled: false
       },
@@ -6393,6 +7175,29 @@ initDb().then(async () => {
     }
   }
 
+  // ПРАВКА 57: меню слэш-команд
+  try {
+    await bot.setMyCommands([
+      {
+        command: 'start',
+        description: 'Открыть главное меню'
+      },
+      {
+        command: 'help',
+        description: 'Помощь и вопросы'
+      },
+      {
+        command: 'cancel',
+        description: 'Отменить действие'
+      }
+    ]);
+    console.log('✅ Меню команд установлено');
+  } catch (e) {
+    console.error(
+      '⚠️ setMyCommands не удалось:', e?.message || e
+    );
+  }
+
   const WEBHOOK_URL = SITE_URL + WEBHOOK_PATH;
   console.log('🔗 Устанавливаем webhook...');
   try {
@@ -6406,9 +7211,9 @@ initDb().then(async () => {
   }
 
   setInterval(checkAndNotify, 10 * 60 * 1000);
+  setInterval(morningReminder, 5 * 60 * 1000);
   setInterval(cleanupExpiredCheckSessions, 5 * 60 * 1000);
   setInterval(cleanupNotifiedClicks, 5 * 60 * 1000);
-  // Проверяем раз в 30 минут — если воскресенье 19:xx
   setInterval(weeklyReport, 30 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
