@@ -117,6 +117,25 @@ const awaitingAdminMessage = {};
 const awaitingAdminBlockReason = {};
 const morningReminderSent = {};
 const visualReminderSent = {};
+const lastNavByChat = {};
+
+const NAV_TTL = 10 * 60 * 1000;
+
+async function sendNav(chatId, text, opts) {
+  try {
+    const prev = lastNavByChat[chatId];
+    if (prev && (Date.now() - prev.ts) < NAV_TTL) {
+      await bot.deleteMessage(chatId, prev.id)
+        .catch(function(){});
+    }
+  } catch (e) { /* ignore */ }
+  const sent = await bot.sendMessage(chatId, text, opts);
+  lastNavByChat[chatId] = {
+    id: sent.message_id,
+    ts: Date.now()
+  };
+  return sent;
+}
 
 const MAX_BUTTONS_PER_SECTION = 20;
 const MAX_LIST_ITEMS = 25;
@@ -274,7 +293,7 @@ function formatPhone(normalized) {
   return normalized;
 }
 
-// ========== ТЕГИ (АВТОРАСПОЗНАВАНИЕ) ==========
+// ========== ТЕГИ ==========
 const TAG_DICTIONARY = [
   { tag: 'розы', stems: ['роз'] },
   { tag: 'пионы', stems: ['пион'] },
@@ -339,7 +358,7 @@ function formatConfirmedAt(confirmedAt) {
   return `${hrs} ${plural(hrs, 'час', 'часа', 'часов')} назад`;
 }
 
-// ========== ВРЕМЯ РАБОТЫ МАГАЗИНА ==========
+// ========== ЧАСЫ РАБОТЫ ==========
 function getNowMoscow() {
   const now = new Date();
   const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
@@ -707,7 +726,7 @@ async function getPhotoUrl(fileRef) {
   } catch (e) {
     return null;
   }
-}// ========== ПРЕСЕТЫ ФОНОВ (ПРАВКА 53) ==========
+}// ========== ПРЕСЕТЫ ФОНОВ ==========
 const PRESET_BACKGROUNDS = [
   {
     id: 1,
@@ -791,6 +810,68 @@ const PRESET_BACKGROUNDS = [
   }
 ];
 
+// ========== ЦВЕТА КНОПКИ (ПРАВКА 60) ==========
+const BUTTON_COLORS = [
+  {
+    id: 'red',
+    name: 'Красный',
+    emoji: '🔴',
+    color: '#e74c3c',
+    dark: '#c0392b'
+  },
+  {
+    id: 'pink',
+    name: 'Розовый',
+    emoji: '🌸',
+    color: '#e91e63',
+    dark: '#ad1457'
+  },
+  {
+    id: 'green',
+    name: 'Зелёный',
+    emoji: '💚',
+    color: '#27ae60',
+    dark: '#1e8449'
+  },
+  {
+    id: 'graphite',
+    name: 'Графит',
+    emoji: '🖤',
+    color: '#2c3e50',
+    dark: '#1a252f'
+  },
+  {
+    id: 'blue',
+    name: 'Синий',
+    emoji: '🔵',
+    color: '#3498db',
+    dark: '#21618c'
+  },
+  {
+    id: 'lavender',
+    name: 'Лаванда',
+    emoji: '🟣',
+    color: '#9b59b6',
+    dark: '#71368a'
+  }
+];
+
+function findColorById(id) {
+  if (!id) return null;
+  return BUTTON_COLORS.find(c => c.id === id) || null;
+}
+
+function getButtonColors(shop) {
+  if (!shop || !shop.settings) {
+    return { color: '#e74c3c', dark: '#c0392b' };
+  }
+  const id = shop.settings.buttonColor;
+  if (!id) return { color: '#e74c3c', dark: '#c0392b' };
+  const found = findColorById(id);
+  if (!found) return { color: '#e74c3c', dark: '#c0392b' };
+  return { color: found.color, dark: found.dark };
+}
+
 function findPresetById(id) {
   const n = parseInt(id, 10);
   if (isNaN(n)) return null;
@@ -845,7 +926,7 @@ function hasAnyLogo(shop) {
   return !!shop.settings.logo;
 }
 
-// ========== ПАРСЕР ЦЕНЫ (ПРАВКА 50) ==========
+// ========== ПАРСЕР ЦЕНЫ ==========
 const CURRENCY_SUFFIXES = [
   'рублей', 'рубля', 'рубль', 'руб',
   'р', '₽'
@@ -970,7 +1051,7 @@ function buildParseErrorText(parseResult, rawCaption) {
   t += '(название, потом цена — последним словом)\n\n';
   t += 'Попробуйте ещё раз или нажмите /cancel';
   return t;
-}// ========== СПРАВКА / HELP (ПРАВКА 55) ==========
+}// ========== СПРАВКА / HELP ==========
 function buildHelpMenu() {
   let t = '📖 <b>Помощь</b>\n\n';
   t += 'Что вы хотите узнать?\n\n';
@@ -1345,9 +1426,7 @@ function buildCheckListKeyboard(session) {
     callback_data: 'check_finish'
   }]);
   return rows;
-}
-
-// ========== АРХИВ ==========
+}// ========== АРХИВ ==========
 async function getArchivedBouquets(shopId) {
   const all = await getBouquetsFromDb(shopId);
   const arch = all.filter(b => {
@@ -1365,7 +1444,7 @@ async function getArchivedBouquets(shopId) {
 async function buildArchiveModeSelection(chatId, shopId) {
   const arch = await getArchivedBouquets(shopId);
   if (arch.length === 0) {
-    return bot.sendMessage(
+    return sendNav(
       chatId,
       '📦 Архив пуст — все букеты на витрине.'
     );
@@ -1374,7 +1453,7 @@ async function buildArchiveModeSelection(chatId, shopId) {
   const word = plural(total, 'букет', 'букета', 'букетов');
   let txt = `📦 <b>Архив</b> · ${total} ${word}\n\n`;
   txt += `<i>Как удобнее смотреть?</i>`;
-  return bot.sendMessage(chatId, txt, {
+  return sendNav(chatId, txt, {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
@@ -1467,13 +1546,13 @@ async function showArchiveList(chatId, session, editMessageId) {
       return;
     } catch (e) { /* fallthrough */ }
   }
-  return bot.sendMessage(chatId, txt, opts);
+  return sendNav(chatId, txt, opts);
 }
 
 async function showArchiveItemCard(chatId, session, itemId) {
   const b = session.bouquets.find(x => x.id === itemId);
   if (!b) {
-    return bot.sendMessage(chatId, '⚠️ Букет не найден в архиве.');
+    return sendNav(chatId, '⚠️ Букет не найден в архиве.');
   }
   const s = getBouquetStatus(b);
   const statusEmoji = s === 'hidden' ? '📥' : '❌';
@@ -1529,7 +1608,7 @@ async function showArchiveItemCard(chatId, session, itemId) {
     } catch (e) { /* фолбэк */ }
   }
   try {
-    await bot.sendMessage(chatId, caption, opts);
+    await sendNav(chatId, caption, opts);
   } catch (e) { /* ignore */ }
 }async function showArchiveCard(chatId, session) {
   if (session.currentIndex >= session.bouquets.length) {
@@ -1630,7 +1709,7 @@ async function showArchiveItemCard(chatId, session, itemId) {
 // ========== СКАЧАТЬ ФОТО ==========
 async function sendBouquetPhotoAsFile(chatId, b) {
   if (!b.photos || b.photos.length === 0) {
-    return bot.sendMessage(chatId, '❌ У букета нет фото.');
+    return sendNav(chatId, '❌ У букета нет фото.');
   }
   const firstPhoto = b.photos[0];
   const num = b.shopNumber || b.id;
@@ -1671,7 +1750,7 @@ async function sendBouquetPhotoAsFile(chatId, b) {
     }
 
     if (!docRef) {
-      return bot.sendMessage(chatId, '❌ Фото недоступно.');
+      return sendNav(chatId, '❌ Фото недоступно.');
     }
 
     await bot.sendDocument(chatId, docRef, { caption }, {
@@ -1680,9 +1759,7 @@ async function sendBouquetPhotoAsFile(chatId, b) {
     });
   } catch (e) {
     console.error('Ошибка отправки фото файлом:', e?.message || e);
-    return bot.sendMessage(chatId,
-      '❌ Не удалось отправить фото.'
-    );
+    return sendNav(chatId, '❌ Не удалось отправить фото.');
   }
 }
 
@@ -1726,7 +1803,7 @@ async function buildMyBouquetsMenu(chatId, shopId) {
   txt += `🟢 На витрине: <b>${active.length}</b> ${cntWord}\n`;
   txt += `📦 В архиве: <b>${arch.length}</b> ${archWord}\n\n`;
   txt += `<i>Что делаем?</i>`;
-  return bot.sendMessage(chatId, txt, {
+  return sendNav(chatId, txt, {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
@@ -1761,7 +1838,7 @@ async function buildSearchPrompt(chatId) {
   txt += `• <code>гортензия</code>\n`;
   txt += `• <code>58</code>\n\n`;
   txt += `<i>Ищем и на витрине, и в архиве.</i>`;
-  return bot.sendMessage(chatId, txt, {
+  return sendNav(chatId, txt, {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [[{
@@ -1802,9 +1879,7 @@ async function searchBouquets(shopId, query) {
   });
 
   return { all, results };
-}
-
-function statusMark(b) {
+}function statusMark(b) {
   if (isConfirmedRecently(b)) return '✅';
   if (b.hidden) return '📥';
   return '❌';
@@ -1813,7 +1888,7 @@ function statusMark(b) {
 async function renderSearchResults(chatId, shopId, query, results) {
   const qEsc = esc(query);
   if (results.length === 0) {
-    return bot.sendMessage(chatId,
+    return sendNav(chatId,
       `🔍 «${qEsc}»\n\n` +
       `Ничего не найдено.\n\n` +
       `Попробуйте другое слово или номер.`,
@@ -1914,7 +1989,7 @@ async function renderSearchResults(chatId, shopId, query, results) {
     results
   };
 
-  return bot.sendMessage(chatId, txt, {
+  return sendNav(chatId, txt, {
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: rows }
   });
@@ -1925,9 +2000,7 @@ async function showActiveBouquetsList(chatId, shopId, page, editMessageId) {
   const all = await getBouquetsFromDb(shopId);
   const active = all.filter(isConfirmedRecently);
   if (active.length === 0) {
-    return bot.sendMessage(chatId,
-      '🌿 На витрине сейчас пусто.'
-    );
+    return sendNav(chatId, '🌿 На витрине сейчас пусто.');
   }
   active.sort((a, b) => a.shopNumber - b.shopNumber);
 
@@ -1997,14 +2070,14 @@ async function showActiveBouquetsList(chatId, shopId, page, editMessageId) {
       return;
     } catch (e) { /* fallthrough */ }
   }
-  return bot.sendMessage(chatId, txt, opts);
+  return sendNav(chatId, txt, opts);
 }
 
 async function showBouquetList(chatId, shopId, action, headerText, page) {
   const currentPage = page || 0;
   const active = await getBouquetsFromDb(shopId);
   if (active.length === 0) {
-    return bot.sendMessage(chatId, '🌿 Нет букетов.');
+    return sendNav(chatId, '🌿 Нет букетов.');
   }
   active.sort((a, b) => a.shopNumber - b.shopNumber);
 
@@ -2062,7 +2135,7 @@ async function showBouquetList(chatId, shopId, action, headerText, page) {
     callback_data: 'mb_back'
   }]);
 
-  return bot.sendMessage(chatId, listTxt, {
+  return sendNav(chatId, listTxt, {
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: kb }
   });
@@ -2566,6 +2639,10 @@ function getSettingsMenu(shop, chatId) {
         { text: '🖼 Фон', callback_data: 'menu_background' }
       ],
       [{
+        text: '🔘 Цвет кнопки',
+        callback_data: 'menu_buttoncolor'
+      }],
+      [{
         text: '📋 Статус магазина',
         callback_data: 'menu_status'
       }],
@@ -2670,6 +2747,13 @@ function buildShopDataMessage(shop) {
     }
   };
 }// ========== HTML-СТРАНИЦЫ ==========
+const MANROPE_LINK =
+  '<link rel="preconnect" href="https://fonts.googleapis.com">' +
+  '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+  '<link href="https://fonts.googleapis.com/css2?' +
+  'family=Manrope:wght@400;600;700;800&display=swap" ' +
+  'rel="stylesheet">';
+
 function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   const isMax = messenger === 'max';
   const messengerName = isMax ? 'MAX' : 'Telegram';
@@ -2691,13 +2775,15 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   html += 'content="width=device-width, initial-scale=1.0">\n';
   html += '<title>Перейти в ' + messengerName;
   html += ' — ' + shopNameEsc + '</title>\n';
+  html += MANROPE_LINK + '\n';
   html += '<style>\n';
-  html += 'body{font-family:-apple-system,sans-serif;';
+  html += 'body{font-family:Manrope,-apple-system,sans-serif;';
   html += 'margin:0;padding:20px;background:#fafaf8;';
   html += 'text-align:center;color:#2c3e50;}\n';
   html += '.container{max-width:500px;margin:0 auto;';
   html += 'padding:12px 0;}\n';
-  html += 'h1{font-size:22px;margin:8px 0 4px;}\n';
+  html += 'h1{font-size:22px;margin:8px 0 4px;';
+  html += 'font-weight:800;}\n';
   html += '.sub{color:#666;font-size:14px;';
   html += 'margin-bottom:16px;}\n';
   html += '.card{background:#fff;border-radius:20px;';
@@ -2709,7 +2795,7 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   html += 'white-space:pre-wrap;word-break:break-word;}\n';
   html += '.btn{display:block;width:100%;padding:16px;';
   html += 'border-radius:30px;font-size:17px;';
-  html += 'font-weight:bold;text-decoration:none;';
+  html += 'font-weight:700;text-decoration:none;';
   html += 'border:none;cursor:pointer;margin-top:12px;';
   html += 'box-sizing:border-box;font-family:inherit;}\n';
   html += '.btn-copy{background:#3498db;color:#fff;}\n';
@@ -2792,6 +2878,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const primaryPhotoUrl = (photoRefs && photoRefs.primary)
     ? absoluteUrl(photoRefs.primary)
     : null;
+  const btnColors = getButtonColors(shop);
 
   let ogTags = '';
   if (primaryPhotoUrl) {
@@ -2838,14 +2925,15 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const btnBase = 'display:block;margin-top:8px;';
   const btnBase2 = 'color:#fff;padding:14px 20px;';
   const btnBase3 = 'border-radius:30px;text-decoration:none;';
-  const btnBase4 = 'font-weight:bold;text-align:center;';
+  const btnBase4 = 'font-weight:700;text-align:center;';
   const btnBase5 = 'font-size:16px;';
   const btnCommon = btnBase + btnBase2 + btnBase3 +
     btnBase4 + btnBase5;
   const btnTg = btnCommon + 'background:#229ED9;';
   const btnWa = btnCommon + 'background:#25D366;';
   const btnMax = btnCommon + 'background:#7B68EE;';
-  const btnCall = btnCommon + 'background:#3498db;';
+  const btnCall = btnCommon + 'background:' +
+    btnColors.color + ';';
 
   const hrefBase = '/go/' + esc(shop.shopId) +
     '/' + bouquet.id + '/';
@@ -2871,7 +2959,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   let priceHtml = '';
   if (oldPrice > bouquet.price) {
     priceHtml += '<span style="text-decoration:line-through;';
-    priceHtml += 'color:#999;font-weight:normal;';
+    priceHtml += 'color:#999;font-weight:400;';
     priceHtml += 'font-size:20px;">';
     priceHtml += oldPrice + ' ₽</span>&nbsp; ';
     priceHtml += bouquet.price + ' ₽';
@@ -2905,8 +2993,9 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += escAttr(title) + '">\n';
   html += '<meta name="twitter:description" content="';
   html += escAttr(description) + '">';
-  html += ogTags + '\n<style>\n';
-  html += 'body{font-family:-apple-system,sans-serif;';
+  html += ogTags + '\n';
+  html += MANROPE_LINK + '\n<style>\n';
+  html += 'body{font-family:Manrope,-apple-system,sans-serif;';
   html += 'margin:0;padding:20px;';
   html += bodyBg;
   html += 'text-align:center;color:#2c3e50;}\n';
@@ -2915,9 +3004,9 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += '.back{display:inline-block;margin-bottom:16px;';
   html += 'color:#888;text-decoration:none;font-size:14px;}\n';
   html += 'h1{font-size:26px;margin:16px 0 8px;';
-  html += 'line-height:1.3;}\n';
-  html += '.price{font-size:30px;font-weight:bold;';
-  html += 'margin:8px 0 20px;color:#2c3e50;}\n';
+  html += 'line-height:1.3;font-weight:800;}\n';
+  html += '.price{font-size:30px;font-weight:800;';
+  html += 'margin:8px 0 20px;color:' + btnColors.color + ';}\n';
   html += '.card{background:#fff;border-radius:22px;';
   html += 'padding:20px;box-shadow:0 6px 24px ';
   html += 'rgba(0,0,0,0.07);margin:20px 0;}\n';
@@ -2972,6 +3061,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
     ' «' + bouquet.name + '» — ' + bouquet.price + ' ₽.';
   const orderTextJs = JSON.stringify(orderText);
   const orderTextEsc = esc(orderText);
+  const btnColors = getButtonColors(shop);
 
   const imgStyle = 'width:100%;max-width:420px;' +
     'border-radius:20px;box-shadow:0 6px 24px ' +
@@ -2991,7 +3081,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   let priceHtml = '';
   if (oldPrice > bouquet.price) {
     priceHtml += '<span style="text-decoration:line-through;';
-    priceHtml += 'color:#999;font-weight:normal;';
+    priceHtml += 'color:#999;font-weight:400;';
     priceHtml += 'font-size:20px;">';
     priceHtml += oldPrice + ' ₽</span>&nbsp; ';
     priceHtml += bouquet.price + ' ₽';
@@ -3002,7 +3092,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   const btnBase = 'display:flex;align-items:center;';
   const btnBase2 = 'justify-content:center;gap:8px;width:100%;';
   const btnBase3 = 'padding:16px;border-radius:30px;';
-  const btnBase4 = 'font-size:17px;font-weight:bold;';
+  const btnBase4 = 'font-size:17px;font-weight:700;';
   const btnBase5 = 'text-decoration:none;border:none;';
   const btnBase6 = 'cursor:pointer;margin-top:10px;';
   const btnBase7 = 'box-sizing:border-box;font-family:inherit;';
@@ -3012,7 +3102,8 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   const btnWa = btnCommon + 'background:#25D366;';
   const btnTg = btnCommon + 'background:#229ED9;';
   const btnMax = btnCommon + 'background:#7B68EE;';
-  const btnCall = btnCommon + 'background:#3498db;';
+  const btnCall = btnCommon + 'background:' +
+    btnColors.color + ';';
 
   const hrefBase = '/go/' + esc(shop.shopId) +
     '/' + bouquet.id + '/';
@@ -3045,8 +3136,8 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   html += '<meta name="viewport" ';
   html += 'content="width=device-width, initial-scale=1.0">\n';
   html += '<title>Связаться — ' + bouquetNameEsc + '</title>\n';
-  html += '<style>\n';
-  html += 'body{font-family:-apple-system,sans-serif;';
+  html += MANROPE_LINK + '\n<style>\n';
+  html += 'body{font-family:Manrope,-apple-system,sans-serif;';
   html += 'margin:0;padding:20px;';
   html += bodyBg;
   html += 'text-align:center;color:#2c3e50;}\n';
@@ -3055,9 +3146,9 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   html += '.back{display:inline-block;margin-bottom:16px;';
   html += 'color:#888;text-decoration:none;font-size:14px;}\n';
   html += 'h1{font-size:22px;margin:14px 0 6px;';
-  html += 'line-height:1.3;}\n';
-  html += '.price{font-size:26px;font-weight:bold;';
-  html += 'margin:6px 0 16px;color:#2c3e50;}\n';
+  html += 'line-height:1.3;font-weight:800;}\n';
+  html += '.price{font-size:26px;font-weight:800;';
+  html += 'margin:6px 0 16px;color:' + btnColors.color + ';}\n';
   html += '.card{background:#fff;border-radius:22px;';
   html += 'padding:20px;box-shadow:0 6px 24px ';
   html += 'rgba(0,0,0,0.07);margin:16px 0;}\n';
@@ -3067,7 +3158,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   html += 'white-space:pre-wrap;word-break:break-word;}\n';
   html += '.copy{display:block;width:100%;padding:12px;';
   html += 'border-radius:24px;font-size:15px;';
-  html += 'font-weight:bold;background:#e8e8e8;color:#333;';
+  html += 'font-weight:700;background:#e8e8e8;color:#333;';
   html += 'border:none;cursor:pointer;font-family:inherit;}\n';
   html += '.copy.copied{background:#27ae60;color:#fff;}\n';
   html += '</style>\n</head>\n<body>\n';
@@ -3078,7 +3169,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   html += '<h1>' + bouquetNameEsc + '</h1>\n';
   html += '<div class="price">' + priceHtml + '</div>\n\n';
   html += '<div class="card">\n';
-  html += '<div style="font-size:16px;font-weight:bold;';
+  html += '<div style="font-size:16px;font-weight:700;';
   html += 'color:#2c3e50;margin-bottom:12px;">';
   html += 'Как связаться с флористом?</div>\n';
   html += contactsHTML || (noContacts + noContacts2);
@@ -3445,7 +3536,7 @@ async function startRegistration(chatId, userName, userUsername) {
   const existing = userToShop[chatId] ||
     await findUserShop(chatId);
   if (existing) {
-    return bot.sendMessage(
+    return sendNav(
       chatId, '❌ Уже привязаны к магазину.'
     );
   }
@@ -3586,8 +3677,11 @@ async function regFinish(chatId, state) {
       trialStart: now.toISOString(),
       trialEnd: trialEnd.toISOString(),
       settings: {
-        logo: null, background: null,
-        markupPercent: 20, aiEnabled: false
+        logo: null,
+        background: { type: 'preset', id: 1 },
+        buttonColor: 'red',
+        markupPercent: 20,
+        aiEnabled: false
       },
       stats: {
         views: 0, orders: 0, calls: 0,
@@ -3608,7 +3702,6 @@ async function regFinish(chatId, state) {
       reply_markup: getMainKeyboard(shop, chatId)
     });
 
-    // ПРАВКА 54: напоминание про лого и фон
     setTimeout(function() {
       sendVisualReminder(chatId, d.shopId);
     }, 2500);
@@ -3644,7 +3737,7 @@ async function regFinish(chatId, state) {
   }
 }
 
-// ========== НАПОМИНАНИЕ ПРО ЛОГО+ФОН (ПРАВКА 54) ==========
+// ========== НАПОМИНАНИЕ ПРО ЛОГО+ФОН+ЦВЕТ ==========
 async function sendVisualReminder(chatId, shopId) {
   try {
     const shop = await getShopFromDb(shopId);
@@ -3652,16 +3745,21 @@ async function sendVisualReminder(chatId, shopId) {
     if (hasAnyLogo(shop) && hasAnyBackground(shop)) return;
 
     let missing = [];
-    if (!hasAnyLogo(shop)) missing.push('логотип');
     if (!hasAnyBackground(shop)) missing.push('фон');
+    if (!hasAnyLogo(shop)) missing.push('логотип');
 
     let txt = '🎨 <b>Последний штрих</b>\n\n';
     txt += 'Витрина работает, но пока выглядит ';
     txt += 'просто.\n\n';
-    txt += 'Чтобы она выглядела законченно — ';
-    txt += 'добавьте ' + missing.join(' и ') + '.\n\n';
-    txt += 'С готовыми фонами это секунда — ';
-    txt += 'просто выберете из 10 вариантов.\n\n';
+    txt += 'Три вещи — и она станет похожа на ';
+    txt += 'фирменный магазин:\n\n';
+    txt += '1. 🖼 Фон — 10 готовых, в 1 тап\n';
+    txt += '2. 🎨 Логотип — ваша вывеска\n';
+    txt += '3. 🔘 Цвет кнопки «Связаться»\n\n';
+    if (missing.length > 0) {
+      txt += '<i>Сейчас не хватает: ' +
+        missing.join(' и ') + '.</i>\n\n';
+    }
     txt += '<i>Можно сделать позже — витрина уже работает.</i>';
 
     await bot.sendMessage(chatId, txt, {
@@ -4205,18 +4303,7 @@ bot.on('callback_query', async (q) => {
   }
 
   // ========== HELP ==========
-  if (data === 'help_menu') {
-    const menu = buildHelpMenu();
-    try {
-      await bot.editMessageText(menu.text, {
-        chat_id: chatId,
-        message_id: q.message.message_id,
-        ...menu.options
-      });
-    } catch (e) { /* ignore */ }
-    return;
-  }
-  if (data === 'help_back') {
+  if (data === 'help_menu' || data === 'help_back') {
     const menu = buildHelpMenu();
     try {
       await bot.editMessageText(menu.text, {
@@ -4426,7 +4513,7 @@ bot.on('callback_query', async (q) => {
     if (!session) {
       bot.deleteMessage(chatId, q.message.message_id)
         .catch(function(){});
-      return bot.sendMessage(chatId,
+      return sendNav(chatId,
         '⚠️ Поиск устарел. Откройте «✏️ Мои букеты» заново.'
       );
     }
@@ -4468,7 +4555,7 @@ bot.on('callback_query', async (q) => {
     if (!id || isNaN(id)) return;
     const b = await getBouquetById(shopId, id);
     if (!b) {
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     return showBouquetCard(chatId, b, shopId);
   }
@@ -4479,7 +4566,7 @@ bot.on('callback_query', async (q) => {
     if (!id || isNaN(id)) return;
     const b = await getBouquetById(shopId, id);
     if (!b) {
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     return sendBouquetPhotoAsFile(chatId, b);
   }
@@ -4490,7 +4577,7 @@ bot.on('callback_query', async (q) => {
     if (!id || isNaN(id)) return;
     const b = await getBouquetById(shopId, id);
     if (!b) {
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     await updateBouquetField(id, 'hidden', true);
     let t = '📥 Букет <b>№' + b.shopNumber + '</b> «';
@@ -4508,7 +4595,7 @@ bot.on('callback_query', async (q) => {
     if (!id || isNaN(id)) return;
     const b = await getBouquetById(shopId, id);
     if (!b) {
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     await updateBouquetFields(id, {
       hidden: false,
@@ -4627,7 +4714,7 @@ bot.on('callback_query', async (q) => {
     if (!id || isNaN(id)) return;
     const b = await getBouquetById(shopId, id);
     if (!b) {
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     const session = archiveSessions[chatId];
     if (session) {
@@ -4771,9 +4858,7 @@ bot.on('callback_query', async (q) => {
     return showBouquetList(
       chatId, shopId, action, headers[action] || '', page
     );
-  }
-
-  // ========== МЕНЮ / НАСТРОЙКИ ==========
+  }// ========== МЕНЮ / НАСТРОЙКИ ==========
   if (data === 'noop') return;
   if (data === 'menu_close') {
     delete checkSessions[chatId];
@@ -5195,7 +5280,7 @@ bot.on('callback_query', async (q) => {
     });
   }
 
-  // ПРАВКА 53: меню фона — теперь с пресетами
+  // ========== ФОН ==========
   if (data === 'menu_background') {
     if (!owner) return;
     let curText = '🖼 Фон не установлен.';
@@ -5326,15 +5411,115 @@ bot.on('callback_query', async (q) => {
     return;
   }
 
-  if (data === 'setbg_now') {
+  // ========== ЦВЕТ КНОПКИ ==========
+  if (data === 'menu_buttoncolor') {
     if (!owner) return;
-    awaitingUpload[chatId] = 'background';
-    return bot.sendMessage(chatId, '📷 Отправьте фото фона.');
+    const current = shop.settings.buttonColor || 'red';
+    const curObj = findColorById(current) ||
+      findColorById('red');
+    let txt = '🔘 <b>Цвет кнопки «Связаться»</b>\n\n';
+    txt += 'Сейчас: ' + curObj.emoji + ' ' +
+      curObj.name + '\n\n';
+    txt += 'Выберите под фирменный стиль магазина.';
+    const rows = [];
+    for (let i = 0; i < BUTTON_COLORS.length; i += 2) {
+      const row = [];
+      const c1 = BUTTON_COLORS[i];
+      row.push({
+        text: c1.emoji + ' ' + c1.name,
+        callback_data: 'btncol_view_' + c1.id
+      });
+      if (i + 1 < BUTTON_COLORS.length) {
+        const c2 = BUTTON_COLORS[i + 1];
+        row.push({
+          text: c2.emoji + ' ' + c2.name,
+          callback_data: 'btncol_view_' + c2.id
+        });
+      }
+      rows.push(row);
+    }
+    rows.push([{
+      text: '↩️ Назад',
+      callback_data: 'menu_back'
+    }]);
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: rows }
+      });
+    } catch (e) { /* ignore */ }
+    return;
   }
+
+  if (data.startsWith('btncol_view_')) {
+    if (!owner) return;
+    const cid = data.replace('btncol_view_', '');
+    const col = findColorById(cid);
+    if (!col) return;
+    let txt = col.emoji + ' <b>' + col.name + '</b>\n\n';
+    txt += 'Так будет выглядеть кнопка на витрине:\n\n';
+    txt += 'Нажмите «Применить» — и цвет появится ' +
+      'на всех карточках.';
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{
+              text: '✅ Применить',
+              callback_data: 'btncol_apply_' + cid
+            }],
+            [{
+              text: '⬅️ Выбрать другой',
+              callback_data: 'menu_buttoncolor'
+            }]
+          ]
+        }
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+  if (data.startsWith('btncol_apply_')) {
+    if (!owner) return;
+    const cid = data.replace('btncol_apply_', '');
+    const col = findColorById(cid);
+    if (!col) return;
+    shop.settings.buttonColor = cid;
+    await saveShopSettings(shopId, shop.settings);
+    let txt = '✅ Цвет кнопки обновлён!\n\n';
+    txt += col.emoji + ' ' + col.name + '\n\n';
+    txt += 'Откройте витрину — на карточках ' +
+      'кнопка теперь этого цвета.';
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{
+            text: '🏠 Готово',
+            callback_data: 'menu_close'
+          }]]
+        }
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
   if (data === 'setlogo_now') {
     if (!owner) return;
     awaitingUpload[chatId] = 'logo';
     return bot.sendMessage(chatId, '📷 Отправьте фото логотипа.');
+  }
+  if (data === 'setbg_now') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'background';
+    return bot.sendMessage(chatId, '📷 Отправьте фото фона.');
   }
   if (data === 'resetlogo_now') {
     if (!owner) return;
@@ -5452,14 +5637,14 @@ bot.on('callback_query', async (q) => {
   if (data.startsWith('check_show_')) {
     const session = checkSessions[chatId];
     if (!session) {
-      return bot.sendMessage(chatId,
+      return sendNav(chatId,
         '⚠️ Сессия проверки прервана. Начните заново.'
       );
     }
     const id = parseInt(data.split('_')[2]);
     const b = session.bouquets.find(x => x.id === id);
     if (!b) {
-      return bot.sendMessage(chatId,
+      return sendNav(chatId,
         '⚠️ Букет больше не в списке.'
       );
     }
@@ -5492,7 +5677,7 @@ bot.on('callback_query', async (q) => {
   if (data === 'check_back') {
     bot.deleteMessage(chatId, q.message.message_id)
       .catch(function(){});
-    return bot.sendMessage(chatId,
+    return sendNav(chatId,
       '👆 Вернуться к списку — выше. ' +
       'Нажмите на любой букет.'
     );
@@ -5501,7 +5686,7 @@ bot.on('callback_query', async (q) => {
   if (data.startsWith('check_yes_')) {
     const session = checkSessions[chatId];
     if (!session) {
-      return bot.sendMessage(chatId,
+      return sendNav(chatId,
         '⚠️ Сессия проверки прервана. Начните заново.'
       );
     }
@@ -5526,7 +5711,7 @@ bot.on('callback_query', async (q) => {
   if (data.startsWith('check_no_')) {
     const session = checkSessions[chatId];
     if (!session) {
-      return bot.sendMessage(chatId,
+      return sendNav(chatId,
         '⚠️ Сессия проверки прервана. Начните заново.'
       );
     }
@@ -5572,7 +5757,7 @@ bot.on('callback_query', async (q) => {
     const id = parseInt(data.split('_')[1]);
     const b = await getBouquetById(shopId, id);
     if (!b) {
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     const btns = buildBouquetActionButtons(
       b,
@@ -5615,7 +5800,7 @@ bot.on('callback_query', async (q) => {
     const id = parseInt(data.split('_')[1]);
     const b = await getBouquetById(shopId, id);
     if (!b) {
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     const btns = buildBouquetActionButtons(
       b,
@@ -5680,7 +5865,7 @@ bot.on('callback_query', async (q) => {
       reminded: false
     });
     if (!b) {
-      return bot.sendMessage(chatId, '🌿 Продлено.');
+      return sendNav(chatId, '🌿 Продлено.');
     }
     let t = '🌿 <b>Продлено!</b>\n\n';
     t += 'Букет <b>№' + b.shopNumber + '</b> «';
@@ -5698,7 +5883,7 @@ bot.on('callback_query', async (q) => {
       reminded: false
     });
     const b = await getBouquetById(shopId, id);
-    return bot.sendMessage(chatId,
+    return sendNav(chatId,
       '✅ Букет №' + (b ? b.shopNumber : id) +
       ' подтверждён.'
     );
@@ -5707,7 +5892,7 @@ bot.on('callback_query', async (q) => {
     const id = parseInt(data.split('_')[1]);
     await updateBouquetField(id, 'hidden', true);
     const b = await getBouquetById(shopId, id);
-    return bot.sendMessage(chatId,
+    return sendNav(chatId,
       '📥 Букет №' + (b ? b.shopNumber : id) + ' убран.'
     );
   }
@@ -5719,7 +5904,7 @@ bot.on('callback_query', async (q) => {
       reminded: false
     });
     const b = await getBouquetById(shopId, id);
-    return bot.sendMessage(chatId,
+    return sendNav(chatId,
       '✅ Букет №' + (b ? b.shopNumber : id) +
       ' возвращён на витрину.'
     );
@@ -5765,9 +5950,7 @@ async function showBouquetCard(chatId, b, shopId) {
   return sendBouquetPreview(
     chatId, b, '📷 <b>Карточка букета</b>', rows
   );
-}
-
-// ========== MESSAGE ==========
+}// ========== MESSAGE ==========
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
@@ -5854,7 +6037,7 @@ bot.on('message', async (msg) => {
     delete awaitingSearch[chatId];
     const query = text.trim();
     if (!query) {
-      return bot.sendMessage(chatId,
+      return sendNav(chatId,
         '❌ Пустой запрос. Напишите слово или номер.'
       );
     }
@@ -5870,7 +6053,7 @@ bot.on('message', async (msg) => {
     if (!shop) { delete awaitingInput[chatId]; return; }
     if (!isOwner(shop, chatId)) {
       delete awaitingInput[chatId];
-      return bot.sendMessage(chatId, '🚫 Только владелец.');
+      return sendNav(chatId, '🚫 Только владелец.');
     }
 
     let value = text.trim();
@@ -5940,7 +6123,7 @@ bot.on('message', async (msg) => {
     );
     if (!b) {
       delete awaitingPrice[chatId];
-      return bot.sendMessage(chatId, '❌ Букет не найден.');
+      return sendNav(chatId, '❌ Букет не найден.');
     }
     const newPrice = parseFloat(
       text.replace(/[^\d.,]/g, '').replace(',', '.')
@@ -6015,14 +6198,14 @@ bot.on('message', async (msg) => {
 
   // ========== ТЕКСТОВЫЕ КНОПКИ ==========
   if (text === '📷 Добавить букет') {
-    return bot.sendMessage(chatId, ADD_BOUQUET_HINT, {
+    return sendNav(chatId, ADD_BOUQUET_HINT, {
       parse_mode: 'HTML',
       reply_markup: getMainKeyboard(shop, chatId)
     });
   }
   if (text === '✅ Что в наличии?') {
     if (!isSubscriptionActive(shop)) {
-      return bot.sendMessage(chatId, '❌ Подписка истекла.');
+      return sendNav(chatId, '❌ Подписка истекла.');
     }
     const existing = checkSessions[chatId];
     if (existing &&
@@ -6033,7 +6216,7 @@ bot.on('message', async (msg) => {
       const kb = {
         inline_keyboard: buildCheckListKeyboard(existing)
       };
-      const sent = await bot.sendMessage(chatId, t, {
+      const sent = await sendNav(chatId, t, {
         parse_mode: 'HTML',
         reply_markup: kb
       });
@@ -6042,7 +6225,7 @@ bot.on('message', async (msg) => {
     }
     const { text: t, options } =
       await buildCheckStartScreen(shopId);
-    return bot.sendMessage(chatId, t, options);
+    return sendNav(chatId, t, options);
   }
   if (text === '✏️ Мои букеты') {
     return buildMyBouquetsMenu(chatId, shopId);
@@ -6059,7 +6242,7 @@ bot.on('message', async (msg) => {
     });
   }
   if (text === '⚙️ Настройки' || text === '⚙️ Меню') {
-    return bot.sendMessage(
+    return sendNav(
       chatId, '⚙️ Настройки магазина:',
       getSettingsMenu(shop, chatId)
     );
@@ -6366,9 +6549,7 @@ bot.on('message', async (msg) => {
     return regSkipCurrentStep(chatId, state);
   }
   return regSaveValue(chatId, state, text);
-});
-
-// ========== ВИТРИНА ==========
+});// ========== ВИТРИНА ==========
 app.get('/shop/:shopId', async (req, res) => {
   try {
     const shop = await getShopFromDb(req.params.shopId);
@@ -6408,14 +6589,24 @@ app.get('/shop/:shopId', async (req, res) => {
       }
     }
 
+    const activeBeforePrice = [...active];
+
     if (priceFilter === 'low') {
       active = active.filter(b => b.price < 3000);
     } else if (priceFilter === 'mid') {
       active = active.filter(
         b => b.price >= 3000 && b.price <= 6000
       );
-    } else if (priceFilter === 'high') {
-      active = active.filter(b => b.price > 6000);
+    } else if (priceFilter === 'mid2') {
+      active = active.filter(
+        b => b.price > 6000 && b.price <= 10000
+      );
+    } else if (priceFilter === 'high1') {
+      active = active.filter(
+        b => b.price > 10000 && b.price <= 20000
+      );
+    } else if (priceFilter === 'high2') {
+      active = active.filter(b => b.price > 20000);
     }
 
     if (tagFilter !== 'all') {
@@ -6466,7 +6657,7 @@ app.get('/shop/:shopId', async (req, res) => {
     const pillBase2 = 'padding:8px 16px;margin:4px;';
     const pillBase3 = 'border-radius:20px;';
     const pillBase4 = 'text-decoration:none;';
-    const pillBase5 = 'font-size:14px;font-weight:bold;';
+    const pillBase5 = 'font-size:14px;font-weight:700;';
     const pillCommon = pillBase + pillBase2 + pillBase3 +
       pillBase4 + pillBase5;
     const pillActive = 'background:#e74c3c;color:#fff;';
@@ -6507,7 +6698,7 @@ app.get('/shop/:shopId', async (req, res) => {
       const tagBase2 = 'padding:6px 12px;margin:4px;';
       const tagBase3 = 'border-radius:16px;';
       const tagBase4 = 'text-decoration:none;';
-      const tagBase5 = 'font-size:13px;font-weight:bold;';
+      const tagBase5 = 'font-size:13px;font-weight:700;';
       const tagCommon = tagBase + tagBase2 +
         tagBase3 + tagBase4 + tagBase5;
       const tagActive = 'background:#27ae60;color:#fff;';
@@ -6531,17 +6722,44 @@ app.get('/shop/:shopId', async (req, res) => {
         tagsHTML + '</div>';
     }
 
+    const pricesAll = activeBeforePrice.map(b => b.price);
+    const hasLow = pricesAll.some(p => p < 3000);
+    const hasMid = pricesAll.some(
+      p => p >= 3000 && p <= 6000
+    );
+    const hasMid2 = pricesAll.some(
+      p => p > 6000 && p <= 10000
+    );
+    const hasHigh1 = pricesAll.some(
+      p => p > 10000 && p <= 20000
+    );
+    const hasHigh2 = pricesAll.some(p => p > 20000);
+
     let filtersHTML = tagPillsHTML;
     filtersHTML += '<div style="margin:10px 0 6px;">';
     filtersHTML += pill('Все', 'all');
-    filtersHTML += pill('До 3000 ₽', 'low');
-    filtersHTML += pill('3000–6000 ₽', 'mid');
-    filtersHTML += pill('От 6000 ₽', 'high');
+    if (hasLow) {
+      filtersHTML += pill('До 3000 ₽', 'low');
+    }
+    if (hasMid) {
+      filtersHTML += pill('3000–6000 ₽', 'mid');
+    }
+    if (hasMid2) {
+      filtersHTML += pill('6000–10000 ₽', 'mid2');
+    }
+    if (hasHigh1) {
+      filtersHTML += pill('10000–20000 ₽', 'high1');
+    }
+    if (hasHigh2) {
+      filtersHTML += pill('От 20000 ₽', 'high2');
+    }
     filtersHTML += '</div>';
     filtersHTML += '<div style="margin-bottom:20px;">';
     filtersHTML += sortPill('↓ Сначала дешевле', 'asc');
     filtersHTML += sortPill('↑ Сначала дороже', 'desc');
     filtersHTML += '</div>';
+
+    const btnColors = getButtonColors(shop);
 
     const useTwoColumns =
       active.length > TWO_COLUMNS_THRESHOLD;
@@ -6615,7 +6833,6 @@ app.get('/shop/:shopId', async (req, res) => {
         const priceFS = useTwoColumns ? '19px' : '24px';
         const oldFS = useTwoColumns ? '14px' : '18px';
         const cardP = useTwoColumns ? '12px' : '16px';
-        const cardM = useTwoColumns ? '0' : '0';
 
         const confirmedLine =
           formatConfirmedAt(b.confirmedAt);
@@ -6627,9 +6844,14 @@ app.get('/shop/:shopId', async (req, res) => {
             esc(confirmedLine) + '</div>'
           : '';
 
+        const btnGrad = 'linear-gradient(135deg,' +
+          btnColors.color + ',' + btnColors.dark + ')';
+        const btnShadow = '0 4px 14px ' +
+          btnColors.color + '55';
+
         let card = '<div class="card" style="border:none;';
         card += 'border-radius:24px;padding:' + cardP + ';';
-        card += 'margin:' + cardM + ';' + cardExtra;
+        card += 'margin:0;' + cardExtra;
         card += 'background:#fff;';
         card += 'box-shadow:0 4px 20px rgba(0,0,0,0.06);';
         card += 'text-align:center;position:relative;';
@@ -6653,10 +6875,10 @@ app.get('/shop/:shopId', async (req, res) => {
         card += 'font-size:' + titleFS + ';';
         card += 'line-height:1.3;word-wrap:break-word;';
         card += 'overflow-wrap:break-word;';
-        card += 'font-weight:600;color:#2c3e50;">';
+        card += 'font-weight:700;color:#2c3e50;">';
         card += esc(b.name) + '</h3>';
         card += '<p style="font-size:' + priceFS + ';';
-        card += 'font-weight:700;color:#e74c3c;';
+        card += 'font-weight:800;color:' + btnColors.color + ';';
         card += 'margin:6px 0 4px;letter-spacing:-0.5px;">';
         if (oldPrice > b.price) {
           card += '<span style="';
@@ -6672,13 +6894,12 @@ app.get('/shop/:shopId', async (req, res) => {
         card += '<a href="' + contactUrl + '" style="';
         card += 'display:block;max-width:240px;';
         card += 'margin:8px auto 0;';
-        card += 'background:linear-gradient(135deg,';
-        card += '#e74c3c,#c0392b);color:#fff;';
+        card += 'background:' + btnGrad + ';color:#fff;';
         card += 'padding:14px 18px;';
         card += 'border-radius:30px;text-decoration:none;';
-        card += 'font-weight:600;text-align:center;';
+        card += 'font-weight:700;text-align:center;';
         card += 'font-size:15px;';
-        card += 'box-shadow:0 4px 14px rgba(231,76,60,0.35);">';
+        card += 'box-shadow:' + btnShadow + ';">';
         card += '📞 Связаться</a>';
         card += '<div style="margin-top:8px;">';
         card += '<a href="#" onclick=\'shareBouquet' +
@@ -6711,7 +6932,7 @@ app.get('/shop/:shopId', async (req, res) => {
     );
     const countLine = totalActiveCount > 0
       ? '<div style="font-size:13px;color:#27ae60;' +
-        'margin-top:6px;font-weight:600;">🌸 ' +
+        'margin-top:6px;font-weight:700;">🌸 ' +
         totalActiveCount + ' ' + cntWord +
         ' в наличии</div>'
       : '';
@@ -6724,7 +6945,7 @@ app.get('/shop/:shopId', async (req, res) => {
     titleHTML += 'backdrop-filter:blur(8px);">';
     titleHTML += '<h1 style="color:#2c3e50;';
     titleHTML += 'margin:0 0 8px;font-size:28px;';
-    titleHTML += 'font-weight:700;letter-spacing:-0.5px;">';
+    titleHTML += 'font-weight:800;letter-spacing:-0.5px;">';
     titleHTML += esc(shop.displayName) + '</h1>';
     if (shop.address || shop.hours) {
       titleHTML += '<div style="color:#666;';
@@ -6748,8 +6969,10 @@ app.get('/shop/:shopId', async (req, res) => {
     html += 'initial-scale=1.0">';
     html += '<title>' + esc(shop.displayName) +
       ' — Flowind</title>';
+    html += MANROPE_LINK;
     html += '<style>';
-    html += 'body{font-family:-apple-system,sans-serif;';
+    html += 'body{font-family:Manrope,';
+    html += '-apple-system,sans-serif;';
     html += 'margin:0;padding:24px 16px;';
     html += 'text-align:center;' + bodyBg + '}\n';
     html += 'h1{color:#2c3e50;}\n';
@@ -6783,7 +7006,8 @@ app.get('/shop/:shopId', async (req, res) => {
     html += 'style="display:none;position:fixed;inset:0;';
     html += 'background:rgba(0,0,0,0.92);z-index:9999;';
     html += 'align-items:center;justify-content:center;';
-    html += 'padding:20px;box-sizing:border-box;">';
+    html += 'padding:20px;box-sizing:border-box;';
+    html += 'touch-action:none;">';
     html += '<img id="lightbox-img" src="" alt="" style="';
     html += 'max-width:100%;max-height:100%;';
     html += 'border-radius:10px;';
@@ -6797,6 +7021,10 @@ app.get('/shop/:shopId', async (req, res) => {
     html += 'box-shadow:0 2px 8px rgba(0,0,0,0.4);">';
     html += '✕</button></div>';
     html += '<script>\n';
+    html += 'var lbImages = [];\n';
+    html += 'var lbIndex = 0;\n';
+    html += 'var touchStartX = 0;\n';
+    html += 'var touchStartY = 0;\n';
     html += 'function shareBouquet(e, url, name, price) {\n';
     html += '  if (e) { e.preventDefault(); }\n';
     html += '  var text = name + " — " + price + " ₽";\n';
@@ -6814,11 +7042,13 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '  } else { ';
     html += 'prompt("Скопируйте ссылку:", url); }\n';
     html += '}\n';
-    html += 'function openLightbox(src) {\n';
+    html += 'function openLightbox(images, index) {\n';
+    html += '  lbImages = images;\n';
+    html += '  lbIndex = index;\n';
     html += '  var lb = document.getElementById("lightbox");\n';
     html += '  var img = ';
     html += 'document.getElementById("lightbox-img");\n';
-    html += '  img.src = src;\n';
+    html += '  img.src = lbImages[lbIndex];\n';
     html += '  lb.style.display = "flex";\n';
     html += '  document.body.style.overflow = "hidden";\n';
     html += '}\n';
@@ -6829,6 +7059,21 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '.src = "";\n';
     html += '  document.body.style.overflow = "";\n';
     html += '}\n';
+    html += 'function lightboxNext() {\n';
+    html += '  if (lbImages.length < 2) return;\n';
+    html += '  lbIndex = (lbIndex + 1) % lbImages.length;\n';
+    html += '  var img = ';
+    html += 'document.getElementById("lightbox-img");\n';
+    html += '  img.src = lbImages[lbIndex];\n';
+    html += '}\n';
+    html += 'function lightboxPrev() {\n';
+    html += '  if (lbImages.length < 2) return;\n';
+    html += '  lbIndex = (lbIndex - 1 + lbImages.length) ';
+    html += '% lbImages.length;\n';
+    html += '  var img = ';
+    html += 'document.getElementById("lightbox-img");\n';
+    html += '  img.src = lbImages[lbIndex];\n';
+    html += '}\n';
     html += 'document.addEventListener("click", ';
     html += 'function(e) {\n';
     html += '  var img = ';
@@ -6836,12 +7081,44 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '  if (!img) return;\n';
     html += '  e.preventDefault();\n';
     html += '  e.stopPropagation();\n';
-    html += '  openLightbox(img.src);\n';
+    html += '  var card = img.closest(".card");\n';
+    html += '  if (!card) { openLightbox([img.src], 0); ';
+    html += 'return; }\n';
+    html += '  var imgs = card.querySelectorAll("img");\n';
+    html += '  var arr = [];\n';
+    html += '  var idx = 0;\n';
+    html += '  for (var i = 0; i < imgs.length; i++) {\n';
+    html += '    arr.push(imgs[i].src);\n';
+    html += '    if (imgs[i] === img) idx = i;\n';
+    html += '  }\n';
+    html += '  if (arr.length === 0) { arr = [img.src]; idx = 0; }\n';
+    html += '  openLightbox(arr, idx);\n';
     html += '});\n';
     html += 'document.addEventListener("keydown", ';
     html += 'function(e) {\n';
+    html += '  var lb = document.getElementById("lightbox");\n';
+    html += '  if (!lb || lb.style.display !== "flex") return;\n';
     html += '  if (e.key === "Escape") closeLightbox();\n';
+    html += '  if (e.key === "ArrowRight") lightboxNext();\n';
+    html += '  if (e.key === "ArrowLeft") lightboxPrev();\n';
     html += '});\n';
+    html += 'var lbEl = document.getElementById("lightbox");\n';
+    html += 'lbEl.addEventListener("touchstart", ';
+    html += 'function(e) {\n';
+    html += '  if (!e.touches || e.touches.length === 0) return;\n';
+    html += '  touchStartX = e.touches[0].clientX;\n';
+    html += '  touchStartY = e.touches[0].clientY;\n';
+    html += '}, { passive: true });\n';
+    html += 'lbEl.addEventListener("touchend", ';
+    html += 'function(e) {\n';
+    html += '  if (!e.changedTouches || ';
+    html += 'e.changedTouches.length === 0) return;\n';
+    html += '  var dx = e.changedTouches[0].clientX - touchStartX;\n';
+    html += '  var dy = e.changedTouches[0].clientY - touchStartY;\n';
+    html += '  if (Math.abs(dx) < 40) return;\n';
+    html += '  if (Math.abs(dx) < Math.abs(dy)) return;\n';
+    html += '  if (dx < 0) lightboxNext(); else lightboxPrev();\n';
+    html += '}, { passive: true });\n';
     html += 'if ("IntersectionObserver" in window) {\n';
     html += '  var obs = new IntersectionObserver(';
     html += 'function(entries){\n';
@@ -6912,7 +7189,7 @@ async function checkAndNotify() {
   }
 }
 
-// ========== УТРЕННЕЕ НАПОМИНАНИЕ (ПРАВКА 52) ==========
+// ========== УТРЕННЕЕ НАПОМИНАНИЕ (с проверкой 12ч) ==========
 async function morningReminder() {
   try {
     const now = getNowMoscow();
@@ -6935,7 +7212,6 @@ async function morningReminder() {
       const openMinutes = openH * 60 + openM;
       const diffMin = nowMinutes - openMinutes;
 
-      // Отправляем в течение 15 минут после открытия
       if (diffMin < 0 || diffMin > 15) continue;
 
       const sentKey = s.shop_id + ':' + todayKey;
@@ -6948,6 +7224,23 @@ async function morningReminder() {
       const all = await getBouquetsFromDb(s.shop_id);
       const active = all.filter(isConfirmedRecently);
       if (active.length < 3) continue;
+
+      // ПРАВКА 59: не напоминать, если проверяли <12ч
+      let lastConfirmMs = 0;
+      for (const b of all) {
+        if (b.confirmedAt) {
+          const t = new Date(b.confirmedAt).getTime();
+          if (t > lastConfirmMs) lastConfirmMs = t;
+        }
+      }
+      if (lastConfirmMs > 0) {
+        const hoursSince =
+          (Date.now() - lastConfirmMs) / 3600000;
+        if (hoursSince < 12) {
+          morningReminderSent[sentKey] = Date.now();
+          continue;
+        }
+      }
 
       const targets = shop.admins.filter(
         a => a.role === 'owner' || a.onShift
@@ -6989,7 +7282,7 @@ async function morningReminder() {
   }
 }
 
-// ========== ОТЧЁТ ЗА НЕДЕЛЮ (ПРАВКА 42) ==========
+// ========== ОТЧЁТ ЗА НЕДЕЛЮ ==========
 const weeklyReportSent = {};
 
 async function weeklyReport() {
@@ -7148,6 +7441,7 @@ initDb().then(async () => {
       settings: {
         logo: null,
         background: { type: 'preset', id: 1 },
+        buttonColor: 'red',
         markupPercent: PRESET_SHOP.markupPercent,
         aiEnabled: false
       },
@@ -7175,7 +7469,6 @@ initDb().then(async () => {
     }
   }
 
-  // ПРАВКА 57: меню слэш-команд
   try {
     await bot.setMyCommands([
       {
