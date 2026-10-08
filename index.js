@@ -135,11 +135,11 @@ function formatNumber(n) {
       cnt = 0;
     }
   }
-Currency  return out;
+   return out;
 }
 
 function formatPrice(price, shop) {
-  const code = getShop(shop);
+  const code = getShopCurrency(shop);
   const sym = CURRENCY_SYMBOLS[code] || '₽';
   return formatNumber(price) + ' ' + sym;
 }
