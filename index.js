@@ -85,6 +85,97 @@ app.post(WEBHOOK_PATH, (req, res) => {
 const BOT_USERNAME = 'flowind_rus_bot';
 const SITE_URL = 'https://flowind.ru';
 
+// 🧪 BETA-доступ к новым функциям
+const BETA_SHOPS = ['kupidon'];
+
+function isBetaShop(shopId) {
+  if (BETA_SHOPS.length === 0) return true;
+  return BETA_SHOPS.includes(shopId);
+}
+
+// ========== ВАЛЮТЫ ==========
+const CURRENCY_SYMBOLS = {
+  RUB: '₽',
+  KZT: '₸',
+  BYN: 'Br',
+  UZS: 'сўм'
+};
+
+const CURRENCY_LIST = [
+  { code: 'RUB', label: 'Российский рубль', sym: '₽' },
+  { code: 'KZT', label: 'Казахстанский тенге', sym: '₸' },
+  { code: 'BYN', label: 'Белорусский рубль', sym: 'Br' },
+  { code: 'UZS', label: 'Узбекский сум', sym: 'сўм' }
+];
+
+function findCurrencyByCode(code) {
+  if (!code) return null;
+  return CURRENCY_LIST.find(c => c.code === code) || null;
+}
+
+function getShopCurrency(shop) {
+  if (!shop || !shop.settings) return 'RUB';
+  const code = shop.settings.currency;
+  if (!code) return 'RUB';
+  if (!CURRENCY_SYMBOLS[code]) return 'RUB';
+  return code;
+}
+
+function formatNumber(n) {
+  const num = parseInt(n, 10);
+  if (isNaN(num)) return '0';
+  const s = String(num);
+  let out = '';
+  let cnt = 0;
+  for (let i = s.length - 1; i >= 0; i--) {
+    out = s[i] + out;
+    cnt++;
+    if (cnt === 3 && i > 0) {
+      out = ' ' + out;
+      cnt = 0;
+    }
+  }
+Currency  return out;
+}
+
+function formatPrice(price, shop) {
+  const code = getShop(shop);
+  const sym = CURRENCY_SYMBOLS[code] || '₽';
+  return formatNumber(price) + ' ' + sym;
+}
+
+// ========== СТРАНЫ ==========
+const COUNTRIES = [
+  { code: 'RU', label: '🇷🇺 Россия' },
+  { code: 'KZ', label: '🇰🇿 Казахстан' },
+  { code: 'BY', label: '🇧🇾 Беларусь' },
+  { code: 'UZ', label: '🇺🇿 Узбекистан' },
+  { code: 'OTHER', label: '🌍 Другое' }
+];
+
+function findCountryByCode(code) {
+  if (!code) return null;
+  return COUNTRIES.find(c => c.code === code) || null;
+}
+
+// ========== ОНБОРДИНГ ==========
+const OWNER_STEPS = [
+  'add_bouquet',
+  'view_shop',
+  'edit_price',
+  'hide_bouquet',
+  'restore_bouquet',
+  'check_stock',
+  'settings_tour',
+  'done'
+];
+
+const FLORIST_STEPS = [
+  'add_bouquet',
+  'check_stock',
+  'on_shift'
+];
+
 const PRESET_SHOP = {
   shopId: 'kupidon',
   displayName: '🌸 Kupidon - для цветов не нужен повод',
@@ -108,6 +199,7 @@ const awaitingPrice = {};
 const awaitingName = {};
 const awaitingMarkup = {};
 const awaitingSearch = {};
+const awaitingOnboarding = {};
 const photoUrlCache = {};
 const checkSessions = {};
 const archiveSessions = {};
@@ -116,6 +208,7 @@ const notifiedClicks = {};
 const awaitingAdminMessage = {};
 const awaitingAdminBlockReason = {};
 const morningReminderSent = {};
+const morningLaterSent = {};
 const visualReminderSent = {};
 const lastNavByChat = {};
 
@@ -137,8 +230,6 @@ async function sendNav(chatId, text, opts) {
   return sent;
 }
 
-const MAX_BUTTONS_PER_SECTION = 20;
-const MAX_LIST_ITEMS = 25;
 const TWO_COLUMNS_THRESHOLD = 12;
 
 const MENU_BUTTONS = [
@@ -264,6 +355,86 @@ function generateShopId() {
     s += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return 'shop_' + s;
+}
+
+// ========== ОНБОРДИНГ — функции ==========
+async function getOwnerOnboardingState(shopId) {
+  const res = await pool.query(
+    'SELECT settings FROM shops WHERE shop_id = $1',
+    [shopId]
+  );
+  if (res.rows.length === 0) return null;
+  const settings = res.rows[0].settings || {};
+  return {
+    step: settings.onboardingStep || null,
+    passed: settings.onboardingPassed === true
+  };
+}
+
+async function setOwnerOnboardingStep(shopId, step) {
+  await pool.query(
+    `UPDATE shops SET settings = jsonb_set(` +
+    `COALESCE(settings, '{}'::jsonb), ` +
+    `'{onboardingStep}', to_jsonb($2::text)) ` +
+    `WHERE shop_id = $1`,
+    [shopId, step]
+  );
+}
+
+async function setOwnerOnboardingPassed(shopId) {
+  await pool.query(
+    `UPDATE shops SET settings = jsonb_set(` +
+    `COALESCE(settings, '{}'::jsonb), ` +
+    `'{onboardingPassed}', 'true'::jsonb) ` +
+    `WHERE shop_id = $1`,
+    [shopId]
+  );
+}
+
+async function getFloristOnboardingState(chatId, shopId) {
+  const res = await pool.query(
+    `SELECT id, onboarding_step, onboarding_passed ` +
+    `FROM admins WHERE chat_id = $1 AND shop_id = $2`,
+    [chatId, shopId]
+  );
+  if (res.rows.length === 0) return null;
+  return {
+    id: res.rows[0].id,
+    step: res.rows[0].onboarding_step || null,
+    passed: res.rows[0].onboarding_passed === true
+  };
+}
+
+async function setFloristOnboardingStep(chatId, shopId, step) {
+  await pool.query(
+    `UPDATE admins SET onboarding_step = $3 ` +
+    `WHERE chat_id = $1 AND shop_id = $2`,
+    [chatId, shopId, step]
+  );
+}
+
+async function setFloristOnboardingPassed(chatId, shopId) {
+  await pool.query(
+    `UPDATE admins SET onboarding_passed = TRUE ` +
+    `WHERE chat_id = $1 AND shop_id = $2`,
+    [chatId, shopId]
+  );
+}
+
+function nextOwnerStep(current) {
+  const idx = OWNER_STEPS.indexOf(current);
+  if (idx === -1 || idx >= OWNER_STEPS.length - 1) {
+    return OWNER_STEPS[OWNER_STEPS.length - 1];
+  }
+  return OWNER_STEPS[idx + 1];
+}
+
+function nextFloristStep(current) {
+  const idx = FLORIST_STEPS.indexOf(current);
+  if (idx === -1 || idx >= FLORIST_STEPS.length - 1) {
+    return FLORIST_STEPS[FLORIST_STEPS.length - 1];
+  }
+  return FLORIST_STEPS[idx + 1];
 }
 
 function normalizePhone(raw) {
@@ -416,6 +587,7 @@ function sendClickNotification(shop, bouquet, type) {
   if (!shop || !shop.admins || shop.admins.length === 0) return;
   const channelName = CLICK_TYPE_NAMES[type] || 'Мессенджер';
   const isCall = type === 'call';
+  const priceStr = formatPrice(bouquet.price, shop);
 
   const onShiftAdmins = shop.admins.filter(a => a.onShift);
 
@@ -423,7 +595,7 @@ function sendClickNotification(shop, bouquet, type) {
     const action = isCall ? 'Позвонить' : 'Связаться';
     let text = `🔔 <b>Клиент нажал «${action}»</b>\n\n`;
     text += `Букет <b>№${bouquet.shopNumber}</b> `;
-    text += `«${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n`;
+    text += `«${esc(bouquet.name)}» — <b>${priceStr}</b>\n`;
     text += `Канал: ${channelName}\n\n`;
     text += isCall
       ? `<i>Ожидайте звонка.</i>`
@@ -443,7 +615,7 @@ function sendClickNotification(shop, bouquet, type) {
   let warnText = `⚠️ <b>На смене никого</b>\n\n`;
   warnText += `Клиент нажал «${action}»\n\n`;
   warnText += `Букет <b>№${bouquet.shopNumber}</b> `;
-  warnText += `«${esc(bouquet.name)}» — <b>${bouquet.price} ₽</b>\n`;
+  warnText += `«${esc(bouquet.name)}» — <b>${priceStr}</b>\n`;
   warnText += `Канал: ${channelName}\n\n`;
   warnText += `<i>Напомните флористам отметиться: `;
   warnText += `«✅ Я сегодня работаю».</i>`;
@@ -810,7 +982,22 @@ const PRESET_BACKGROUNDS = [
   }
 ];
 
-// ========== ЦВЕТА КНОПКИ (ПРАВКА 60) ==========
+// ========== ПАСТЕЛЬНЫЕ ЗАГЛУШКИ (ПРАВКА 69) ==========
+const PLACEHOLDER_GRADIENTS = [
+  'linear-gradient(135deg,#fbe8ef 0%,#f7dae5 100%)',
+  'linear-gradient(135deg,#e8f0e5 0%,#dfe8db 100%)',
+  'linear-gradient(135deg,#eaeef3 0%,#dee5ec 100%)',
+  'linear-gradient(135deg,#f9e8de 0%,#f4dcd0 100%)',
+  'linear-gradient(135deg,#f2eeea 0%,#e8e3dc 100%)'
+];
+
+function getPlaceholderGradient(seed) {
+  const n = parseInt(seed, 10) || 0;
+  const idx = n % PLACEHOLDER_GRADIENTS.length;
+  return PLACEHOLDER_GRADIENTS[idx];
+}
+
+// ========== ЦВЕТА КНОПКИ ==========
 const BUTTON_COLORS = [
   {
     id: 'red',
@@ -884,7 +1071,8 @@ function getBackgroundStyle(bgSetting) {
       '#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%);' +
       'background-attachment:fixed;';
   }
-  if (typeof bgSetting === 'object' && bgSetting.type === 'preset') {
+  if (typeof bgSetting === 'object' &&
+      bgSetting.type === 'preset') {
     const preset = findPresetById(bgSetting.id);
     if (preset) {
       return 'background:' + preset.gradient + ';' +
@@ -929,7 +1117,8 @@ function hasAnyLogo(shop) {
 // ========== ПАРСЕР ЦЕНЫ ==========
 const CURRENCY_SUFFIXES = [
   'рублей', 'рубля', 'рубль', 'руб',
-  'р', '₽'
+  'р', '₽', 'сум', 'сўм', 'тг', '₸',
+  'br', 'byn'
 ];
 
 function cleanPriceWord(word) {
@@ -1162,6 +1351,10 @@ function buildHelpFAQ() {
             callback_data: 'faq_notify'
           }],
           [{
+            text: '💱 Как поменять валюту?',
+            callback_data: 'faq_currency'
+          }],
+          [{
             text: '⬅️ К помощи',
             callback_data: 'help_back'
           }]
@@ -1243,6 +1436,17 @@ function buildFaqAnswer(key) {
         '«✅ Я сегодня работаю» — и всё заработает.\n\n' +
         'Статус сбрасывается через 14 часов, ' +
         'поэтому каждое утро его нужно включать.'
+    },
+    faq_currency: {
+      title: '💱 Как поменять валюту?',
+      body:
+        '«⚙️ Настройки → 🏪 Данные магазина → ' +
+        '💱 Валюта».\n\n' +
+        'Доступные валюты:\n' +
+        '₽ рубль · ₸ тенге · Br рубль · сўм сум\n\n' +
+        'Цены <b>не пересчитываются</b> — просто ' +
+        'меняется символ. Если хотите новые цены — ' +
+        'поменяйте их вручную.'
     }
   };
   const a = answers[key];
@@ -1475,6 +1679,7 @@ async function buildArchiveModeSelection(chatId, shopId) {
 }
 
 async function showArchiveList(chatId, session, editMessageId) {
+  const shop = await getShopFromDb(session.shopId);
   const total = session.bouquets.length;
   const totalPages = Math.max(
     1, Math.ceil(total / LIST_PER_PAGE)
@@ -1501,8 +1706,11 @@ async function showArchiveList(chatId, session, editMessageId) {
     const s = getBouquetStatus(b);
     const emoji = s === 'hidden' ? '📥' : '❌';
     const nm = shortName(b.name, 22);
+    const priceStr = shop
+      ? formatPrice(b.price, shop)
+      : formatNumber(b.price) + ' ₽';
     rows.push([{
-      text: `${emoji} №${b.shopNumber} ${nm} — ${b.price} ₽`,
+      text: `${emoji} №${b.shopNumber} ${nm} — ${priceStr}`,
       callback_data: `arch_item_${b.id}`
     }]);
   }
@@ -1554,6 +1762,7 @@ async function showArchiveItemCard(chatId, session, itemId) {
   if (!b) {
     return sendNav(chatId, '⚠️ Букет не найден в архиве.');
   }
+  const shop = await getShopFromDb(session.shopId);
   const s = getBouquetStatus(b);
   const statusEmoji = s === 'hidden' ? '📥' : '❌';
   let dateStr = '';
@@ -1566,8 +1775,11 @@ async function showArchiveItemCard(chatId, session, itemId) {
   const reason = s === 'hidden'
     ? 'убран вручную'
     : 'срок истёк';
+  const priceStr = shop
+    ? formatPrice(b.price, shop)
+    : formatNumber(b.price) + ' ₽';
   let caption = `📦 <b>№${b.shopNumber}</b>\n`;
-  caption += `${esc(b.name)} — <b>${b.price} ₽</b>\n`;
+  caption += `${esc(b.name)} — <b>${priceStr}</b>\n`;
   caption += `<i>${statusEmoji} `;
   if (dateStr) caption += `${dateStr} · `;
   caption += `${reason}</i>`;
@@ -1640,6 +1852,7 @@ async function showArchiveItemCard(chatId, session, itemId) {
   }
 
   const b = session.bouquets[session.currentIndex];
+  const shop = await getShopFromDb(session.shopId);
   const s = getBouquetStatus(b);
   const statusEmoji = s === 'hidden' ? '📥' : '❌';
   let dateStr = '';
@@ -1654,9 +1867,12 @@ async function showArchiveItemCard(chatId, session, itemId) {
     : 'срок истёк';
   const idx = session.currentIndex + 1;
   const tot = session.bouquets.length;
+  const priceStr = shop
+    ? formatPrice(b.price, shop)
+    : formatNumber(b.price) + ' ₽';
   let caption = `📦 <b>${idx}/${tot}</b> · `;
   caption += `<b>№${b.shopNumber}</b>\n`;
-  caption += `${esc(b.name)} — <b>${b.price} ₽</b>\n`;
+  caption += `${esc(b.name)} — <b>${priceStr}</b>\n`;
   caption += `<i>${statusEmoji} `;
   if (dateStr) caption += `${dateStr} · `;
   caption += `${reason}</i>`;
@@ -1886,6 +2102,7 @@ async function searchBouquets(shopId, query) {
 }
 
 async function renderSearchResults(chatId, shopId, query, results) {
+  const shop = await getShopFromDb(shopId);
   const qEsc = esc(query);
   if (results.length === 0) {
     return sendNav(chatId,
@@ -1942,9 +2159,12 @@ async function renderSearchResults(chatId, shopId, query, results) {
   for (let i = 0; i < maxShow; i++) {
     const b = results[i];
     const mark = statusMark(b);
+    const priceStr = shop
+      ? formatPrice(b.price, shop)
+      : formatNumber(b.price) + ' ₽';
     txt += `${mark} <b>№${b.shopNumber}</b> `;
     txt += `${esc(shortName(b.name, 28))} — `;
-    txt += `<b>${b.price} ₽</b>\n`;
+    txt += `<b>${priceStr}</b>\n`;
   }
   if (total > SEARCH_PER_PAGE) {
     txt += `\n<i>Показаны первые ${SEARCH_PER_PAGE} `;
@@ -2074,6 +2294,7 @@ async function showActiveBouquetsList(chatId, shopId, page, editMessageId) {
 }
 
 async function showBouquetList(chatId, shopId, action, headerText, page) {
+  const shop = await getShopFromDb(shopId);
   const currentPage = page || 0;
   const active = await getBouquetsFromDb(shopId);
   if (active.length === 0) {
@@ -2092,8 +2313,11 @@ async function showBouquetList(chatId, shopId, action, headerText, page) {
 
   let listTxt = `${headerText}\n\n`;
   for (const b of shown) {
+    const priceStr = shop
+      ? formatPrice(b.price, shop)
+      : formatNumber(b.price) + ' ₽';
     listTxt += `<b>№${b.shopNumber}</b> — `;
-    listTxt += `${esc(b.name)} — <b>${b.price} ₽</b>\n\n`;
+    listTxt += `${esc(b.name)} — <b>${priceStr}</b>\n\n`;
   }
   if (totalPages > 1) {
     listTxt += `<i>Страница ${safePage + 1} `;
@@ -2142,9 +2366,10 @@ async function showBouquetList(chatId, shopId, action, headerText, page) {
 }
 
 async function sendBouquetPreview(chatId, b, headerText, buttons) {
+  const shop = await getShopFromDb(b.shopId);
   let caption = `${headerText}\n\n`;
   caption += `<b>№${b.shopNumber}</b> ${esc(b.name)}\n`;
-  caption += `💰 ${b.price} ₽`;
+  caption += `💰 ${formatNumber(b.price)} ₽`;
   const opts = {
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: buttons }
@@ -2214,6 +2439,10 @@ async function initDb() {
     `ALTER TABLE shops ` +
     `ADD COLUMN IF NOT EXISTS blocked_reason TEXT`
   );
+  await pool.query(
+    `ALTER TABLE shops ` +
+    `ADD COLUMN IF NOT EXISTS country VARCHAR(10)`
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS admins (
@@ -2229,6 +2458,15 @@ async function initDb() {
   await pool.query(
     `ALTER TABLE admins ` +
     `ADD COLUMN IF NOT EXISTS on_shift_until TIMESTAMPTZ`
+  );
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS onboarding_step VARCHAR(40)`
+  );
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS onboarding_passed BOOLEAN ` +
+    `DEFAULT FALSE`
   );
 
   await pool.query(`
@@ -2334,6 +2572,7 @@ async function getShopFromDb(shopId) {
     inviteCode: s.invite_code,
     trialStart: s.trial_start,
     trialEnd: s.trial_end,
+    country: s.country || null,
     blocked: !!s.blocked,
     blockedReason: s.blocked_reason || null,
     settings: s.settings || {
@@ -2362,9 +2601,10 @@ async function createShopInDb(shop) {
     INSERT INTO shops (
       shop_id, name, display_name, address, hours, phone,
       telegram_username, whatsapp_phone, max_username,
-      invite_code, trial_start, trial_end, settings, stats
+      invite_code, trial_start, trial_end, settings, stats,
+      country
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
   `, [
     shop.shopId, shop.name, shop.displayName,
     shop.address, shop.hours, shop.phone,
@@ -2373,14 +2613,16 @@ async function createShopInDb(shop) {
     shop.maxLink || null,
     shop.inviteCode, shop.trialStart, shop.trialEnd,
     JSON.stringify(shop.settings),
-    JSON.stringify(shop.stats)
+    JSON.stringify(shop.stats),
+    shop.country || null
   ]);
 }
 
 async function updateShopField(shopId, field, value) {
   const allowed = [
     'display_name', 'address', 'hours', 'phone',
-    'telegram_username', 'whatsapp_phone', 'max_username'
+    'telegram_username', 'whatsapp_phone', 'max_username',
+    'country'
   ];
   if (!allowed.includes(field)) return;
   await pool.query(
@@ -2444,6 +2686,7 @@ async function getBouquetById(shopId, bouquetId) {
 function mapBouquet(b) {
   return {
     id: b.id,
+    shopId: b.shop_id,
     shopNumber: b.shop_number,
     name: b.name,
     price: b.price,
@@ -2529,7 +2772,7 @@ async function getAllShopsAdmin() {
   const res = await pool.query(`
     SELECT
       s.shop_id, s.display_name, s.trial_end,
-      s.stats, s.blocked,
+      s.stats, s.blocked, s.country,
       (SELECT COUNT(*) FROM bouquets b
         WHERE b.shop_id = s.shop_id
         AND b.deleted = FALSE) AS bouquets_count,
@@ -2544,6 +2787,7 @@ async function getAllShopsAdmin() {
       shopId: r.shop_id,
       displayName: r.display_name,
       trialEnd: r.trial_end,
+      country: r.country || null,
       blocked: !!r.blocked,
       bouquetsCount: parseInt(r.bouquets_count) || 0,
       teamCount: parseInt(r.team_count) || 0,
@@ -2639,8 +2883,16 @@ function getSettingsMenu(shop, chatId) {
         { text: '🖼 Фон', callback_data: 'menu_background' }
       ],
       [{
+        text: '🖼 Обложка',
+        callback_data: 'menu_cover'
+      }],
+      [{
         text: '🔘 Цвет кнопки',
         callback_data: 'menu_buttoncolor'
+      }],
+      [{
+        text: '💱 Валюта',
+        callback_data: 'menu_currency'
       }],
       [{
         text: '📋 Статус магазина',
@@ -2702,7 +2954,18 @@ function buildShopDataMessage(shop) {
   const mx = shop.maxLink
     ? '✅ установлена'
     : '<i>не указана</i>';
-  txt += `🅼 MAX: ${mx}\n\n`;
+  txt += `🅼 MAX: ${mx}\n`;
+  const country = findCountryByCode(shop.country);
+  const cLabel = country
+    ? country.label
+    : '<i>не указана</i>';
+  txt += `🌍 Страна: ${cLabel}\n`;
+  const curCode = getShopCurrency(shop);
+  const curObj = findCurrencyByCode(curCode);
+  const curLabel = curObj
+    ? curObj.label + ' (' + curObj.sym + ')'
+    : '₽';
+  txt += `💱 Валюта: ${curLabel}\n\n`;
   txt += `<i>Что изменить?</i>`;
   return {
     text: txt,
@@ -2739,6 +3002,10 @@ function buildShopDataMessage(shop) {
             callback_data: 'edit_shop_max'
           }],
           [{
+            text: '💱 Валюта',
+            callback_data: 'edit_shop_currency'
+          }],
+          [{
             text: '↩️ Назад',
             callback_data: 'menu_back'
           }]
@@ -2767,6 +3034,7 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   const shopNameEsc = esc(shop.displayName);
   const shopIdEsc = esc(shop.shopId);
   const bouquetNameEsc = esc(bouquet.name);
+  const priceStr = formatPrice(bouquet.price, shop);
 
   let html = '';
   html += '<!DOCTYPE html>\n<html lang="ru">\n<head>\n';
@@ -2813,7 +3081,7 @@ function buildMessengerOrderPage({ shop, bouquet, orderText, messenger }) {
   html += messengerName + '</h1>\n';
   html += '<div class="sub">Букет №';
   html += bouquet.shopNumber + ' — ' + bouquetNameEsc;
-  html += ' — ' + bouquet.price + ' ₽</div>\n';
+  html += ' — ' + priceStr + '</div>\n';
   html += '<div class="card">\n';
   html += '<div class="steps">\n';
   html += '<b>1.</b> Скопируйте текст ниже<br>\n';
@@ -2873,7 +3141,9 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const bouquetUrl = SITE_URL + '/shop/' +
     esc(shop.shopId) + '/b/' + bouquet.id;
   const title = bouquetNameEsc + ' — ' + esc(shop.displayName);
-  const description = bouquet.price + ' ₽ · ' +
+  const priceStr = formatPrice(bouquet.price, shop);
+  const oldPriceStr = formatPrice(oldPrice, shop);
+  const description = priceStr + ' · ' +
     esc(shop.displayName);
   const primaryPhotoUrl = (photoRefs && photoRefs.primary)
     ? absoluteUrl(photoRefs.primary)
@@ -2897,12 +3167,14 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   if (photoRefs && photoRefs.primary) {
     mainPhotoHtml = renderImgTag(photoRefs, imgStyle);
   } else {
-    mainPhotoHtml = '<div style="width:100%;max-width:500px;';
-    mainPhotoHtml += 'aspect-ratio:1/1;background:#f0f0f0;';
+    const grad = getPlaceholderGradient(bouquet.id);
+    mainPhotoHtml = '<div style="width:100%;';
+    mainPhotoHtml += 'max-width:500px;aspect-ratio:1/1;';
+    mainPhotoHtml += 'background:' + grad + ';';
     mainPhotoHtml += 'border-radius:20px;display:flex;';
     mainPhotoHtml += 'align-items:center;justify-content:center;';
-    mainPhotoHtml += 'color:#aaa;font-size:60px;margin:0 auto;">';
-    mainPhotoHtml += '📷</div>';
+    mainPhotoHtml += 'color:#fff;font-size:60px;margin:0 auto;';
+    mainPhotoHtml += 'opacity:0.7;">📷</div>';
   }
 
   let thumbsHtml = '';
@@ -2961,10 +3233,10 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
     priceHtml += '<span style="text-decoration:line-through;';
     priceHtml += 'color:#999;font-weight:400;';
     priceHtml += 'font-size:20px;">';
-    priceHtml += oldPrice + ' ₽</span>&nbsp; ';
-    priceHtml += bouquet.price + ' ₽';
+    priceHtml += oldPriceStr + '</span>&nbsp; ';
+    priceHtml += priceStr;
   } else {
-    priceHtml = bouquet.price + ' ₽';
+    priceHtml = priceStr;
   }
 
   const bouquetNameJs = JSON.stringify(bouquet.name);
@@ -3032,8 +3304,8 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += 'function shareBouquet() {\n';
   html += '  var url = ' + bouquetUrlJs + ';\n';
   html += '  var name = ' + bouquetNameJs + ';\n';
-  html += '  var price = ' + bouquet.price + ';\n';
-  html += '  var text = name + " — " + price + " ₽";\n';
+  html += '  var price = ' + JSON.stringify(priceStr) + ';\n';
+  html += '  var text = name + " — " + price;\n';
   html += '  if (navigator.share) {\n';
   html += '    navigator.share({ title: name, text: text,';
   html += ' url: url }).catch(function(){});\n';
@@ -3056,9 +3328,11 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   const oldPrice = calculateOldPrice(
     bouquet.price, shop.settings.markupPercent
   );
+  const priceStr = formatPrice(bouquet.price, shop);
+  const oldPriceStr = formatPrice(oldPrice, shop);
   const orderText = 'Здравствуйте! Пишу с вашей витрины. ' +
     'Хочу заказать букет №' + bouquet.shopNumber +
-    ' «' + bouquet.name + '» — ' + bouquet.price + ' ₽.';
+    ' «' + bouquet.name + '» — ' + priceStr + '.';
   const orderTextJs = JSON.stringify(orderText);
   const orderTextEsc = esc(orderText);
   const btnColors = getButtonColors(shop);
@@ -3070,12 +3344,14 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   if (photoRefs && photoRefs.primary) {
     mainPhotoHtml = renderImgTag(photoRefs, imgStyle);
   } else {
-    mainPhotoHtml = '<div style="width:100%;max-width:420px;';
-    mainPhotoHtml += 'aspect-ratio:1/1;background:#f0f0f0;';
+    const grad = getPlaceholderGradient(bouquet.id);
+    mainPhotoHtml = '<div style="width:100%;';
+    mainPhotoHtml += 'max-width:420px;aspect-ratio:1/1;';
+    mainPhotoHtml += 'background:' + grad + ';';
     mainPhotoHtml += 'border-radius:20px;display:flex;';
     mainPhotoHtml += 'align-items:center;justify-content:center;';
-    mainPhotoHtml += 'color:#aaa;font-size:60px;margin:0 auto;">';
-    mainPhotoHtml += '📷</div>';
+    mainPhotoHtml += 'color:#fff;font-size:60px;margin:0 auto;';
+    mainPhotoHtml += 'opacity:0.7;">📷</div>';
   }
 
   let priceHtml = '';
@@ -3083,10 +3359,10 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
     priceHtml += '<span style="text-decoration:line-through;';
     priceHtml += 'color:#999;font-weight:400;';
     priceHtml += 'font-size:20px;">';
-    priceHtml += oldPrice + ' ₽</span>&nbsp; ';
-    priceHtml += bouquet.price + ' ₽';
+    priceHtml += oldPriceStr + '</span>&nbsp; ';
+    priceHtml += priceStr;
   } else {
-    priceHtml = bouquet.price + ' ₽';
+    priceHtml = priceStr;
   }
 
   const btnBase = 'display:flex;align-items:center;';
@@ -3299,9 +3575,10 @@ app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     const b = await getBouquetById(shopId, bouquetId);
     if (!b) return res.status(404).send('Букет не найден');
 
+    const priceStr = formatPrice(b.price, shop);
     const orderText = 'Здравствуйте! Пишу с вашей витрины. ' +
       'Хочу заказать букет №' + b.shopNumber +
-      ' «' + b.name + '» — ' + b.price + ' ₽.';
+      ' «' + b.name + '» — ' + priceStr + '.';
 
     const xff = req.headers['x-forwarded-for'] || '';
     const clientIp = xff.split(',')[0].trim() ||
@@ -3406,7 +3683,7 @@ app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
 // ========== РЕГИСТРАЦИЯ ==========
 const REG_STEPS = {
   shopId: {
-    text: '📝 <b>Шаг 1 из 8. Короткое название для ссылки</b>\n\n' +
+    text: '📝 <b>Шаг 1 из 9. Короткое название для ссылки</b>\n\n' +
           'Только латинские буквы, цифры и _, без пробелов.\n' +
           'Например: <code>cveti_msk</code>\n\n' +
           'Это будет адрес витрины:\n' +
@@ -3416,34 +3693,40 @@ const REG_STEPS = {
     skip: true, mandatory: true
   },
   displayName: {
-    text: '✅ <b>Шаг 2 из 8. Красивое название</b>\n\n' +
+    text: '✅ <b>Шаг 2 из 9. Красивое название</b>\n\n' +
           'Как назвать магазин для клиентов?\n' +
           'Оно появится на витрине. Можно с эмодзи.\n\n' +
           'Например: <i>🌸 Цветы на Фрунзе</i>',
     skip: false, mandatory: true
   },
+  country: {
+    text: '🌍 <b>Шаг 3 из 9. В какой стране магазин?</b>\n\n' +
+          'Нужно, чтобы правильно работали цены и валюта.\n\n' +
+          '<i>Выберите кнопкой ниже.</i>',
+    skip: true, mandatory: false
+  },
   address: {
-    text: '✅ <b>Шаг 3 из 8. Адрес</b>\n\n' +
+    text: '✅ <b>Шаг 4 из 9. Адрес</b>\n\n' +
           'Клиенты увидят адрес на витрине.\n' +
           'Например: <i>Москва, ул. Фрунзе, 15</i>\n\n' +
           '<i>Можно пропустить и добавить позже.</i>',
     skip: true, mandatory: false
   },
   hours: {
-    text: '✅ <b>Шаг 4 из 8. Часы работы</b>\n\n' +
+    text: '✅ <b>Шаг 5 из 9. Часы работы</b>\n\n' +
           'Например: <i>Пн-Вс 10:30-21:00</i>\n\n' +
           '<i>Можно пропустить.</i>',
     skip: true, mandatory: false
   },
   phone: {
-    text: '✅ <b>Шаг 5 из 8. Телефон</b>\n\n' +
+    text: '✅ <b>Шаг 6 из 9. Телефон</b>\n\n' +
           'Для кнопки «Позвонить» на витрине.\n' +
           'Например: <i>+7 962 402-51-75</i>\n\n' +
           '<i>Можно пропустить.</i>',
     skip: true, mandatory: false
   },
   telegram: {
-    text: '✅ <b>Шаг 6 из 8. Ваш юзернейм в Telegram</b>' +
+    text: '✅ <b>Шаг 7 из 9. Ваш юзернейм в Telegram</b>' +
           '\n\n' +
           'Клиенты будут писать вам, нажав кнопку ' +
           'на витрине.\nПришлите без @.\n\n' +
@@ -3455,7 +3738,7 @@ const REG_STEPS = {
     skip: true, mandatory: false
   },
   whatsapp: {
-    text: '✅ <b>Шаг 7 из 8. Номер WhatsApp</b>\n\n' +
+    text: '✅ <b>Шаг 8 из 9. Номер WhatsApp</b>\n\n' +
           'Клиенты смогут написать вам одним ' +
           'нажатием.\n' +
           'Например: <i>+7 962 402-51-75</i>\n\n' +
@@ -3463,7 +3746,7 @@ const REG_STEPS = {
     skip: true, mandatory: false
   },
   max: {
-    text: '✅ <b>Шаг 8 из 8. Ссылка на профиль в MAX</b>' +
+    text: '✅ <b>Шаг 9 из 9. Ссылка на профиль в MAX</b>' +
           '\n\n' +
           '<i>Можно пропустить и добавить позже — ' +
           '«Меню» → «🏪 Данные магазина».</i>\n\n' +
@@ -3475,7 +3758,7 @@ const REG_STEPS = {
 };
 
 const REG_ORDER = [
-  'shopId', 'displayName', 'address', 'hours',
+  'shopId', 'displayName', 'country', 'address', 'hours',
   'phone', 'telegram', 'whatsapp', 'max'
 ];
 
@@ -3504,6 +3787,32 @@ function buildRegFinalText(shopId, displayName) {
   t += '<b>Попробуйте прямо сейчас — отправьте ' +
        'первый букет.</b>';
   return t;
+}
+
+function buildCountrySelect() {
+  const rows = [];
+  for (let i = 0; i < COUNTRIES.length; i += 2) {
+    const row = [];
+    row.push({
+      text: COUNTRIES[i].label,
+      callback_data: 'reg_country_' + COUNTRIES[i].code
+    });
+    if (i + 1 < COUNTRIES.length) {
+      row.push({
+        text: COUNTRIES[i + 1].label,
+        callback_data: 'reg_country_' + COUNTRIES[i + 1].code
+      });
+    }
+    rows.push(row);
+  }
+  rows.push([{
+    text: '⏭ Пропустить',
+    callback_data: 'reg_skip'
+  }]);
+  return {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: rows }
+  };
 }async function generateUniqueShopId() {
   for (let i = 0; i < 20; i++) {
     const id = generateShopId();
@@ -3517,6 +3826,13 @@ async function sendRegistrationStep(chatId, state) {
   const cfg = REG_STEPS[state.step];
   if (!cfg) {
     delete registrationState[chatId];
+    return;
+  }
+  if (state.step === 'country') {
+    const msg = await bot.sendMessage(
+      chatId, cfg.text, buildCountrySelect()
+    );
+    state.messageId = msg.message_id;
     return;
   }
   const opts = { parse_mode: 'HTML' };
@@ -3600,6 +3916,8 @@ async function regSaveValue(chatId, state, text) {
       );
     }
     state.data.displayName = value;
+  } else if (step === 'country') {
+    return;
   } else if (step === 'address') {
     state.data.address = value;
   } else if (step === 'hours') {
@@ -3662,6 +3980,12 @@ async function regFinish(chatId, state) {
   const inviteCode = generateInviteCode();
   const userName = state.userName || 'Владелец';
 
+  // Определяем валюту по стране
+  let defaultCurrency = 'RUB';
+  if (d.country === 'KZ') defaultCurrency = 'KZT';
+  else if (d.country === 'BY') defaultCurrency = 'BYN';
+  else if (d.country === 'UZ') defaultCurrency = 'UZS';
+
   try {
     await createShopInDb({
       shopId: d.shopId,
@@ -3676,10 +4000,13 @@ async function regFinish(chatId, state) {
       inviteCode,
       trialStart: now.toISOString(),
       trialEnd: trialEnd.toISOString(),
+      country: d.country || null,
       settings: {
         logo: null,
+        cover: null,
         background: { type: 'preset', id: 1 },
         buttonColor: 'red',
+        currency: defaultCurrency,
         markupPercent: 20,
         aiEnabled: false
       },
@@ -3691,6 +4018,10 @@ async function regFinish(chatId, state) {
     await addAdminToDb(chatId, d.shopId, 'owner', userName);
     await setUserOnShift(chatId, d.shopId, true);
     userToShop[chatId] = d.shopId;
+
+    // Запускаем онбординг владельца
+    await setOwnerOnboardingStep(d.shopId, 'add_bouquet');
+
     delete registrationState[chatId];
     const shop = await getShopFromDb(d.shopId);
     await bot.sendMessage(
@@ -3698,9 +4029,6 @@ async function regFinish(chatId, state) {
       buildRegFinalText(d.shopId, d.displayName),
       { parse_mode: 'HTML' }
     );
-    await bot.sendMessage(chatId, '👇', {
-      reply_markup: getMainKeyboard(shop, chatId)
-    });
 
     setTimeout(function() {
       sendVisualReminder(chatId, d.shopId);
@@ -3711,11 +4039,16 @@ async function regFinish(chatId, state) {
         ? '@' + state.userUsername
         : 'chat_id ' + chatId;
       const link = SITE_URL + '/shop/' + d.shopId;
+      const countryLabel = findCountryByCode(d.country);
+      const cLabel = countryLabel
+        ? countryLabel.label
+        : '—';
       let adminTxt = '';
       adminTxt += '🎉 <b>Новый магазин зарегистрирован!</b>';
       adminTxt += '\n\n';
       adminTxt += '🏪 «' + esc(d.displayName) + '»\n';
       adminTxt += '🆔 <code>' + esc(d.shopId) + '</code>\n';
+      adminTxt += '🌍 ' + esc(cLabel) + '\n';
       adminTxt += '👤 ' + esc(userName) + ' ';
       adminTxt += '(' + esc(tgRef) + ')\n\n';
       adminTxt += '🔗 ' + link + '\n\n';
@@ -3742,23 +4075,28 @@ async function sendVisualReminder(chatId, shopId) {
   try {
     const shop = await getShopFromDb(shopId);
     if (!shop) return;
-    if (hasAnyLogo(shop) && hasAnyBackground(shop)) return;
+    const hasCover = !!shop.settings.cover;
+    if (hasAnyLogo(shop) && hasAnyBackground(shop) && hasCover) {
+      return;
+    }
 
     let missing = [];
     if (!hasAnyBackground(shop)) missing.push('фон');
     if (!hasAnyLogo(shop)) missing.push('логотип');
+    if (!hasCover) missing.push('обложку');
 
     let txt = '🎨 <b>Последний штрих</b>\n\n';
     txt += 'Витрина работает, но пока выглядит ';
     txt += 'просто.\n\n';
-    txt += 'Три вещи — и она станет похожа на ';
-    txt += 'фирменный магазин:\n\n';
+    txt += 'Чтобы она стала похожа на фирменный ';
+    txt += 'магазин:\n\n';
     txt += '1. 🖼 Фон — 10 готовых, в 1 тап\n';
     txt += '2. 🎨 Логотип — ваша вывеска\n';
-    txt += '3. 🔘 Цвет кнопки «Связаться»\n\n';
+    txt += '3. 🖼 Обложка — картинка над названием\n';
+    txt += '4. 🔘 Цвет кнопки «Связаться»\n\n';
     if (missing.length > 0) {
       txt += '<i>Сейчас не хватает: ' +
-        missing.join(' и ') + '.</i>\n\n';
+        missing.join(', ') + '.</i>\n\n';
     }
     txt += '<i>Можно сделать позже — витрина уже работает.</i>';
 
@@ -3885,11 +4223,18 @@ async function showAdminShopsList(chatId, page, editMessageId) {
       else if (daysLeft <= 7) emoji = '🟡';
       else emoji = '🟢';
     }
+    const country = findCountryByCode(s.country);
+    const flag = country
+      ? country.label.split(' ')[0]
+      : '';
     const name = shortName(
-      s.displayName || s.shopId, 22
+      s.displayName || s.shopId, 20
     );
+    const label = flag
+      ? flag + ' ' + emoji + ' ' + name
+      : emoji + ' ' + name;
     rows.push([{
-      text: emoji + ' ' + name,
+      text: label,
       callback_data: 'admin_shop_' + s.shopId
     }]);
   }
@@ -3968,6 +4313,11 @@ async function showAdminShopCard(chatId, shopId, editMessageId) {
 
   let txt = '🏪 <b>' + esc(shop.displayName) + '</b>\n';
   txt += '<code>' + esc(shop.shopId) + '</code>\n\n';
+
+  const country = findCountryByCode(shop.country);
+  if (country) {
+    txt += '🌍 ' + country.label + '\n\n';
+  }
 
   if (shop.blocked && shop.blockedReason) {
     txt += '🚫 <b>Причина блокировки:</b>\n';
@@ -4077,10 +4427,22 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           '❌ Вы уже привязаны к другому магазину.'
         );
       }
+
+      const existing = await getFloristOnboardingState(
+        chatId, shopId
+      );
+
       await addAdminToDb(
         chatId, shopId, 'florist', userName
       );
       userToShop[chatId] = shopId;
+
+      if (!existing || !existing.passed) {
+        await setFloristOnboardingStep(
+          chatId, shopId, 'add_bouquet'
+        );
+      }
+
       const updatedShop = await getShopFromDb(shopId);
       let invText = '🎉 Добро пожаловать в команду «';
       invText += esc(shop.displayName) + '»!\n\n';
@@ -4091,10 +4453,18 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
       invText += '<i>💡 Чтобы получать уведомления ';
       invText += 'о клиентах, нажмите ';
       invText += '«✅ Я сегодня работаю» в меню.</i>';
-      return bot.sendMessage(chatId, invText, {
+      await bot.sendMessage(chatId, invText, {
         parse_mode: 'HTML',
         reply_markup: getMainKeyboard(updatedShop, chatId)
       });
+
+      // Запускаем онбординг флориста
+      if (!existing || !existing.passed) {
+        setTimeout(function() {
+          sendFloristOnboardingStep(chatId, shopId);
+        }, 1500);
+      }
+      return;
     }
     return bot.sendMessage(
       chatId, '❌ Приглашение недействительно.'
@@ -4294,6 +4664,20 @@ bot.on('callback_query', async (q) => {
     bot.deleteMessage(chatId, q.message.message_id)
       .catch(function(){});
     return regSkipCurrentStep(chatId, state);
+  }
+
+  if (data.startsWith('reg_country_')) {
+    const code = data.replace('reg_country_', '');
+    const state = registrationState[chatId];
+    if (!state) {
+      bot.deleteMessage(chatId, q.message.message_id)
+        .catch(function(){});
+      return;
+    }
+    state.data.country = code;
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    return regGoToNextStep(chatId, state);
   }
 
   if (data === 'visual_later') {
@@ -4895,11 +5279,11 @@ bot.on('callback_query', async (q) => {
     return;
   }
   if (data.startsWith('edit_shop_')) {
-    if (!owner) return;
-    const field = data.replace('edit_shop_', '');
-    const prompts = {
-      displayname: {
-        q: '📝 Введите новое <b>название</b> ' +
+    if (!owner). return;
+    const field = data.replace('edit Ск_shop_', '');
+опи    const prompts = {
+      displaynameру: {
+        q: '📝 Введите новое <йтеb> ссыназвание</b> ' +
            'магазина (как показывать клиентам).\n' +
            'Пример: <i>Цветы на Фрунзе</i>',
         field: 'display_name'
@@ -4941,7 +5325,7 @@ bot.on('callback_query', async (q) => {
            '1. Откройте приложение MAX\n' +
            '2. Зайдите в свой профиль\n' +
            '3. Нажмите «Пригласить друзей»\n' +
-           '4. Скопируйте ссылку\n\n' +
+           '4лку\n\n' +
            'Она начинается с ' +
            '<code>https://max.ru/u/...</code>\n\n' +
            'Пришлите её сюда целиком.\n' +
@@ -4961,6 +5345,82 @@ bot.on('callback_query', async (q) => {
       { parse_mode: 'HTML' }
     );
   }
+
+  // ========== ВАЛЮТА ==========
+  if (data === 'menu_currency' ||
+      data === 'edit_shop_currency') {
+    if (!owner) return;
+    const curCode = getShopCurrency(shop);
+    const curObj = findCurrencyByCode(curCode);
+    let txt = '💱 <b>Валюта магазина</b>\n\n';
+    txt += 'Сейчас: <b>';
+    txt += curObj
+      ? curObj.label + ' (' + curObj.sym + ')'
+      : '₽';
+    txt += '</b>\n\n';
+    txt += 'Цены на витрине будут показываться ';
+    txt += 'с этим символом.\n\n';
+    txt += '<i>Цены не пересчитываются — просто ';
+    txt += 'меняется символ.</i>';
+    const rows = [];
+    for (let i = 0; i < CURRENCY_LIST.length; i += 2) {
+      const row = [];
+      const c1 = CURRENCY_LIST[i];
+      row.push({
+        text: c1.sym + ' ' + c1.label,
+        callback_data: 'cur_set_' + c1.code
+      });
+      if (i + 1 < CURRENCY_LIST.length) {
+        const c2 = CURRENCY_LIST[i + 1];
+        row.push({
+          text: c2.sym + ' ' + c2.label,
+          callback_data: 'cur_set_' + c2.code
+        });
+      }
+      rows.push(row);
+    }
+    rows.push([{
+      text: '↩️ Назад',
+      callback_data: 'menu_shopdata'
+    }]);
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: rows }
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+  if (data.startsWith('cur_set_')) {
+    if (!owner) return;
+    const code = data.replace('cur_set_', '');
+    const cur = findCurrencyByCode(code);
+    if (!cur) return;
+    shop.settings.currency = code;
+    await saveShopSettings(shopId, shop.settings);
+    let txt = '✅ Валюта обновлена!\n\n';
+    txt += cur.sym + ' ' + cur.label + '\n\n';
+    txt += 'Цены на витрине теперь показываются ';
+    txt += 'с этим символом.';
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId,
+        message_id: q.message.message_id,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{
+            text: '🏠 Готово',
+            callback_data: 'menu_close'
+          }]]
+        }
+      });
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+  // ========== КОМАНДА ==========
   if (data === 'menu_invite') {
     if (!owner) return;
     const link = 'https://t.me/' + BOT_USERNAME +
@@ -5083,6 +5543,8 @@ bot.on('callback_query', async (q) => {
     ).catch(function(){});
     return;
   }
+
+  // ========== СТАТИСТИКА ==========
   if (data === 'menu_stats') {
     if (!owner) return;
     const all = await getBouquetsFromDb(shopId, true);
@@ -5139,6 +5601,8 @@ bot.on('callback_query', async (q) => {
       }
     });
   }
+
+  // ========== НАЦЕНКА ==========
   if (data === 'menu_markup') {
     if (!owner) return;
     const current = shop.settings.markupPercent || 0;
@@ -5147,9 +5611,9 @@ bot.on('callback_query', async (q) => {
     if (current === 0) {
       txt += 'При 0% витрина показывает одну цену.';
     } else {
-      txt += 'Пример: 1000 ₽ → <s>';
-      txt += calculateOldPrice(1000, current) + ' ₽</s> ';
-      txt += '<b>1000 ₽</b>';
+      txt += 'Пример: 1000 → <s>';
+      txt += calculateOldPrice(1000, current) + '</s> ';
+      txt += '<b>1000</b>';
     }
     return bot.sendMessage(chatId, txt, {
       parse_mode: 'HTML',
@@ -5210,6 +5674,8 @@ bot.on('callback_query', async (q) => {
       }
     );
   }
+
+  // ========== СТАТУС ==========
   if (data === 'menu_status') {
     const active = (await getBouquetsFromDb(shopId)).length;
     const days = getRemainingDays(shop);
@@ -5255,6 +5721,8 @@ bot.on('callback_query', async (q) => {
       }
     );
   }
+
+  // ========== ЛОГОТИП ==========
   if (data === 'menu_logo') {
     if (!owner) return;
     const cur = shop.settings.logo
@@ -5278,6 +5746,52 @@ bot.on('callback_query', async (q) => {
         ]
       }
     });
+  }
+
+  // ========== ОБЛОЖКА ==========
+  if (data === 'menu_cover') {
+    if (!owner) return;
+    const cur = shop.settings.cover
+      ? '🖼 Обложка установлена.'
+      : '🖼 Обложка не установлена.';
+    return bot.sendMessage(chatId, cur, {
+      reply_markup: {
+        inline_keyboard: [
+          [{
+            text: '📷 Загрузить',
+            callback_data: 'setcover_now'
+          }],
+          [{
+            text: '🗑 Убрать',
+            callback_data: 'resetcover_now'
+          }],
+          [{
+            text: '↩️ Назад',
+            callback_data: 'menu_back'
+          }]
+        ]
+      }
+    });
+  }
+  if (data === 'setcover_now') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'cover';
+    return bot.sendMessage(chatId,
+      '📷 Отправьте картинку для обложки.\n\n' +
+      '<i>Рекомендуем горизонтальное фото ' +
+      'или баннер. Ширина от 800 px.</i>',
+      { parse_mode: 'HTML' }
+    );
+  }
+  if (data === 'resetcover_now') {
+    if (!owner) return;
+    shop.settings.cover = null;
+    await saveShopSettings(shopId, shop.settings);
+    bot.editMessageText('✅ Обложка убрана.', {
+      chat_id: chatId,
+      message_id: q.message.message_id
+    }).catch(function(){});
+    return;
   }
 
   // ========== ФОН ==========
@@ -5411,6 +5925,37 @@ bot.on('callback_query', async (q) => {
     return;
   }
 
+  if (data === 'setbg_now') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'background';
+    return bot.sendMessage(chatId, '📷 Отправьте фото фона.');
+  }
+  if (data === 'setlogo_now') {
+    if (!owner) return;
+    awaitingUpload[chatId] = 'logo';
+    return bot.sendMessage(chatId, '📷 Отправьте фото логотипа.');
+  }
+  if (data === 'resetlogo_now') {
+    if (!owner) return;
+    shop.settings.logo = null;
+    await saveShopSettings(shopId, shop.settings);
+    bot.editMessageText('✅ Логотип убран.', {
+      chat_id: chatId,
+      message_id: q.message.message_id
+    }).catch(function(){});
+    return;
+  }
+  if (data === 'resetbg_now') {
+    if (!owner) return;
+    shop.settings.background = null;
+    await saveShopSettings(shopId, shop.settings);
+    bot.editMessageText('✅ Фон убран.', {
+      chat_id: chatId,
+      message_id: q.message.message_id
+    }).catch(function(){});
+    return;
+  }
+
   // ========== ЦВЕТ КНОПКИ ==========
   if (data === 'menu_buttoncolor') {
     if (!owner) return;
@@ -5459,9 +6004,8 @@ bot.on('callback_query', async (q) => {
     const col = findColorById(cid);
     if (!col) return;
     let txt = col.emoji + ' <b>' + col.name + '</b>\n\n';
-    txt += 'Так будет выглядеть кнопка на витрине:\n\n';
-    txt += 'Нажмите «Применить» — и цвет появится ' +
-      'на всех карточках.';
+    txt += 'Нажмите «Применить» — и цвет ';
+    txt += 'появится на витрине.';
     try {
       await bot.editMessageText(txt, {
         chat_id: chatId,
@@ -5493,8 +6037,8 @@ bot.on('callback_query', async (q) => {
     await saveShopSettings(shopId, shop.settings);
     let txt = '✅ Цвет кнопки обновлён!\n\n';
     txt += col.emoji + ' ' + col.name + '\n\n';
-    txt += 'Откройте витрину — на карточках ' +
-      'кнопка теперь этого цвета.';
+    txt += 'Откройте витрину — на карточках ';
+    txt += 'кнопка теперь этого цвета.';
     try {
       await bot.editMessageText(txt, {
         chat_id: chatId,
@@ -5509,40 +6053,7 @@ bot.on('callback_query', async (q) => {
       });
     } catch (e) { /* ignore */ }
     return;
-  }
-
-  if (data === 'setlogo_now') {
-    if (!owner) return;
-    awaitingUpload[chatId] = 'logo';
-    return bot.sendMessage(chatId, '📷 Отправьте фото логотипа.');
-  }
-  if (data === 'setbg_now') {
-    if (!owner) return;
-    awaitingUpload[chatId] = 'background';
-    return bot.sendMessage(chatId, '📷 Отправьте фото фона.');
-  }
-  if (data === 'resetlogo_now') {
-    if (!owner) return;
-    shop.settings.logo = null;
-    await saveShopSettings(shopId, shop.settings);
-    bot.editMessageText('✅ Логотип убран.', {
-      chat_id: chatId,
-      message_id: q.message.message_id
-    }).catch(function(){});
-    return;
-  }
-  if (data === 'resetbg_now') {
-    if (!owner) return;
-    shop.settings.background = null;
-    await saveShopSettings(shopId, shop.settings);
-    bot.editMessageText('✅ Фон убран.', {
-      chat_id: chatId,
-      message_id: q.message.message_id
-    }).catch(function(){});
-    return;
-  }
-
-  // ========== ПРОВЕРКА НАЛИЧИЯ ==========
+  }// ========== ПРОВЕРКА НАЛИЧИЯ ==========
   if (data === 'check_start') {
     const bouquets = await getCheckableBouquets(shopId);
     if (bouquets.length === 0) {
@@ -5576,6 +6087,10 @@ bot.on('callback_query', async (q) => {
       parse_mode: 'HTML',
       reply_markup: kb
     }).catch(function(){});
+    // Онбординг: переход к следующему шагу
+    await advanceOnboardingAfter(
+      chatId, shopId, 'check_stock'
+    );
     return;
   }
 
@@ -5601,6 +6116,9 @@ bot.on('callback_query', async (q) => {
         reply_markup: getMainKeyboard(shop, chatId)
       }).catch(function(){});
     }
+    await advanceOnboardingAfter(
+      chatId, shopId, 'check_stock'
+    );
     return;
   }
 
@@ -5727,7 +6245,9 @@ bot.on('callback_query', async (q) => {
     bot.deleteMessage(chatId, q.message.message_id)
       .catch(function(){});
     return refreshCheckList(chatId, session);
-  }// ========== ИЗМЕНИТЬ ЦЕНУ ==========
+  }
+
+  // ========== ИЗМЕНИТЬ ЦЕНУ ==========
   if (data.startsWith('editprice_ok_')) {
     const id = parseInt(data.split('_')[2]);
     const b = await getBouquetById(shopId, id);
@@ -5736,7 +6256,7 @@ bot.on('callback_query', async (q) => {
     let t = '✏️ Напишите новую цену для букета ';
     t += '<b>№' + b.shopNumber + '</b> (' +
       esc(b.name) + ').\n';
-    t += 'Текущая: <b>' + b.price + ' ₽</b>\n';
+    t += 'Текущая: <b>' + formatPrice(b.price, shop) + '</b>\n';
     t += '<i>Отмена — /cancel</i>';
     return bot.sendMessage(chatId, t, {
       parse_mode: 'HTML',
@@ -5869,9 +6389,20 @@ bot.on('callback_query', async (q) => {
     }
     let t = '🌿 <b>Продлено!</b>\n\n';
     t += 'Букет <b>№' + b.shopNumber + '</b> «';
-    t += esc(b.name) + '» — <b>' + b.price + ' ₽</b>\n';
+    t += esc(b.name) + '» — <b>';
+    t += formatPrice(b.price, shop) + '</b>\n';
     t += 'Будет на витрине ещё 3 дня.';
     return bot.sendMessage(chatId, t, { parse_mode: 'HTML' });
+  }
+
+  // ========== УТРЕННЕЕ НАПОМИНАНИЕ — «Позже» ==========
+  if (data === 'morning_later') {
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    const key = shopId + ':' + getNowMoscow()
+      .toISOString().slice(0, 10);
+    morningLaterSent[key] = Date.now();
+    return;
   }
 
   // ========== СТАРЫЕ ВЕТКИ ==========
@@ -5950,346 +6481,375 @@ async function showBouquetCard(chatId, b, shopId) {
   return sendBouquetPreview(
     chatId, b, '📷 <b>Карточка букета</b>', rows
   );
-}// ========== MESSAGE ==========
-bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text;
-  if (!text || text.startsWith('/')) return;
+}// ========== ОНБОРДИНГ — ТЕКСТЫ ==========
+function buildOwnerStepText(step, shopId) {
+  const link = SITE_URL + '/shop/' + shopId;
+  const texts = {
+    add_bouquet: {
+      text: '🎓 <b>Давайте попробуем вместе!</b>\n\n' +
+            'Сейчас создадим ваш первый букет.\n' +
+            'Это займёт <b>1 минуту</b>.\n\n' +
+            'Как это работает:\n' +
+            '1. Пришлите фото букета в этот чат\n' +
+            '2. В подписи напишите название и цену\n' +
+            '3. Букет сразу появится на витрине\n\n' +
+            '<b>Попробуем?</b> Просто пришлите фото ' +
+            'с подписью.\n\n' +
+            'Например: <code>31 роза 3500</code>',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
+    },
+    view_shop: {
+      text: '👁 <b>Посмотрите на витрине</b>\n\n' +
+            'Ваш букет уже на витрине! ' +
+            'Откройте её — увидите, как это ' +
+            'выглядит для клиентов.\n\n' +
+            link + '\n\n' +
+            'Когда посмотрите — вернитесь и ' +
+            'нажмите кнопку ниже.',
+      kb: [
+        [{
+          text: '✅ Посмотрел, дальше',
+          callback_data: 'onb_next'
+        }],
+        [{
+          text: '⏭ Пропустить обучение',
+          callback_data: 'onb_skip'
+        }]
+      ]
+    },
+    edit_price: {
+      text: '✏️ <b>Попробуем изменить цену?</b>\n\n' +
+            'Это самая частая операция. ' +
+            'Нажмите «✏️ Изменить цену» внизу — ' +
+            'я покажу, что делать дальше.',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
+    },
+    hide_bouquet: {
+      text: '📥 <b>Теперь попробуем убрать</b>\n\n' +
+            'Если букет закончился — его можно ' +
+            'убрать с витрины. Клиенты его больше ' +
+            'не увидят, а вернуть можно в любой момент.\n\n' +
+            'Нажмите «✏️ Мои букеты», откройте любой ' +
+            'букет — там будет кнопка «📥 Убрать ' +
+            'с витрины».',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
+    },
+    restore_bouquet: {
+      text: '↩️ <b>А теперь — вернуть обратно</b>\n\n' +
+            'Откройте «📦 Архив» в меню. Там все ' +
+            'убранные букеты. Тапните на него — ' +
+            'увидите кнопку «✅ Вернуть на витрину».',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
+    },
+    check_stock: {
+      text: '✅ <b>Проверка наличия</b>\n\n' +
+            'Это важно. Цветы — живой материал, ' +
+            'они расходятся. Если этот букет больше ' +
+            'не собрать — лучше убрать его с витрины. ' +
+            'Так клиент не напишет впустую.\n\n' +
+            'Раз в 3 дня бот напомнит — открывайте ' +
+            '«✅ Что в наличии?» и отмечайте: есть ' +
+            'или нет.\n\n' +
+            'Попробуйте прямо сейчас — нажмите ' +
+            '«✅ Что в наличии?» внизу.',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
+    },
+    settings_tour: {
+      text: '🎓 <b>Последний шаг. Меню «⚙️ Настройки».</b>\n\n' +
+            'Здесь всё, что нужно магазину. Кратко:\n\n' +
+            '🔗 Ссылка на витрину\n' +
+            '🔑 Пригласить флориста\n' +
+            '👥 Команда — кто у вас работает\n' +
+            '🏪 Данные магазина — адрес, часы, телефон\n' +
+            '📊 Статистика — сколько было заявок\n' +
+            '💰 Наценка — надбавка к цене\n' +
+            '🎨 Логотип и 🖼 Фон\n' +
+            '🖼 Обложка — картинка над названием\n' +
+            '🔘 Цвет кнопки\n' +
+            '💱 Валюта\n' +
+            '📋 Статус и 💳 Продление\n' +
+            '📖 Помощь — если что-то забыли\n\n' +
+            'Запомнить всё сразу не нужно. Кнопки ' +
+            'всегда будут в «⚙️ Настройки».',
+      kb: [
+        [{
+          text: '✅ Понятно, дальше',
+          callback_data: 'onb_next'
+        }],
+        [{
+          text: '⏭ Пропустить обучение',
+          callback_data: 'onb_skip'
+        }]
+      ]
+    },
+    done: {
+      text: '🎉 <b>Поздравляю, вы всему научились!</b>\n\n' +
+            'Теперь вы умеете:\n' +
+            '✅ Добавлять букеты\n' +
+            '✅ Менять цену\n' +
+            '✅ Убирать и возвращать\n' +
+            '✅ Проверять наличие\n\n' +
+            'Остальное — в меню «⚙️ Настройки».\n' +
+            'Если что-то непонятно — /help.\n\n' +
+            '🔗 <b>Ссылка на витрину:</b>\n' + link + '\n\n' +
+            'Можете отправлять её клиентам ' +
+            'прямо сейчас!',
+      kb: [[{
+        text: '🏠 В главное меню',
+        callback_data: 'onb_finish'
+      }]]
+    }
+  };
+  return texts[step] || null;
+}
 
-  if (awaitingAdminBlockReason[chatId]) {
-    const target = awaitingAdminBlockReason[chatId];
-    const reason = text.trim();
-    if (!reason || reason.length < 3) {
-      return bot.sendMessage(chatId,
-        '❌ Причина слишком короткая (минимум ' +
-        '3 символа). Напишите понятнее или /cancel.'
-      );
+function buildFloristStepText(step, shopId, shopName) {
+  const link = SITE_URL + '/shop/' + shopId;
+  const texts = {
+    add_bouquet: {
+      text: '🎓 <b>Добро пожаловать в команду «' +
+            esc(shopName) + '»!</b>\n\n' +
+            'Сейчас покажу за <b>3 минуты</b>, как ' +
+            'работать в боте.\n\n' +
+            'Первое — добавление букета.\n\n' +
+            'Как это работает:\n' +
+            '1. Пришлите фото букета в этот чат\n' +
+            '2. В подписи: название + цена\n' +
+            '3. Букет сразу появится на витрине\n\n' +
+            'Например: <code>31 роза 3500</code>\n\n' +
+            '<b>Попробуйте</b> — пришлите фото ' +
+            'с подписью.',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
+    },
+    check_stock: {
+      text: '✅ <b>Проверка наличия</b>\n\n' +
+            'Цветы — живой материал, они ' +
+            'расходятся. Если букет больше нельзя ' +
+            'собрать — его лучше убрать с витрины. ' +
+            'Так клиент не напишет впустую.\n\n' +
+            'Раз в 3 дня бот напомнит. Открывайте ' +
+            '«✅ Что в наличии?» и отмечайте: есть ' +
+            'или нет.\n\n' +
+            'Попробуйте сейчас — нажмите ' +
+            '«✅ Что в наличии?» внизу.',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
+    },
+    on_shift: {
+      text: '🟢 <b>Последний шаг — смена</b>\n\n' +
+            'Когда вы на работе — нажмите ' +
+            '«✅ Я сегодня работаю». Тогда все ' +
+            'уведомления о клиентах будут ' +
+            'приходить именно вам.\n\n' +
+            'Вечером бот сам сбросит статус ' +
+            'через 14 часов.\n\n' +
+            'Нажмите «✅ Я сегодня работаю» внизу.',
+      kb: [[{
+        text: '⏭ Пропустить обучение',
+        callback_data: 'onb_skip'
+      }]]
     }
-    if (reason.length > 300) {
-      return bot.sendMessage(chatId,
-        '❌ Слишком длинная причина ' +
-        '(максимум 300 символов).'
-      );
-    }
-    delete awaitingAdminBlockReason[chatId];
-    await blockShop(target.shopId, reason);
-    const shop = await getShopFromDb(target.shopId);
-    const owner = shop.admins.find(a => a.role === 'owner');
-    if (owner) {
-      let notice = '🚫 <b>Магазин заблокирован</b>\n\n';
-      notice += 'Причина: <i>' + esc(reason) + '</i>\n\n';
-      notice += 'Если это ошибка — напишите @floop10.';
-      bot.sendMessage(owner.chatId, notice, {
-        parse_mode: 'HTML'
-      }).catch(function(){});
-    }
-    return bot.sendMessage(chatId,
-      '✅ Магазин «' + esc(shop.displayName) +
-      '» заблокирован.'
-    );
+  };
+  return texts[step] || null;
+}
+
+// ========== ОНБОРДИНГ — отправка шага ==========
+async function sendOwnerOnboardingStep(chatId, shopId) {
+  const state = await getOwnerOnboardingState(shopId);
+  if (!state) return;
+  if (state.passed) return;
+  if (!state.step) return;
+  if (state.step === 'done') {
+    // финальный шаг — отправляем и завершаем после подтверждения
   }
-
-  if (awaitingAdminMessage[chatId]) {
-    const target = awaitingAdminMessage[chatId];
-    const textToSend = text.trim();
-    if (textToSend.length > 1000) {
-      return bot.sendMessage(chatId,
-        '❌ Слишком длинное сообщение ' +
-        '(максимум 1000 символов).'
-      );
-    }
-    delete awaitingAdminMessage[chatId];
-    try {
-      let body = '📩 <b>Сообщение от Flowind</b>\n\n';
-      body += esc(textToSend) + '\n\n';
-      body += '<i>Если нужна помощь — пишите @floop10</i>';
-      await bot.sendMessage(target.targetChatId, body, {
-        parse_mode: 'HTML'
-      });
-      return bot.sendMessage(chatId,
-        '✅ Отправлено в «' + esc(target.targetName) + '».'
-      );
-    } catch (e) {
-      return bot.sendMessage(chatId,
-        '❌ Не удалось отправить. Возможно, ' +
-        'пользователь не начинал диалог с ботом.'
-      );
-    }
-  }
-
-  if (MENU_BUTTONS.includes(text)) {
-    delete awaitingPrice[chatId];
-    delete awaitingName[chatId];
-    delete awaitingMarkup[chatId];
-    delete awaitingInput[chatId];
-    delete awaitingUpload[chatId];
-    delete awaitingSearch[chatId];
-    delete archiveSessions[chatId];
-    delete awaitingAdminMessage[chatId];
-    delete awaitingAdminBlockReason[chatId];
-  }
-
-  const shopId = userToShop[chatId] ||
-    await findUserShop(chatId);
-
-  // ========== ПОИСК ==========
-  if (awaitingSearch[chatId] && shopId) {
-    delete awaitingSearch[chatId];
-    const query = text.trim();
-    if (!query) {
-      return sendNav(chatId,
-        '❌ Пустой запрос. Напишите слово или номер.'
-      );
-    }
-    const res = await searchBouquets(shopId, query);
-    return renderSearchResults(
-      chatId, shopId, query, res.results
-    );
-  }
-
-  const input = awaitingInput[chatId];
-  if (input && shopId) {
-    const shop = await getShopFromDb(shopId);
-    if (!shop) { delete awaitingInput[chatId]; return; }
-    if (!isOwner(shop, chatId)) {
-      delete awaitingInput[chatId];
-      return sendNav(chatId, '🚫 Только владелец.');
-    }
-
-    let value = text.trim();
-    if (value.toLowerCase() === 'нет') value = null;
-
-    if (input.field === 'telegram_username' && value) {
-      value = value.replace(/^@/, '').toLowerCase();
-    }
-    if (input.field === 'max_username' && value) {
-      if (!/^https?:\/\/max\.ru\//.test(value)) {
-        return bot.sendMessage(chatId,
-          '❌ Ссылка должна начинаться с ' +
-          '<code>https://max.ru/u/...</code>\n\n' +
-          'Попробуйте ещё раз или нажмите /cancel.',
-          { parse_mode: 'HTML' }
-        );
-      }
-    }
-    if ((input.field === 'phone' ||
-         input.field === 'whatsapp_phone') && value) {
-      const norm = normalizePhone(value);
-      if (!norm) {
-        return bot.sendMessage(chatId,
-          '❌ Похоже на опечатку. Пришлите номер ' +
-          'целиком.\nНапример: ' +
-          '<i>+7 962 402-51-75</i>\n\n' +
-          'Или напишите "нет" и нажмите /cancel.',
-          { parse_mode: 'HTML' }
-        );
-      }
-      value = norm;
-    }
-
-    if (input.field === 'display_name' && value) {
-      if (value.length < 2 || value.length > 60) {
-        return bot.sendMessage(chatId, '❌ 2–60 символов.');
-      }
-    }
-    if (input.field === 'telegram_username' && value) {
-      if (!/^[a-z0-9_]{3,32}$/.test(value)) {
-        return bot.sendMessage(chatId,
-          '❌ Только латиница, цифры, _, ' +
-          'от 3 до 32 символов.'
-        );
-      }
-    }
-
-    await updateShopField(shopId, input.field, value);
-    delete awaitingInput[chatId];
-
-    const updatedShop = await getShopFromDb(shopId);
-    const { text: t, options } =
-      buildShopDataMessage(updatedShop);
-    return bot.sendMessage(
-      chatId,
-      '✅ Сохранено!\n\n' + t,
-      { ...options, reply_markup: getMainKeyboard(
-        updatedShop, chatId
-      ) }
-    );
-  }
-
-  if (awaitingPrice[chatId]) {
-    if (!shopId) { delete awaitingPrice[chatId]; return; }
-    const b = await getBouquetById(
-      shopId, awaitingPrice[chatId]
-    );
-    if (!b) {
-      delete awaitingPrice[chatId];
-      return sendNav(chatId, '❌ Букет не найден.');
-    }
-    const newPrice = parseFloat(
-      text.replace(/[^\d.,]/g, '').replace(',', '.')
-    );
-    if (isNaN(newPrice) || newPrice <= 0) {
-      return bot.sendMessage(chatId,
-        '❌ Введите число. Или нажмите любую ' +
-        'кнопку меню, чтобы выйти.'
-      );
-    }
-    const oldPrice = b.price;
-    await updateBouquetField(
-      b.id, 'price', Math.round(newPrice)
-    );
-    delete awaitingPrice[chatId];
-    const shop = await getShopFromDb(shopId);
-    return bot.sendMessage(chatId,
-      '✅ Цена обновлена: ' + oldPrice + ' → ' +
-      Math.round(newPrice) + ' ₽',
-      { reply_markup: getMainKeyboard(shop, chatId) }
-    );
-  }
-
-  if (awaitingName[chatId]) {
-    if (!shopId) { delete awaitingName[chatId]; return; }
-    const newName = text.trim();
-    if (newName.length < 2 || newName.length > 80) {
-      return bot.sendMessage(chatId,
-        '❌ 2–80 символов. Или нажмите любую ' +
-        'кнопку меню, чтобы выйти.'
-      );
-    }
-    const newTags = extractTagsFromName(newName);
-    await updateBouquetFields(awaitingName[chatId], {
-      name: newName,
-      is_pinned: newName.startsWith('.'),
-      tags: JSON.stringify(newTags)
+  const stepText = buildOwnerStepText(state.step, shopId);
+  if (!stepText) return;
+  try {
+    await bot.sendMessage(chatId, stepText.text, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: stepText.kb }
     });
-    delete awaitingName[chatId];
-    const shop = await getShopFromDb(shopId);
-    let reply = '✅ Переименовано: «' + newName + '»';
-    if (newTags.length > 0) {
-      reply += '\n🏷 Теги: ' +
-        newTags.map(t => '#' + t).join(' ');
-    }
-    return bot.sendMessage(chatId, reply, {
-      reply_markup: getMainKeyboard(shop, chatId)
-    });
-  }
-
-  if (awaitingMarkup[chatId]) {
-    if (!shopId) { delete awaitingMarkup[chatId]; return; }
-    const pct = parseInt(text.replace(/[^\d]/g, ''));
-    if (isNaN(pct) || pct < 0 || pct > 200) {
-      return bot.sendMessage(chatId,
-        '❌ 0–200. Или нажмите любую кнопку ' +
-        'меню, чтобы выйти.'
-      );
-    }
-    const shop = await getShopFromDb(shopId);
-    shop.settings.markupPercent = pct;
-    await saveShopSettings(shopId, shop.settings);
-    delete awaitingMarkup[chatId];
-    return bot.sendMessage(chatId,
-      '✅ Наценка: ' + pct + '%',
-      { reply_markup: getMainKeyboard(shop, chatId) }
+  } catch (e) {
+    console.error(
+      'Ошибка sendOwnerOnboardingStep:', e?.message || e
     );
   }
+}
 
-  if (!shopId) return;
+async function sendFloristOnboardingStep(chatId, shopId) {
   const shop = await getShopFromDb(shopId);
-
-  // ========== ТЕКСТОВЫЕ КНОПКИ ==========
-  if (text === '📷 Добавить букет') {
-    return sendNav(chatId, ADD_BOUQUET_HINT, {
+  const state = await getFloristOnboardingState(chatId, shopId);
+  if (!state) return;
+  if (state.passed) return;
+  if (!state.step) return;
+  const stepText = buildFloristStepText(
+    state.step, shopId,
+    shop ? shop.displayName : 'магазин'
+  );
+  if (!stepText) return;
+  try {
+    await bot.sendMessage(chatId, stepText.text, {
       parse_mode: 'HTML',
-      reply_markup: getMainKeyboard(shop, chatId)
+      reply_markup: { inline_keyboard: stepText.kb }
     });
-  }
-  if (text === '✅ Что в наличии?') {
-    if (!isSubscriptionActive(shop)) {
-      return sendNav(chatId, '❌ Подписка истекла.');
-    }
-    const existing = checkSessions[chatId];
-    if (existing &&
-        (Date.now() - (existing.lastActivity || 0))
-          < CHECK_SESSION_TTL) {
-      existing.lastActivity = Date.now();
-      const t = buildCheckListText(existing);
-      const kb = {
-        inline_keyboard: buildCheckListKeyboard(existing)
-      };
-      const sent = await sendNav(chatId, t, {
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
-      existing.listMessageId = sent.message_id;
-      return;
-    }
-    const { text: t, options } =
-      await buildCheckStartScreen(shopId);
-    return sendNav(chatId, t, options);
-  }
-  if (text === '✏️ Мои букеты') {
-    return buildMyBouquetsMenu(chatId, shopId);
-  }
-  if (text === '🔗 Витрина') {
-    const link = SITE_URL + '/shop/' + shopId;
-    let t = '🔗 <b>Ссылка на вашу витрину:</b>\n\n';
-    t += link + '\n\n';
-    t += 'Отправляйте клиентам — открывается ' +
-      'в любом браузере.';
-    return bot.sendMessage(chatId, t, {
-      parse_mode: 'HTML',
-      reply_markup: getMainKeyboard(shop, chatId)
-    });
-  }
-  if (text === '⚙️ Настройки' || text === '⚙️ Меню') {
-    return sendNav(
-      chatId, '⚙️ Настройки магазина:',
-      getSettingsMenu(shop, chatId)
+  } catch (e) {
+    console.error(
+      'Ошибка sendFloristOnboardingStep:', e?.message || e
     );
   }
-  if (text === '✅ Я сегодня работаю') {
-    await setUserOnShift(chatId, shopId, true);
-    const updated = await getShopFromDb(shopId);
-    let t = '✅ Отлично! Вы <b>на смене</b>.\n\n';
-    t += 'Теперь все уведомления о клиентах ';
-    t += 'будут приходить вам. Через 14 часов ';
-    t += 'статус сбросится автоматически.';
-    return bot.sendMessage(chatId, t, {
-      parse_mode: 'HTML',
-      reply_markup: getMainKeyboard(updated, chatId)
-    });
-  }
-  if (text === '🚪 Закончить работу') {
-    await setUserOnShift(chatId, shopId, false);
-    const updated = await getShopFromDb(shopId);
-    let t = '👋 Хорошего отдыха!\n\n';
-    t += 'Уведомления больше не приходят. ';
-    t += 'Вернётесь — нажмите ';
-    t += '«✅ Я сегодня работаю».';
-    return bot.sendMessage(chatId, t, {
-      reply_markup: getMainKeyboard(updated, chatId)
-    });
-  }
-  if (text === '🔄 Обновить') {
-    delete awaitingPrice[chatId];
-    delete awaitingName[chatId];
-    delete awaitingMarkup[chatId];
-    delete awaitingInput[chatId];
-    delete awaitingUpload[chatId];
-    delete awaitingSearch[chatId];
-    delete archiveSessions[chatId];
-    delete registrationState[chatId];
-    const updated = await getShopFromDb(shopId);
-    let t = '🔄 <b>Обновлено</b>\n\n';
-    t += 'Вернулись в главное меню.';
-    return bot.sendMessage(chatId, t, {
-      parse_mode: 'HTML',
-      reply_markup: getMainKeyboard(updated, chatId)
-    });
-  }
-});
+}
 
-// ========== PHOTO ==========
+// ========== ОНБОРДИНГ — переход к следующему шагу ==========
+async function advanceOwnerOnboarding(chatId, shopId) {
+  const state = await getOwnerOnboardingState(shopId);
+  if (!state || state.passed) return;
+  const next = nextOwnerStep(state.step);
+  await setOwnerOnboardingStep(shopId, next);
+  if (next === 'done') {
+    // done показываем, но не блокируем
+    await sendOwnerOnboardingStep(chatId, shopId);
+    return;
+  }
+  await sendOwnerOnboardingStep(chatId, shopId);
+}
+
+async function advanceFloristOnboarding(chatId, shopId) {
+  const state = await getFloristOnboardingState(
+    chatId, shopId
+  );
+  if (!state || state.passed) return;
+  const next = nextFloristStep(state.step);
+  await setFloristOnboardingStep(chatId, shopId, next);
+  if (next === 'done') {
+    await setFloristOnboardingPassed(chatId, shopId);
+    await bot.sendMessage(chatId,
+      '🎉 <b>Готово!</b>\n\n' +
+      'Теперь вы знаете всё, что нужно.\n' +
+      'Остальное — в меню «⚙️ Настройки».\n' +
+      'Если что-то непонятно — /help.',
+      {
+        parse_mode: 'HTML',
+        reply_markup: getMainKeyboard(
+          await getShopFromDb(shopId), chatId
+        )
+      }
+    );
+    return;
+  }
+  await sendFloristOnboardingStep(chatId, shopId);
+}
+
+// ========== ОНБОРДИНГ — после конкретного действия ==========
+async function advanceOnboardingAfter(chatId, shopId, action) {
+  // Проверяем владельца
+  const ownerState = await getOwnerOnboardingState(shopId);
+  if (ownerState && !ownerState.passed &&
+      ownerState.step === action) {
+    await advanceOwnerOnboarding(chatId, shopId);
+    return true;
+  }
+  // Проверяем флориста
+  const floristState = await getFloristOnboardingState(
+    chatId, shopId
+  );
+  if (floristState && !floristState.passed &&
+      floristState.step === action) {
+    await advanceFloristOnboarding(chatId, shopId);
+    return true;
+  }
+  return false;
+}
+
+// ========== ОНБОРДИНГ — пропустить ==========
+async function skipOwnerOnboarding(chatId, shopId) {
+  await setOwnerOnboardingPassed(shopId);
+  await bot.sendMessage(chatId,
+    '👌 Хорошо, обучение пропущено.\n\n' +
+    'Если что-то понадобится — «📖 Помощь» ' +
+    'в настройках или /help.',
+    { parse_mode: 'HTML' }
+  );
+}
+
+async function skipFloristOnboarding(chatId, shopId) {
+  await setFloristOnboardingPassed(chatId, shopId);
+  await bot.sendMessage(chatId,
+    '👌 Хорошо, обучение пропущено.\n\n' +
+    'Если что-то понадобится — «📖 Помощь» ' +
+    'в настройках или /help.',
+    { parse_mode: 'HTML' }
+  );
+}// ========== ОНБОРДИНГ — КНОПКИ ==========
+  if (data === 'onb_next') {
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    // Проверяем, чей онбординг — владельца или флориста
+    const ownerState = await getOwnerOnboardingState(shopId);
+    if (ownerState && !ownerState.passed &&
+        ownerState.step &&
+        ownerState.step !== 'done') {
+      return advanceOwnerOnboarding(chatId, shopId);
+    }
+    const floristState = await getFloristOnboardingState(
+      chatId, shopId
+    );
+    if (floristState && !floristState.passed &&
+        floristState.step &&
+        floristState.step !== 'done') {
+      return advanceFloristOnboarding(chatId, shopId);
+    }
+    return;
+  }
+
+  if (data === 'onb_skip') {
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    const ownerState = await getOwnerOnboardingState(shopId);
+    if (ownerState && !ownerState.passed) {
+      const isThisOwner = isOwner(shop, chatId);
+      if (isThisOwner) {
+        return skipOwnerOnboarding(chatId, shopId);
+      }
+    }
+    const floristState = await getFloristOnboardingState(
+      chatId, shopId
+    );
+    if (floristState && !floristState.passed) {
+      return skipFloristOnboarding(chatId, shopId);
+    }
+    return;
+  }
+
+  if (data === 'onb_finish') {
+    bot.deleteMessage(chatId, q.message.message_id)
+      .catch(function(){});
+    await setOwnerOnboardingPassed(shopId);
+    await bot.sendMessage(chatId,
+      '👇 Возвращаемся в меню.',
+      { reply_markup: getMainKeyboard(shop, chatId) }
+    );
+    return;
+  }// ========== PHOTO ==========
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
   const shopId = userToShop[chatId] ||
@@ -6308,7 +6868,8 @@ bot.on('photo', async (msg) => {
 
   if (awaitingUpload[chatId]) {
     const which = awaitingUpload[chatId];
-    if (which === 'logo' || which === 'background') {
+    if (which === 'logo' || which === 'background' ||
+        which === 'cover') {
       bot.sendMessage(chatId, '⏳ Загружаю фото...')
         .catch(function(){});
       const result = await savePhotoToStorage(
@@ -6324,7 +6885,9 @@ bot.on('photo', async (msg) => {
       shop.settings[which] = result;
       await saveShopSettings(shopId, shop.settings);
       delete awaitingUpload[chatId];
-      const label = which === 'logo' ? 'Логотип' : 'Фон';
+      let label = 'Логотип';
+      if (which === 'background') label = 'Фон';
+      if (which === 'cover') label = 'Обложка';
       return bot.sendMessage(chatId,
         '✅ ' + label + ' установлен!',
         { reply_markup: getMainKeyboard(shop, chatId) }
@@ -6390,7 +6953,8 @@ bot.on('photo', async (msg) => {
 
     let reply = '✅ Букет <b>№' +
       addResult.shopNumber + '</b> «' +
-      esc(finalName) + '» добавлен! ' + price + ' ₽';
+      esc(finalName) + '» добавлен! ';
+    reply += formatPrice(price, shop);
     if (tags.length > 0) {
       reply += '\n🏷 Теги: ' +
         tags.map(t => '#' + t).join(' ');
@@ -6400,10 +6964,15 @@ bot.on('photo', async (msg) => {
         archivedClicks;
     }
     reply += '\n\n💡 Ещё фото? Отправьте без подписи.';
-    return bot.sendMessage(chatId, reply, {
+    await bot.sendMessage(chatId, reply, {
       parse_mode: 'HTML',
       reply_markup: getMainKeyboard(shop, chatId)
     });
+    // Онбординг: переход после добавления букета
+    await advanceOnboardingAfter(
+      chatId, shopId, 'add_bouquet'
+    );
+    return;
   }
 
   const lastId = lastBouquetByUser[chatId];
@@ -6544,6 +7113,14 @@ bot.on('message', async (msg) => {
     return;
   }
 
+  if (state.step === 'country') {
+    // На шаге «страна» ждём только кнопку. Текстом — подскажем.
+    return bot.sendMessage(chatId,
+      'Пожалуйста, выберите страну кнопкой ниже. ' +
+      'Или нажмите «Пропустить».'
+    );
+  }
+
   if (text.trim().toLowerCase() === 'нет' &&
       !cfg.mandatory) {
     return regSkipCurrentStep(chatId, state);
@@ -6619,16 +7196,22 @@ app.get('/shop/:shopId', async (req, res) => {
       active.sort((a, b) => a.price - b.price);
     } else if (sortParam === 'desc') {
       active.sort((a, b) => b.price - a.price);
+    } else if (sortParam === 'fresh') {
+      active.sort((a, b) => {
+        const da = new Date(a.confirmedAt || a.createdAt);
+        const db = new Date(b.confirmedAt || b.createdAt);
+        return db - da;
+      });
+    } else if (sortParam === 'popular') {
+      active.sort(
+        (a, b) => (b.clicks || 0) - (a.clicks || 0)
+      );
     } else {
       active.sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
-        const da = new Date(
-          b.confirmedAt || b.createdAt
-        );
-        const db = new Date(
-          a.confirmedAt || a.createdAt
-        );
+        const da = new Date(b.confirmedAt || b.createdAt);
+        const db = new Date(a.confirmedAt || a.createdAt);
         return da - db;
       });
     }
@@ -6660,7 +7243,19 @@ app.get('/shop/:shopId', async (req, res) => {
     const pillBase5 = 'font-size:14px;font-weight:700;';
     const pillCommon = pillBase + pillBase2 + pillBase3 +
       pillBase4 + pillBase5;
-    const pillActive = 'background:#e74c3c;color:#fff;';
+
+    const sortBase = 'display:inline-block;';
+    const sortBase2 = 'padding:6px 12px;margin:4px;';
+    const sortBase3 = 'border-radius:16px;';
+    const sortBase4 = 'text-decoration:none;font-size:13px;';
+    const sortCommon = sortBase + sortBase2 +
+      sortBase3 + sortBase4;
+    const sortIdle = 'background:#f5f5f5;color:#666;';
+
+    const btnColors = getButtonColors(shop);
+
+    const pillActive = 'background:' +
+      btnColors.color + ';color:#fff;';
     const pillIdle = 'background:#f0f0f0;color:#555;';
 
     const pill = (label, filterValue) => {
@@ -6672,14 +7267,8 @@ app.get('/shop/:shopId', async (req, res) => {
         style + '">' + label + '</a>';
     };
 
-    const sortBase = 'display:inline-block;';
-    const sortBase2 = 'padding:6px 12px;margin:4px;';
-    const sortBase3 = 'border-radius:16px;';
-    const sortBase4 = 'text-decoration:none;font-size:13px;';
-    const sortCommon = sortBase + sortBase2 +
-      sortBase3 + sortBase4;
-    const sortActive = 'background:#3498db;color:#fff;';
-    const sortIdle = 'background:#f5f5f5;color:#666;';
+    const sortActive = 'background:' +
+      btnColors.color + ';color:#fff;';
 
     const sortPill = (label, sortValue) => {
       const isActive = sortParam === sortValue;
@@ -6701,8 +7290,9 @@ app.get('/shop/:shopId', async (req, res) => {
       const tagBase5 = 'font-size:13px;font-weight:700;';
       const tagCommon = tagBase + tagBase2 +
         tagBase3 + tagBase4 + tagBase5;
-      const tagActive = 'background:#27ae60;color:#fff;';
-      const tagIdle = 'background:#e8f5e9;color:#2c3e50;';
+      const tagActive = 'background:' +
+        btnColors.color + ';color:#fff;';
+      const tagIdle = 'background:#f0f0f0;color:#555;';
       const allActive = tagFilter === 'all';
       let tagsHTML = '<a href="' +
         buildUrl(null, null, 'all') +
@@ -6739,37 +7329,37 @@ app.get('/shop/:shopId', async (req, res) => {
     filtersHTML += '<div style="margin:10px 0 6px;">';
     filtersHTML += pill('Все', 'all');
     if (hasLow) {
-      filtersHTML += pill('До 3000 ₽', 'low');
+      filtersHTML += pill('До 3000', 'low');
     }
     if (hasMid) {
-      filtersHTML += pill('3000–6000 ₽', 'mid');
+      filtersHTML += pill('3000–6000', 'mid');
     }
     if (hasMid2) {
-      filtersHTML += pill('6000–10000 ₽', 'mid2');
+      filtersHTML += pill('6000–10000', 'mid2');
     }
     if (hasHigh1) {
-      filtersHTML += pill('10000–20000 ₽', 'high1');
+      filtersHTML += pill('10000–20000', 'high1');
     }
     if (hasHigh2) {
-      filtersHTML += pill('От 20000 ₽', 'high2');
+      filtersHTML += pill('От 20000', 'high2');
     }
     filtersHTML += '</div>';
     filtersHTML += '<div style="margin-bottom:20px;">';
-    filtersHTML += sortPill('↓ Сначала дешевле', 'asc');
-    filtersHTML += sortPill('↑ Сначала дороже', 'desc');
+    filtersHTML += sortPill('↓ Дешевле', 'asc');
+    filtersHTML += sortPill('↑ Дороже', 'desc');
+    filtersHTML += sortPill('🔥 Свежие', 'fresh');
+    filtersHTML += sortPill('⭐ Популярные', 'popular');
     filtersHTML += '</div>';
-
-    const btnColors = getButtonColors(shop);
 
     const useTwoColumns =
       active.length > TWO_COLUMNS_THRESHOLD;
     const gridStyle = useTwoColumns
       ? 'display:grid;grid-template-columns:' +
-        'minmax(0,1fr) minmax(0,1fr);gap:14px;' +
+        'minmax(0,1fr) minmax(0,1fr);gap:8px;' +
         'max-width:760px;margin:0 auto;' +
         'align-items:stretch;'
       : 'display:flex;flex-wrap:wrap;' +
-        'justify-content:center;gap:14px;';
+        'justify-content:center;gap:8px;';
     const cardExtra = useTwoColumns
       ? 'width:100%;box-sizing:border-box;min-width:0;'
       : 'max-width:320px;';
@@ -6789,33 +7379,66 @@ app.get('/shop/:shopId', async (req, res) => {
         }
         let gallery = '';
         if (photoRefsList.length === 0) {
+          const grad = getPlaceholderGradient(b.id);
           gallery = '<div class="card-photo" style="';
-          gallery += 'width:100%;aspect-ratio:1/1;';
-          gallery += 'background:#f5f0e8;border-radius:16px;';
+          gallery += 'width:100%;aspect-ratio:4/5;';
+          gallery += 'background:' + grad + ';';
           gallery += 'display:flex;align-items:center;';
-          gallery += 'justify-content:center;color:#c8b8a0;';
-          gallery += 'font-size:48px;">📷</div>';
+          gallery += 'justify-content:center;color:#fff;';
+          gallery += 'font-size:44px;opacity:0.65;">📷</div>';
         } else if (photoRefsList.length === 1) {
           gallery = renderImgTag(
             photoRefsList[0],
-            'width:100%;border-radius:16px;' +
-            'aspect-ratio:1/1;object-fit:cover;' +
-            'display:block;'
+            'width:100%;aspect-ratio:4/5;' +
+            'object-fit:cover;display:block;'
           );
         } else {
-          const slideStyle = 'height:220px;width:auto;' +
-            'border-radius:14px;flex-shrink:0;' +
-            'display:block;';
+          const slideStyle = 'height:100%;width:auto;' +
+            'flex-shrink:0;display:block;';
           let slides = '';
           for (const r of photoRefsList) {
             slides += renderImgTag(r, slideStyle);
           }
-          gallery = '<div style="display:flex;' +
-            'overflow-x:auto;gap:8px;' +
-            'margin-bottom:4px;max-width:100%;' +
-            'min-width:0;scroll-snap-type:x mandatory;' +
-            '-webkit-overflow-scrolling:touch;">';
+          const dots = photoRefsList
+            .map((_, i) => {
+              const op = i === 0 ? '1' : '0.4';
+              return '<span style="display:inline-block;';
+            })
+            .join('');
+          gallery = '<div class="card-gallery-wrap" ';
+          gallery += 'style="position:relative;width:100%;';
+          gallery += 'aspect-ratio:4/5;overflow:hidden;">';
+          gallery += '<div class="card-gallery" style="';
+          gallery += 'display:flex;overflow-x:auto;gap:0;';
+          gallery += 'width:100%;height:100%;';
+          gallery += 'scroll-snap-type:x mandatory;';
+          gallery += '-webkit-overflow-scrolling:touch;';
+          gallery += 'scrollbar-width:none;">';
           gallery += slides + '</div>';
+          gallery += '<div class="card-dots" data-count="' +
+            photoRefsList.length + '" style="';
+          gallery += 'position:absolute;bottom:8px;left:50%;';
+          gallery += 'transform:translateX(-50%);';
+          gallery += 'display:flex;gap:4px;z-index:5;">';
+          for (let i = 0; i < photoRefsList.length; i++) {
+            const op = i === 0 ? '0.95' : '0.45';
+            gallery += '<span data-i="' + i + '" style="';
+            gallery += 'display:inline-block;width:14px;';
+            gallery += 'height:2px;border-radius:2px;';
+            gallery += 'background:rgba(255,255,255,' + op + ');';
+            gallery += '"></span>';
+          }
+          gallery += '</div>';
+          gallery += '<span style="position:absolute;';
+          gallery += 'top:50%;right:8px;';
+          gallery += 'transform:translateY(-50%);';
+          gallery += 'width:28px;height:28px;';
+          gallery += 'background:rgba(255,255,255,0.85);';
+          gallery += 'border-radius:50%;display:flex;';
+          gallery += 'align-items:center;justify-content:center;';
+          gallery += 'font-size:14px;color:#333;';
+          gallery += 'pointer-events:none;">›</span>';
+          gallery += '</div>';
         }
 
         const oldPrice = calculateOldPrice(
@@ -6829,10 +7452,9 @@ app.get('/shop/:shopId', async (req, res) => {
         const bouquetNameJs = JSON.stringify(b.name);
         const bouquetPriceJs = b.price;
 
-        const titleFS = useTwoColumns ? '15px' : '18px';
-        const priceFS = useTwoColumns ? '19px' : '24px';
-        const oldFS = useTwoColumns ? '14px' : '18px';
-        const cardP = useTwoColumns ? '12px' : '16px';
+        const titleFS = useTwoColumns ? '14px' : '17px';
+        const priceFS = useTwoColumns ? '20px' : '26px';
+        const oldFS = useTwoColumns ? '13px' : '16px';
 
         const confirmedLine =
           formatConfirmedAt(b.confirmedAt);
@@ -6850,78 +7472,99 @@ app.get('/shop/:shopId', async (req, res) => {
           btnColors.color + '55';
 
         let card = '<div class="card" style="border:none;';
-        card += 'border-radius:24px;padding:' + cardP + ';';
+        card += 'border-radius:6px;padding:0;';
         card += 'margin:0;' + cardExtra;
         card += 'background:#fff;';
-        card += 'box-shadow:0 4px 20px rgba(0,0,0,0.06);';
+        card += 'box-shadow:0 2px 12px rgba(0,0,0,0.06);';
         card += 'text-align:center;position:relative;';
         card += 'display:flex;flex-direction:column;';
+        card += 'overflow:hidden;';
         card += 'transition:transform 0.25s ease,';
         card += 'box-shadow 0.25s ease,';
         card += 'opacity 0.4s ease;';
         card += 'will-change:transform;">';
-        const numTop = useTwoColumns ? '18px' : '26px';
-        const numRight = useTwoColumns ? '18px' : '26px';
+        const numTop = '10px';
+        const numRight = '10px';
         card += '<div style="position:absolute;top:' +
           numTop + ';right:' + numRight + ';';
         card += 'background:rgba(44,62,80,0.85);';
-        card += 'color:#fff;padding:4px 12px;';
-        card += 'border-radius:20px;font-size:12px;';
-        card += 'font-weight:bold;z-index:10;';
+        card += 'color:#fff;padding:3px 10px;';
+        card += 'border-radius:12px;font-size:11px;';
+        card += 'font-weight:700;z-index:10;';
         card += 'backdrop-filter:blur(4px);">';
         card += '№' + b.shopNumber + '</div>';
         card += gallery;
-        card += '<h3 style="margin:12px 0 4px;';
+        card += '<div style="padding:10px 12px 12px;">';
+        card += '<h3 class="card-title" style="margin:0 0 4px;';
         card += 'font-size:' + titleFS + ';';
-        card += 'line-height:1.3;word-wrap:break-word;';
-        card += 'overflow-wrap:break-word;';
-        card += 'font-weight:700;color:#2c3e50;">';
+        card += 'line-height:1.3;';
+        card += 'display:-webkit-box;';
+        card += '-webkit-line-clamp:2;';
+        card += '-webkit-box-orient:vertical;';
+        card += 'overflow:hidden;';
+        card += 'font-weight:600;color:#2c3e50;">';
         card += esc(b.name) + '</h3>';
         card += '<p style="font-size:' + priceFS + ';';
-        card += 'font-weight:800;color:' + btnColors.color + ';';
-        card += 'margin:6px 0 4px;letter-spacing:-0.5px;">';
+        card += 'font-weight:800;color:#2c3e50;';
+        card += 'margin:4px 0 4px;letter-spacing:-0.5px;">';
         if (oldPrice > b.price) {
           card += '<span style="';
           card += 'text-decoration:line-through;';
           card += 'color:#b0b0b0;font-weight:400;';
           card += 'font-size:' + oldFS + ';';
           card += 'margin-right:6px;">';
-          card += oldPrice + ' ₽</span>';
+          card += formatPrice(oldPrice, shop) + '</span>';
         }
-        card += b.price + ' ₽</p>';
+        card += formatPrice(b.price, shop) + '</p>';
         card += confirmedHTML;
         card += '<div style="margin-top:auto;padding-top:8px;">';
         card += '<a href="' + contactUrl + '" style="';
-        card += 'display:block;max-width:240px;';
+        card += 'display:block;';
         card += 'margin:8px auto 0;';
         card += 'background:' + btnGrad + ';color:#fff;';
-        card += 'padding:14px 18px;';
-        card += 'border-radius:30px;text-decoration:none;';
+        card += 'padding:12px 16px;';
+        card += 'border-radius:24px;text-decoration:none;';
         card += 'font-weight:700;text-align:center;';
-        card += 'font-size:15px;';
+        card += 'font-size:14px;';
         card += 'box-shadow:' + btnShadow + ';">';
         card += '📞 Связаться</a>';
-        card += '<div style="margin-top:8px;">';
+        card += '<div style="margin-top:6px;">';
         card += '<a href="#" onclick=\'shareBouquet' +
           '(event, ' + bouquetUrlJs + ', ' +
           bouquetNameJs + ', ' + bouquetPriceJs +
           '); return false;\' style="';
         card += 'display:inline-block;color:#999;';
-        card += 'font-size:12px;text-decoration:none;';
-        card += 'padding:6px 12px;border-radius:16px;';
+        card += 'font-size:11px;text-decoration:none;';
+        card += 'padding:5px 10px;border-radius:14px;';
         card += 'background:#f7f3ee;">📤 Поделиться</a>';
-        card += '</div></div></div>';
+        card += '</div></div></div></div>';
         cards += card;
       }
     }
 
+    const coverUrl = shop.settings.cover
+      ? await getPhotoUrl(shop.settings.cover)
+      : null;
     const logoUrl = shop.settings.logo
       ? await getPhotoUrl(shop.settings.logo)
       : null;
     const bodyBg = getBackgroundStyle(shop.settings.background);
+
+    let coverHTML = '';
+    if (coverUrl) {
+      coverHTML = '<div style="max-width:760px;';
+      coverHTML += 'margin:0 auto 16px;';
+      coverHTML += 'border-radius:14px;overflow:hidden;';
+      coverHTML += 'box-shadow:0 4px 20px rgba(0,0,0,0.08);">';
+      coverHTML += '<img src="' + escAttr(coverUrl) + '" ';
+      coverHTML += 'style="width:100%;display:block;';
+      coverHTML += 'max-height:280px;object-fit:cover;">';
+      coverHTML += '</div>';
+    }
+
     const headerHTML = logoUrl
       ? '<img src="' + escAttr(logoUrl) +
-        '" style="max-height:90px;display:block;' +
+        '" style="max-height:80px;display:block;' +
         'margin:0 auto 12px;">'
       : '';
 
@@ -6939,12 +7582,12 @@ app.get('/shop/:shopId', async (req, res) => {
 
     let titleHTML = '<div style="';
     titleHTML += 'background:rgba(255,255,255,0.92);';
-    titleHTML += 'border-radius:22px;padding:18px 24px;';
+    titleHTML += 'border-radius:14px;padding:16px 22px;';
     titleHTML += 'max-width:560px;margin:0 auto 20px;';
-    titleHTML += 'box-shadow:0 6px 24px rgba(0,0,0,0.06);';
+    titleHTML += 'box-shadow:0 4px 20px rgba(0,0,0,0.06);';
     titleHTML += 'backdrop-filter:blur(8px);">';
     titleHTML += '<h1 style="color:#2c3e50;';
-    titleHTML += 'margin:0 0 8px;font-size:28px;';
+    titleHTML += 'margin:0 0 8px;font-size:26px;';
     titleHTML += 'font-weight:800;letter-spacing:-0.5px;">';
     titleHTML += esc(shop.displayName) + '</h1>';
     if (shop.address || shop.hours) {
@@ -6973,7 +7616,7 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '<style>';
     html += 'body{font-family:Manrope,';
     html += '-apple-system,sans-serif;';
-    html += 'margin:0;padding:24px 16px;';
+    html += 'margin:0;padding:20px 14px;';
     html += 'text-align:center;' + bodyBg + '}\n';
     html += 'h1{color:#2c3e50;}\n';
     html += '.container{max-width:1200px;margin:0 auto;}\n';
@@ -6982,6 +7625,7 @@ app.get('/shop/:shopId', async (req, res) => {
     html += 'transform:translateY(14px);}\n';
     html += '.card.visible{opacity:1;';
     html += 'transform:translateY(0);}\n';
+    html += '.card-gallery::-webkit-scrollbar{display:none;}\n';
     html += '@media (hover: hover){';
     html += '.card:hover{';
     html += 'transform:translateY(-3px);';
@@ -6999,7 +7643,7 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '}\n';
     html += '</style></head><body>';
     html += '<div class="container">';
-    html += headerHTML + titleHTML + filtersHTML;
+    html += coverHTML + headerHTML + titleHTML + filtersHTML;
     html += '<div class="shop-grid" style="' +
       gridStyle + '">' + cards + '</div></div>';
     html += '<div id="lightbox" onclick="closeLightbox()" ';
@@ -7059,14 +7703,14 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '.src = "";\n';
     html += '  document.body.style.overflow = "";\n';
     html += '}\n';
-    html += 'function lightboxNext() {\n';
+    html += 'function lbNext() {\n';
     html += '  if (lbImages.length < 2) return;\n';
     html += '  lbIndex = (lbIndex + 1) % lbImages.length;\n';
     html += '  var img = ';
     html += 'document.getElementById("lightbox-img");\n';
     html += '  img.src = lbImages[lbIndex];\n';
     html += '}\n';
-    html += 'function lightboxPrev() {\n';
+    html += 'function lbPrev() {\n';
     html += '  if (lbImages.length < 2) return;\n';
     html += '  lbIndex = (lbIndex - 1 + lbImages.length) ';
     html += '% lbImages.length;\n';
@@ -7099,8 +7743,8 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '  var lb = document.getElementById("lightbox");\n';
     html += '  if (!lb || lb.style.display !== "flex") return;\n';
     html += '  if (e.key === "Escape") closeLightbox();\n';
-    html += '  if (e.key === "ArrowRight") lightboxNext();\n';
-    html += '  if (e.key === "ArrowLeft") lightboxPrev();\n';
+    html += '  if (e.key === "ArrowRight") lbNext();\n';
+    html += '  if (e.key === "ArrowLeft") lbPrev();\n';
     html += '});\n';
     html += 'var lbEl = document.getElementById("lightbox");\n';
     html += 'lbEl.addEventListener("touchstart", ';
@@ -7117,8 +7761,25 @@ app.get('/shop/:shopId', async (req, res) => {
     html += '  var dy = e.changedTouches[0].clientY - touchStartY;\n';
     html += '  if (Math.abs(dx) < 40) return;\n';
     html += '  if (Math.abs(dx) < Math.abs(dy)) return;\n';
-    html += '  if (dx < 0) lightboxNext(); else lightboxPrev();\n';
+    html += '  if (dx < 0) lbNext(); else lbPrev();\n';
     html += '}, { passive: true });\n';
+    // Обновление точек на карточке при скролле галереи
+    html += 'document.querySelectorAll(".card-gallery-wrap")';
+    html += '.forEach(function(wrap) {\n';
+    html += '  var gal = wrap.querySelector(".card-gallery");\n';
+    html += '  var dots = wrap.querySelectorAll(".card-dots span");\n';
+    html += '  if (!gal || !dots || !dots.length) return;\n';
+    html += '  gal.addEventListener("scroll", function() {\n';
+    html += '    var w = gal.clientWidth;\n';
+    html += '    if (!w) return;\n';
+    html += '    var i = Math.round(gal.scrollLeft / w);\n';
+    html += '    dots.forEach(function(d, j) {\n';
+    html += '      d.style.background = ';
+    html += 'j === i ? "rgba(255,255,255,0.95)" : ';
+    html += '"rgba(255,255,255,0.45)";\n';
+    html += '    });\n';
+    html += '  }, { passive: true });\n';
+    html += '});\n';
     html += 'if ("IntersectionObserver" in window) {\n';
     html += '  var obs = new IntersectionObserver(';
     html += 'function(entries){\n';
@@ -7149,9 +7810,7 @@ app.get('/', (req, res) => {
   h += 'text-align:center;padding:50px;">';
   h += '<h1>🌸 Flowind</h1></body></html>';
   res.send(h);
-});
-
-// ========== ФОНОВЫЕ ЗАДАЧИ ==========
+});// ========== ФОНОВЫЕ ЗАДАЧИ ==========
 async function checkAndNotify() {
   try {
     const shops = await pool.query(
@@ -7189,7 +7848,7 @@ async function checkAndNotify() {
   }
 }
 
-// ========== УТРЕННЕЕ НАПОМИНАНИЕ (с проверкой 12ч) ==========
+// ========== УТРЕННЕЕ НАПОМИНАНИЕ (ПРАВКА 59) ==========
 async function morningReminder() {
   try {
     const now = getNowMoscow();
@@ -7216,6 +7875,22 @@ async function morningReminder() {
 
       const sentKey = s.shop_id + ':' + todayKey;
       if (morningReminderSent[sentKey]) continue;
+
+      // ПРАВКА 68: если флорист нажал «Позже» —
+      // напоминаем через час, потом молчим до конца дня
+      const laterKey = s.shop_id + ':' + todayKey;
+      const laterTime = morningLaterSent[laterKey];
+      if (laterTime) {
+        const diffHr = (Date.now() - laterTime) / 3600000;
+        if (diffHr < 1) continue;
+        if (diffHr >= 1 && diffHr < 1.5) {
+          // отправляем финальное напоминание
+        } else if (diffHr >= 1.5) {
+          // уже отправляли второй раз — молчим
+          morningReminderSent[sentKey] = Date.now();
+          continue;
+        }
+      }
 
       const shop = await getShopFromDb(s.shop_id);
       if (!shop) continue;
@@ -7282,6 +7957,62 @@ async function morningReminder() {
   }
 }
 
+// ========== НАПОМИНАНИЕ ЧЕРЕЗ 3 ДНЯ О ПЕРВОМ БУКЕТЕ ==========
+async function checkFirstBouquetReminder() {
+  try {
+    const shops = await pool.query(
+      'SELECT shop_id, trial_start, settings ' +
+      'FROM shops WHERE blocked = FALSE'
+    );
+    for (const s of shops.rows) {
+      const settings = s.settings || {};
+      if (settings.onboardingPassed) continue;
+      if (settings.firstBouquetReminded) continue;
+      if (!s.trial_start) continue;
+
+      const daysSince = (
+        Date.now() - new Date(s.trial_start).getTime()
+      ) / (24 * 60 * 60 * 1000);
+      if (daysSince < 3) continue;
+
+      const bouquets = await getBouquetsFromDb(s.shop_id);
+      if (bouquets.length > 0) {
+        // букеты уже есть — отмечаем и не напоминаем
+        settings.firstBouquetReminded = true;
+        await saveShopSettings(s.shop_id, settings);
+        continue;
+      }
+
+      const shop = await getShopFromDb(s.shop_id);
+      const owner = shop.admins.find(
+        a => a.role === 'owner'
+      );
+      if (!owner) continue;
+
+      let txt = '👋 Привет!\n\n';
+      txt += 'Хотите попробовать добавить первый ';
+      txt += 'букет на витрину? Это <b>1 минута</b>.\n\n';
+      txt += 'Просто пришлите фото букета с подписью:\n';
+      txt += '<code>31 роза 3500</code>\n\n';
+      txt += 'Если что-то непонятно — /help';
+
+      bot.sendMessage(owner.chatId, txt, {
+        parse_mode: 'HTML'
+      }).catch(function(){});
+
+      settings.firstBouquetReminded = true;
+      await saveShopSettings(s.shop_id, settings);
+      console.log(
+        '📨 Напоминание о первом букете: ' + s.shop_id
+      );
+    }
+  } catch (e) {
+    console.error(
+      'Ошибка checkFirstBouquetReminder:', e?.message || e
+    );
+  }
+}
+
 // ========== ОТЧЁТ ЗА НЕДЕЛЮ ==========
 const weeklyReportSent = {};
 
@@ -7324,7 +8055,8 @@ async function weeklyReport() {
         `WHERE shop_id = $1 AND deleted = FALSE`,
         [s.shop_id]
       );
-      const totalClicks = parseInt(clicksRes.rows[0].total) || 0;
+      const totalClicks =
+        parseInt(clicksRes.rows[0].total) || 0;
 
       const topRes = await pool.query(
         `SELECT shop_number, name, clicks ` +
@@ -7344,7 +8076,8 @@ async function weeklyReport() {
       const archCount = parseInt(archRes.rows[0].cnt) || 0;
 
       const all = await getBouquetsFromDb(s.shop_id);
-      const activeNow = all.filter(isConfirmedRecently).length;
+      const activeNow =
+        all.filter(isConfirmedRecently).length;
 
       let txt = '📊 <b>Итоги недели «';
       txt += esc(shop.displayName) + '»</b>\n\n';
@@ -7395,6 +8128,7 @@ async function weeklyReport() {
   }
 }
 
+// ========== ОЧИСТКА ==========
 function cleanupExpiredCheckSessions() {
   const now = Date.now();
   let cleaned = 0;
@@ -7413,7 +8147,26 @@ function cleanupExpiredCheckSessions() {
   }
 }
 
-// ========== ЗАПУСК ==========
+function cleanupMorningLater() {
+  const now = Date.now();
+  const nowMoscow = getNowMoscow();
+  const todayKey = nowMoscow.toISOString().slice(0, 10);
+  for (const key of Object.keys(morningLaterSent)) {
+    const parts = key.split(':');
+    if (parts.length < 2) {
+      delete morningLaterSent[key];
+      continue;
+    }
+    const datePart = parts[parts.length - 1];
+    if (datePart !== todayKey) {
+      // очищаем записи прошлых дней
+      if (now - morningLaterSent[key] >
+          25 * 60 * 60 * 1000) {
+        delete morningLaterSent[key];
+      }
+    }
+  }
+}// ========== ЗАПУСК ==========
 initDb().then(async () => {
   const existing = await getShopFromDb(PRESET_SHOP.shopId);
   if (!existing) {
@@ -7438,10 +8191,13 @@ initDb().then(async () => {
       inviteCode,
       trialStart: now.toISOString(),
       trialEnd: trialEnd.toISOString(),
+      country: 'RU',
       settings: {
         logo: null,
+        cover: null,
         background: { type: 'preset', id: 1 },
         buttonColor: 'red',
+        currency: 'RUB',
         markupPercent: PRESET_SHOP.markupPercent,
         aiEnabled: false
       },
@@ -7505,8 +8261,10 @@ initDb().then(async () => {
 
   setInterval(checkAndNotify, 10 * 60 * 1000);
   setInterval(morningReminder, 5 * 60 * 1000);
+  setInterval(checkFirstBouquetReminder, 60 * 60 * 1000);
   setInterval(cleanupExpiredCheckSessions, 5 * 60 * 1000);
   setInterval(cleanupNotifiedClicks, 5 * 60 * 1000);
+  setInterval(cleanupMorningLater, 60 * 60 * 1000);
   setInterval(weeklyReport, 30 * 60 * 1000);
 
   const PORT = process.env.PORT || 3000;
