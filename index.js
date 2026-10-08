@@ -5281,8 +5281,8 @@ bot.on('callback_query', async (q) => {
   if (data.startsWith('edit_shop_')) {
     if (!owner) return;
     const field = data.replace('edit Ск_shop_', '');
-опи    const prompts = {
-      displaynameру: {
+  const prompts = {
+      displayname: {
         q: '📝 Введите новое <йтеb> ссыназвание</b> ' +
            'магазина (как показывать клиентам).\n' +
            'Пример: <i>Цветы на Фрунзе</i>',
