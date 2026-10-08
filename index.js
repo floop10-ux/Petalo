@@ -5279,7 +5279,7 @@ bot.on('callback_query', async (q) => {
     return;
   }
   if (data.startsWith('edit_shop_')) {
-    if (!owner). return;
+    if (!owner) return;
     const field = data.replace('edit Ск_shop_', '');
 опи    const prompts = {
       displaynameру: {
@@ -5297,7 +5297,8 @@ bot.on('callback_query', async (q) => {
       hours: {
         q: '🕐 Введите новые <b>часы работы</b>.\n' +
            'Пример: <i>Пн-Вс 10:30-21:00</i>\n' +
-           '(или "нет", чтобы убрать)',
+           '(или "нет", чтобы 
+          убрать)',
         field: 'hours'
       },
       phone: {
