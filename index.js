@@ -6672,6 +6672,20 @@ function buildFloristStepText(step, shopId, shopName) {
   };
   return texts[step] || null;
 }
+bot.on('callback_query', async (q) => {
+  const chatId = q.from.id;
+  const data = q.data;
+  bot.answerCallbackQuery(q.id).catch(function(){});
+
+  if (checkSessions[chatId]) {
+    checkSessions[chatId].lastActivity = Date.now();
+  }
+
+  const shopId = userToShop[chatId] ||
+    await findUserShop(chatId);
+  if (!shopId) return;
+  const shop = await getShopFromDb(shopId);
+  if (!shop) return;
 
 // ========== ОНБОРДИНГ — отправка шага ==========
 async function sendOwnerOnboardingStep(chatId, shopId) {
@@ -6839,6 +6853,7 @@ async function skipFloristOnboarding(chatId, shopId) {
     }
     return;
   }
+  });
 
   if (data === 'onb_finish') {
     bot.deleteMessage(chatId, q.message.message_id)
