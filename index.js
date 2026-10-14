@@ -8183,18 +8183,48 @@ const ranges = getPriceRanges(shop);
       shop.settings.background
     );
 
-    let coverHTML = '';
+  let coverHTML = '';
     if (coverUrl) {
       coverHTML = '<div style="max-width:760px;';
-      coverHTML += 'margin:0 auto 16px;';
-      coverHTML += 'border-radius:14px;overflow:hidden;';
-      coverHTML += 'box-shadow:0 4px 20px ';
-      coverHTML += 'rgba(0,0,0,0.08);">';
+      coverHTML += 'margin:0 auto 12px;';
+      coverHTML += 'border-radius:20px;';
+      coverHTML += 'overflow:hidden;position:relative;';
+      coverHTML += 'box-shadow:0 6px 28px ';
+      coverHTML += 'rgba(0,0,0,0.12);">';
       coverHTML += '<img src="' + escAttr(coverUrl) + '" ';
       coverHTML += 'style="width:100%;display:block;';
-      coverHTML += 'max-height:280px;';
+      coverHTML += 'height:280px;';
       coverHTML += 'object-fit:cover;">';
-      coverHTML += '</div>';
+      coverHTML += '<div style="position:absolute;';
+      coverHTML += 'left:0;right:0;bottom:0;';
+      coverHTML += 'padding:60px 24px 20px;';
+      coverHTML += 'background:linear-gradient(180deg,';
+      coverHTML += 'rgba(0,0,0,0) 0%,';
+      coverHTML += 'rgba(0,0,0,0.35) 40%,';
+      coverHTML += 'rgba(0,0,0,0.72) 100%);';
+      coverHTML += 'color:#fff;text-align:center;">';
+      coverHTML += '<h1 style="margin:0 0 8px;';
+      coverHTML += 'font-size:26px;font-weight:800;';
+      coverHTML += 'letter-spacing:-0.5px;color:#fff;';
+      coverHTML += 'text-shadow:0 2px 12px ';
+      coverHTML += 'rgba(0,0,0,0.5);">';
+      coverHTML += esc(shop.displayName) + '</h1>';
+      if (shop.address || shop.hours) {
+        coverHTML += '<div style="font-size:14px;';
+        coverHTML += 'line-height:1.5;';
+        coverHTML += 'color:rgba(255,255,255,0.94);';
+        coverHTML += 'text-shadow:0 1px 8px ';
+        coverHTML += 'rgba(0,0,0,0.6);">';
+        if (shop.address) {
+          coverHTML += '📍 ' + esc(shop.address);
+        }
+        if (shop.hours) {
+          if (shop.address) coverHTML += '<br>';
+          coverHTML += '🕐 ' + esc(shop.hours);
+        }
+        coverHTML += '</div>';
+      }
+      coverHTML += '</div></div>';
     }
 
     const headerHTML = logoUrl
@@ -8215,7 +8245,9 @@ const countLine = totalActiveCount > 0
         ' в наличии</div>'
       : '';
 
-    let titleHTML = '<div style="';
+  let titleHTML = '';
+    if (!coverUrl) {
+      titleHTML = '<div style="';
     titleHTML += 'background:rgba(255,255,255,0.92);';
     titleHTML += 'border-radius:14px;padding:16px 22px;';
     titleHTML += 'max-width:560px;margin:0 auto 20px;';
@@ -8236,8 +8268,9 @@ const countLine = totalActiveCount > 0
         titleHTML += '🕐 ' + esc(shop.hours);
       }
       titleHTML += '</div>';
+      }
+      titleHTML += countLine + '</div>';
     }
-    titleHTML += countLine + '</div>';
     let html = '';
     html += '<!DOCTYPE html><html><head>';
     html += '<meta charset="UTF-8">';
@@ -8278,7 +8311,7 @@ const countLine = totalActiveCount > 0
     html += '}\n';
     html += '</style></head><body>';
     html += '<div class="container">';
-    html += coverHTML + headerHTML + titleHTML +
+    html += headerHTML + coverHTML + titleHTML +
       filtersHTML;
     html += '<div class="shop-grid" style="' +
       gridStyle + '">' + cards + '</div></div>';
