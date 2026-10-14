@@ -54,6 +54,37 @@ if (S3_ENABLED) {
   console.log('⚠️ S3 не настроен — фото через Telegram');
 }
 
+// Резервный S3 (Timeweb Cloud)
+const BC_BUCKET = process.env.S3_BACKUP_BUCKET;
+const BC_ACCESS_KEY = process.env.S3_BACKUP_ACCESS_KEY;
+const BC_SECRET_KEY = process.env.S3_BACKUP_SECRET_KEY;
+const BC_ENDPOINT = process.env.S3_BACKUP_ENDPOINT;
+const S3_BACKUP_ENABLED = !!(
+  BC_BUCKET &&
+  BC_ACCESS_KEY &&
+  BC_SECRET_KEY &&
+  BC_ENDPOINT
+);
+
+let s3backup = null;
+if (S3_BACKUP_ENABLED) {
+  s3backup = new S3Client({
+    region: 'ru-1',
+    endpoint: BC_ENDPOINT,
+    credentials: {
+      accessKeyId: BC_ACCESS_KEY,
+      secretAccessKey: BC_SECRET_KEY
+    },
+    forcePathStyle: true
+  });
+  console.log(
+    '✅ S3-backup (bucket: ' + BC_BUCKET + ')'
+  );
+} else {
+  console.log(
+    '⚠️ S3-backup не настроен — только Yandex'
+  );
+}
 process.on('unhandledRejection', (e) => {
   console.error('⚠️ Unhandled rejection:', e?.message || e);
 });
@@ -851,18 +882,47 @@ async function uploadToS3(buffer, key) {
     `https://${YC_BUCKET}.storage.yandexcloud.net/${key}`
   );
 }
+async function uploadToS3Backup(buffer, key) {
+  if (!s3backup) return null;
+  try {
+    const cmd = new PutObjectCommand({
+      Bucket: BC_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: 'image/jpeg'
+    });
+    await s3backup.send(cmd);
+    return BC_ENDPOINT + '/' + BC_BUCKET + '/' + key;
+  } catch (e) {
+    console.error(
+      '⚠️ S3-backup ошибка:', e?.message || e
+    );
+    return null;
+  }
+}
 
 async function savePhotoToStorage(telegramFileId, shopId) {
   if (!S3_ENABLED) {
     return { tg: telegramFileId };
-  }
+    }
+
   try {
     const buffer = await downloadTelegramFile(telegramFileId);
     const rand = Math.random().toString(36).slice(2, 8);
     const key = `${shopId}/${Date.now()}_${rand}.jpg`;
     const url = await uploadToS3(buffer, key);
     console.log('📤 Фото в S3:', key);
-    return { s3: url, tg: telegramFileId };
+  let backupUrl = null;
+    if (S3_BACKUP_ENABLED) {
+      backupUrl = await uploadToS3Backup(buffer, key);
+      if (backupUrl) {
+        console.log('📤 Фото в S3-backup:', key);
+      }
+    }
+
+    const result = { s3: url, tg: telegramFileId };
+    if (backupUrl) result.s3b = backupUrl;
+    return result;
   } catch (e) {
     console.error('⚠️ Ошибка S3:', e?.message || e);
     return { tg: telegramFileId };
@@ -885,6 +945,28 @@ function getPhotoRefs(photo) {
     return { primary: null, fallback: null };
   }
   if (typeof photo === 'object') {
+   if (photo.s3 && photo.s3b && photo.tg) {
+      return {
+        primary: photo.s3,
+        fallback: photo.s3b,
+        fallback2: '/photo/tg/' + photo.tg
+      };
+    }
+    if (photo.s3 && photo.s3b) {
+      return {
+        primary: photo.s3,
+        fallback: photo.s3b
+      };
+    }
+    if (photo.s3b && photo.tg) {
+      return {
+        primary: photo.s3b,
+        fallback: '/photo/tg/' + photo.tg
+      };
+    }
+    if (photo.s3b) {
+      return { primary: photo.s3b, fallback: null };
+    }
     if (photo.s3 && photo.tg) {
       return {
         primary: photo.s3,
@@ -922,6 +1004,19 @@ function renderImgTag(refs, style) {
   if (!refs.primary) return null;
   const p = escAttr(refs.primary);
   const st = style || '';
+  if (refs.fallback && refs.fallback2) {
+    const f1 = escAttr(refs.fallback);
+    const f2 = escAttr(refs.fallback2);
+    let h = 'this.onerror=null;';
+    h += 'this.onerror=function(){';
+    h += 'this.onerror=null;';
+    h += "this.src='" + f2 + "';};";
+    h += "this.src='" + f1 + "';";
+    let html = '<img src="' + p + '"';
+    if (st) html += ' style="' + st + '"';
+    html += ' onerror="' + h + '">';
+    return html;
+  }
   if (refs.fallback) {
     const f = escAttr(refs.fallback);
     const errHandler = `this.onerror=null;this.src='${f}'`;
