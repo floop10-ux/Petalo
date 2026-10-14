@@ -167,7 +167,27 @@ function formatNumber(n) {
   }
   return out;
 }
+function getPriceRanges(shop) {
+  const cur = getShopCurrency(shop);
+  if (cur === 'UZS') {
+    return [300000, 600000, 1000000, 2000000];
+  }
+  if (cur === 'KZT') {
+    return [15000, 30000, 50000, 100000];
+  }
+  if (cur === 'BYN') {
+    return [100, 200, 350, 700];
+  }
+  return [3000, 6000, 10000, 20000];
+}
 
+function formatPricePill(n, shop) {
+  const cur = getShopCurrency(shop);
+  if (cur === 'UZS' && n >= 1000000) {
+    return (n / 1000000) + ' млн';
+  }
+  return formatNumber(n);
+}
 function formatPrice(price, shop) {
   const code = getShopCurrency(shop);
   const sym = CURRENCY_SYMBOLS[code] || '₽';
@@ -7757,24 +7777,27 @@ app.get('/shop/:shopId', async (req, res) => {
 
     const activeBeforePrice = [...active];
 
+const ranges = getPriceRanges(shop);
     if (priceFilter === 'low') {
-      active = active.filter(b => b.price < 3000);
+      active = active.filter(b => b.price < ranges[0]);
     } else if (priceFilter === 'mid') {
       active = active.filter(
-        b => b.price >= 3000 && b.price <= 6000
+        b => b.price >= ranges[0] &&
+             b.price <= ranges[1]
       );
     } else if (priceFilter === 'mid2') {
       active = active.filter(
-        b => b.price > 6000 && b.price <= 10000
+        b => b.price > ranges[1] &&
+             b.price <= ranges[2]
       );
     } else if (priceFilter === 'high1') {
       active = active.filter(
-        b => b.price > 10000 && b.price <= 20000
+        b => b.price > ranges[2] &&
+             b.price <= ranges[3]
       );
     } else if (priceFilter === 'high2') {
-      active = active.filter(b => b.price > 20000);
+      active = active.filter(b => b.price > ranges[3]);
     }
-
     if (tagFilter !== 'all') {
       active = active.filter(
         b => (b.tags || []).includes(tagFilter)
@@ -7922,19 +7945,37 @@ app.get('/shop/:shopId', async (req, res) => {
     filtersHTML += '<div style="margin:10px 0 6px;">';
     filtersHTML += pill('Все', 'all');
     if (hasLow) {
-      filtersHTML += pill('До 3000', 'low');
+      filtersHTML += pill(
+        'До ' + formatPricePill(ranges[0], shop),
+        'low'
+      );
     }
     if (hasMid) {
-      filtersHTML += pill('3000–6000', 'mid');
+      filtersHTML += pill(
+        formatPricePill(ranges[0], shop) + '–' +
+        formatPricePill(ranges[1], shop),
+        'mid'
+      );
     }
     if (hasMid2) {
-      filtersHTML += pill('6000–10000', 'mid2');
+      filtersHTML += pill(
+        formatPricePill(ranges[1], shop) + '–' +
+        formatPricePill(ranges[2], shop),
+        'mid2'
+      );
     }
     if (hasHigh1) {
-      filtersHTML += pill('10000–20000', 'high1');
+      filtersHTML += pill(
+        formatPricePill(ranges[2], shop) + '–' +
+        formatPricePill(ranges[3], shop),
+        'high1'
+      );
     }
     if (hasHigh2) {
-      filtersHTML += pill('От 20000', 'high2');
+      filtersHTML += pill(
+        'От ' + formatPricePill(ranges[3], shop),
+        'high2'
+      );
     }
     filtersHTML += '</div>';
     filtersHTML += '<div style="margin-bottom:20px;">';
