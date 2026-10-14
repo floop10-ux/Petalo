@@ -7929,18 +7929,17 @@ const ranges = getPriceRanges(shop);
     }
 
     const pricesAll = activeBeforePrice.map(b => b.price);
-    const hasLow = pricesAll.some(p => p < 3000);
+  const hasLow = pricesAll.some(p => p < ranges[0]);
     const hasMid = pricesAll.some(
-      p => p >= 3000 && p <= 6000
+    p => p >= ranges[0] && p <= ranges[1]
     );
     const hasMid2 = pricesAll.some(
-      p => p > 6000 && p <= 10000
+    p => p > ranges[1] && p <= ranges[2]
     );
     const hasHigh1 = pricesAll.some(
-      p => p > 10000 && p <= 20000
+    p => p > ranges[2] && p <= ranges[3]
     );
-    const hasHigh2 = pricesAll.some(p => p > 20000);
-
+  const hasHigh2 = pricesAll.some(p => p > ranges[3]);
     let filtersHTML = tagPillsHTML;
     filtersHTML += '<div style="margin:10px 0 6px;">';
     filtersHTML += pill('Все', 'all');
