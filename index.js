@@ -7706,6 +7706,8 @@ bot.onText(/\/cancel/, async (msg) => {
   const chatId = msg.chat.id;
   delete awaitingUpload[chatId];
   delete awaitingInput[chatId];
+  delete awaitingWarehousePin[chatId];
+  delete warehousePinMode[chatId];
   delete awaitingPrice[chatId];
   delete awaitingName[chatId];
   delete awaitingMarkup[chatId];
