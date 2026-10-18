@@ -8659,11 +8659,32 @@ app.get('/warehouse-login', (req, res) => {
 app.post('/api/warehouse-auth', async (req, res) => {
   try {
     const { shopId, pin } = req.body;
-    const shop = await getShopFromDb(shopId);
-    if (shop && shop.settings && shop.settings.warehousePin === pin) {
-      return res.json({ ok: true });
+    
+    const r = await pool.query(
+      `SELECT chat_id, role, name FROM admins ` +
+      `WHERE shop_id = $1 AND warehouse_pin = $2`,
+      [shopId, pin]
+    );
+
+    if (r.rows.length === 0) {
+      // Задержка 1 сек при ошибке (защита от подбора)
+      await new Promise(function(resolve) {
+        setTimeout(resolve, 1000);
+      });
+      return res.json({ ok: false });
     }
-    res.json({ ok: false });
+
+    const user = r.rows[0];
+    
+    res.setHeader('Set-Cookie', 
+      'wh_auth=' + user.chat_id + '; Path=/; Max-Age=2592000; HttpOnly'
+    );
+    
+    res.json({ 
+      ok: true, 
+      role: user.role, 
+      name: user.name || 'Флорист' 
+    });
   } catch (e) {
     res.status(500).json({ ok: false });
   }
