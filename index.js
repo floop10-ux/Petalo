@@ -8576,6 +8576,40 @@ const countLine = totalActiveCount > 0
   }
 });
 
+app.get('/warehouse-app', (req, res) => {
+  let h = '<!DOCTYPE html><html><head>';
+  h += '<meta charset="UTF-8">';
+  h += '<meta name="viewport" content="width=device-width, ';
+  h += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+  h += '<script src="https://telegram.org/js/telegram-web-app.js"></script>';
+  h += '<style>';
+  h += 'body { font-family: -apple-system, sans-serif; ';
+  h += 'margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; text-align: center; }';
+  h += '.header { background: #fff; padding: 20px; border-radius: 20px; ';
+  h += 'box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 20px; }';
+  h += 'h1 { margin: 0; font-size: 24px; }';
+  h += '.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }';
+  h += '.btn { background: #fff; padding: 30px 10px; border-radius: 20px; ';
+  h += 'box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-decoration: none; ';
+  h += 'color: #2c3e50; font-weight: bold; font-size: 18px; ';
+  h += 'display: flex; flex-direction: column; align-items: center; justify-content: center; }';
+  h += '.btn span { font-size: 32px; margin-bottom: 10px; }';
+  h += '</style></head><body>';
+  h += '<div class="header">';
+  h += '<h1>📦 Мой склад</h1>';
+  h += '<p style="color:#888;margin:5px 0 0;">Выберите действие</p>';
+  h += '</div>';
+  h += '<div class="grid">';
+  h += '<a href="#" class="btn"><span>📥</span>Приход</a>';
+  h += '<a href="#" class="btn"><span>💰</span>Продажа</a>';
+  h += '<a href="#" class="btn"><span>🗑</span>Списание</a>';
+  h += '<a href="#" class="btn"><span>📊</span>Отчёты</a>';
+  h += '</div>';
+  h += '<script>Telegram.WebApp.ready();</script>';
+  h += '</body></html>';
+  res.send(h);
+});
+
 app.get('/warehouse-login', (req, res) => {
   const shopId = req.query.shop || '';
   let h = '<!DOCTYPE html><html><head>';
