@@ -8787,6 +8787,54 @@ app.get('/warehouse/receipt', async (req, res) => {
   h += '</body></html>';
   res.send(h);
 });
+app.get('/api/warehouse/items', async (req, res) => {
+  try {
+    const shopId = req.query.shop || 'kupidon';
+    const r = await pool.query(
+      `SELECT wh_shop_items.id, wh_shop_items.current_stock, ` +
+      `COALESCE(wh_shop_items.custom_name, wh_items.name) AS name ` +
+      `FROM wh_shop_items ` +
+      `JOIN wh_items ON wh_items.id = wh_shop_items.item_id ` +
+      `WHERE wh_shop_items.shop_id = $1 AND wh_shop_items.current_stock > 0`,
+      [shopId]
+    );
+    res.json({ ok: true, items: r.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post('/api/warehouse/sale', async (req, res) => {
+  try {
+    const { shopId, real_price, items } = req.body;
+    
+    // Создаем запись о продаже
+    const saleRes = await pool.query(
+      `INSERT INTO wh_sales (shop_id, real_price) VALUES ($1, $2) RETURNING id`,
+      [shopId, real_price]
+    );
+    const saleId = saleRes.rows[0].id;
+
+    // Списываем каждый товар со склада
+    for (const item of items) {
+      // Уменьшаем остаток
+      await pool.query(
+        `UPDATE wh_shop_items SET current_stock = current_stock - $1 WHERE id = $2`,
+        [item.qty, item.id]
+      );
+      // Записываем детали продажи
+      await pool.query(
+        `INSERT INTO wh_sale_items (sale_id, shop_item_id, qty, cost_at_sale) ` +
+        `VALUES ($1, $2, $3, $4)`,
+        [saleId, item.id, item.qty, item.price || 0]
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false });
+  }
+});
 
 app.get('/warehouse/writeoff', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
