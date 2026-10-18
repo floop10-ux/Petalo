@@ -8836,6 +8836,116 @@ app.post('/api/warehouse/sale', async (req, res) => {
   }
 });
 
+app.get('/warehouse/sale', async (req, res) => {
+  let h = '<!DOCTYPE html><html><head>';
+  h += '<meta charset="UTF-8">';
+  h += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+  h += '<style>';
+  h += 'body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; }';
+  h += '.header { display: flex; align-items: center; margin-bottom: 20px; }';
+  h += '.back { text-decoration: none; font-size: 24px; color: #2c3e50; margin-right: 15px; }';
+  h += 'h1 { margin: 0; font-size: 22px; }';
+  h += '.search { width: 100%; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; box-sizing: border-box; margin-bottom: 15px; }';
+  h += '.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }';
+  h += '.item-card { background: #fff; padding: 15px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); cursor: pointer; text-align: center; border: 2px solid transparent; }';
+  h += '.item-card:active { border-color: #27ae60; }';
+  h += '.item-name { font-weight: bold; font-size: 14px; margin-bottom: 5px; }';
+  h += '.item-stock { font-size: 12px; color: #27ae60; }';
+  h += '.basket { background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 20px; }';
+  h += '.basket-item { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px; }';
+  h += '.btn-save { width: 100%; background: #27ae60; color: #fff; border: none; padding: 18px; border-radius: 15px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3); }';
+  h += 'input[type="number"] { width: 80px; padding: 10px; border: 2px solid #eee; border-radius: 10px; font-size: 16px; text-align: center; }';
+  h += '</style></head><body>';
+
+  h += '<div class="header">';
+  h += '<a href="/warehouse-app" class="back">←</a>';
+  h += '<h1>💰 Продажа</h1>';
+  h += '</div>';
+
+  h += '<input type="text" class="search" id="search" placeholder="🔍 Поиск товара..." onkeyup="filterItems()">';
+  h += '<div class="grid" id="itemsGrid"></div>';
+
+  h += '<div class="basket" id="basket" style="display:none;">';
+  h += '<h3 style="margin-top:0;">Выбрано:</h3>';
+  h += '<div id="basketList"></div>';
+  h += '<div style="margin-top:15px; text-align:left;">';
+  h += '<label>Фактическая сумма (₽)</label><br>';
+  h += '<input type="number" id="totalPrice" style="width:100%;" placeholder="0">';
+  h += '</div>';
+  h += '<button class="btn-save" style="margin-top:15px;" onclick="saveSale()">Продать</button>';
+  h += '</div>';
+
+  h += '<script>';
+  h += 'var allItems = [];';
+  h += 'var cart = [];';
+  
+  // Загрузка товаров
+  h += 'fetch("/api/warehouse/items?shop=kupidon").then(function(r) { return r.json(); }).then(function(data) {';
+  h += '  if (data.ok) { allItems = data.items; renderGrid(allItems); }';
+  h += '});';
+  
+  // Отрисовка сетки
+  h += 'function renderGrid(items) {';
+  h += '  var grid = document.getElementById("itemsGrid");';
+  h += '  grid.innerHTML = "";';
+  h += '  if (items.length === 0) { grid.innerHTML = "<p>Нет товаров на складе</p>"; return; }';
+  h += '  items.forEach(function(item) {';
+  h += '    var div = document.createElement("div");';
+  h += '    div.className = "item-card";';
+  h += '    div.innerHTML = "<div class=\'item-name\'>" + item.name + "</div><div class=\'item-stock\'>Остаток: " + item.current_stock + "</div>";';
+  h += '    div.onclick = function() { addToCart(item); };';
+  h += '    grid.appendChild(div);';
+  h += '  });';
+  h += '}';
+
+  // Фильтрация
+  h += 'function filterItems() {';
+  h += '  var query = document.getElementById("search").value.toLowerCase();';
+  h += '  var filtered = allItems.filter(function(i) { return i.name.toLowerCase().includes(query); });';
+  h += '  renderGrid(filtered);';
+  h += '}';
+
+  // Добавление в корзину
+  h += 'function addToCart(item) {';
+  h += '  var existing = cart.find(function(c) { return c.id === item.id; });';
+  h += '  if (existing) { existing.qty++; } ';
+  h += '  else { cart.push({ id: item.id, name: item.name, qty: 1, price: 0 }); }';
+  h += '  renderBasket();';
+  h += '}';
+
+  // Отрисовка корзины
+  h += 'function renderBasket() {';
+  h += '  var basket = document.getElementById("basket");';
+  h += '  var list = document.getElementById("basketList");';
+  h += '  if (cart.length === 0) { basket.style.display = "none"; return; }';
+  h += '  basket.style.display = "block";';
+  h += '  list.innerHTML = "";';
+  h += '  cart.forEach(function(item, index) {';
+  h += '    var div = document.createElement("div");';
+  h += '    div.className = "basket-item";';
+  h += '    div.innerHTML = "<span>" + item.name + " x" + item.qty + "</span>" +';
+  h += '      "<button onclick=\'cart.splice(" + index + ", 1); renderBasket();\' style=\'background:none;border:none;color:#e74c3c;font-size:18px;\'>✕</button>";';
+  h += '    list.appendChild(div);';
+  h += '  });';
+  h += '}';
+
+  // Сохранение
+  h += 'function saveSale() {';
+  h += '  var total = document.getElementById("totalPrice").value;';
+  h += '  if (!total) { alert("Введите фактическую сумму"); return; }';
+  h += '  fetch("/api/warehouse/sale", {';
+  h += '    method: "POST",';
+  h += '    headers: { "Content-Type": "application/json" },';
+  h += '    body: JSON.stringify({ shopId: "kupidon", real_price: total, items: cart })';
+  h += '  }).then(function(r) { return r.json(); }).then(function(data) {';
+  h += '    if (data.ok) { alert("Продажа оформлена!"); window.location.href = "/warehouse-app"; } ';
+  h += '    else { alert("Ошибка"); }';
+  h += '  }).catch(function() { alert("Ошибка сети"); });';
+  h += '}';
+  h += '</script></body></html>';
+  res.send(h);
+});
+
 app.get('/warehouse/writeoff', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
