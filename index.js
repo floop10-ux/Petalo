@@ -1434,6 +1434,10 @@ async function initDb() {
     `BOOLEAN DEFAULT FALSE`
   );
 
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS warehouse_pin VARCHAR(10)`
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bouquets (
       id SERIAL PRIMARY KEY,
