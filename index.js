@@ -7425,7 +7425,11 @@ bot.on('message', async (msg) => {
       );
     }
 
-    const hasPin = shop.settings && shop.settings.warehousePin;
+  const adm = await pool.query(
+      `SELECT warehouse_pin FROM admins ` +
+      `WHERE chat_id = $1 AND shop_id = $2`, [chatId, shopId]
+    );
+    const hasPin = adm.rows.length > 0 && adm.rows[0].warehouse_pin;
 
     if (!hasPin) {
       warehousePinMode[chatId] = 'set';
