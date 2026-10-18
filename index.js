@@ -8665,6 +8665,91 @@ h += '<a href="/warehouse/sale" class="btn"><span>💰</span>Продажа</a>'
   }
 });
 
+app.post('/api/warehouse/receipt', async (req, res) => {
+  try {
+    const { shopId, name, qty, price } = req.body;
+    let itemRes = await pool.query(
+      `SELECT id FROM wh_items WHERE name = $1`, [name]
+    );
+    let itemId;
+    if (itemRes.rows.length === 0) {
+      const newItem = await pool.query(
+        `INSERT INTO wh_items (name, unit) VALUES ($1, 'шт') RETURNING id`, [name]
+      );
+      itemId = newItem.rows[0].id;
+    } else {
+      itemId = itemRes.rows[0].id;
+    }
+    await pool.query(
+      `INSERT INTO wh_shop_items (shop_id, item_id, custom_name, current_stock, last_cost, avg_cost) ` +
+      `VALUES ($1, $2, $3, $4, $5, $5) ` +
+      `ON CONFLICT (shop_id, item_id) DO UPDATE SET ` +
+      `current_stock = wh_shop_items.current_stock + EXCLUDED.current_stock, ` +
+      `last_cost = EXCLUDED.last_cost`,
+      [shopId, itemId, name, qty, price]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.get('/warehouse/receipt', async (req, res) => {
+  let h = '<!DOCTYPE html><html><head>';
+  h += '<meta charset="UTF-8">';
+  h += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+  h += '<style>';
+  h += 'body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; }';
+  h += '.header { display: flex; align-items: center; margin-bottom: 20px; }';
+  h += '.back { text-decoration: none; font-size: 24px; color: #2c3e50; margin-right: 15px; }';
+  h += 'h1 { margin: 0; font-size: 22px; }';
+  h += '.card { background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 15px; }';
+  h += 'label { display: block; font-size: 14px; color: #888; margin-bottom: 5px; }';
+  h += 'input[type="text"], input[type="number"] { width: 100%; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; }';
+  h += 'input:focus { border-color: #27ae60; outline: none; }';
+  h += '.btn-save { width: 100%; background: #27ae60; color: #fff; border: none; padding: 18px; border-radius: 15px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3); }';
+  h += '</style></head><body>';
+
+  h += '<div class="header">';
+  h += '<a href="/warehouse-app" class="back">←</a>';
+  h += '<h1>📥 Приход</h1>';
+  h += '</div>';
+
+  h += '<div class="card">';
+  h += '<label>Что привезли?</label>';
+  h += '<input type="text" id="itemName" placeholder="Название (напр. Роза Аваланж)">';
+  
+  h += '<label>Количество (шт)</label>';
+  h += '<input type="number" id="itemQty" placeholder="0" min="1">';
+
+  h += '<label>Цена закупки (за 1 шт, ₽)</label>';
+  h += '<input type="number" id="itemPrice" placeholder="0" min="1">';
+  h += '</div>';
+
+  h += '<button class="btn-save" onclick="saveReceipt()">Добавить на склад</button>';
+
+  h += '<script>';
+  h += 'function saveReceipt() {';
+  h += '  var name = document.getElementById("itemName").value;';
+  h += '  var qty = document.getElementById("itemQty").value;';
+  h += '  var price = document.getElementById("itemPrice").value;';
+  h += '  if (!name || !qty || !price) { alert("Заполните все поля"); return; }';
+  h += '  fetch("/api/warehouse/receipt", {';
+  h += '    method: "POST",';
+  h += '    headers: { "Content-Type": "application/json" },';
+  h += '    body: JSON.stringify({ shopId: "kupidon", name: name, qty: qty, price: price })';
+  h += '  }).then(function(r) { return r.json(); }).then(function(data) {';
+  h += '    if (data.ok) {';
+  h += '      alert("Товар добавлен на склад!");';
+  h += '      window.location.href = "/warehouse-app";';
+  h += '    } else { alert("Ошибка при сохранении"); }';
+  h += '  }).catch(function() { alert("Ошибка сети"); });';
+  h += '}';
+  h += '</script></body></html>';
+  res.send(h);
+});
+
 app.get('/warehouse/receipt', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
