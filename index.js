@@ -6,6 +6,7 @@ const {
   GetObjectCommand
 } = require('@aws-sdk/client-s3');
 const pool = require('./db');
+const { initWarehouseDb } = require('./warehouse');
 require('dotenv').config();
 
 const app = express();
