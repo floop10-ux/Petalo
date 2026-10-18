@@ -7387,9 +7387,15 @@ bot.on('message', async (msg) => {
       );
       
       if (r.rows.length > 0) {
-        return bot.sendMessage(chatId, 
-          '✅ <b>Добро пожаловать в склад!</b>',
-          { 
+
+      const directLink = SITE_URL + '/warehouse-login?shop=' + shopId;
+          let msgText = '✅ <b>Добро пожаловать в склад!</b>\n\n';
+          msgText += 'Нажмите кнопку ниже, если вы в Telegram.\n\n';
+          msgText += '📱 <b>Для входа с планшета (Safari)</b>, скопируйте ссылку:\n';
+          msgText += '<code>' + directLink + '</code>\n\n';
+          msgText += '<i>(Откройте её в браузере, введите PIN-код и добавьте на главный экран)</i>';
+
+          return bot.sendMessage(chatId, msgText, { 
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [[{
@@ -7397,9 +7403,7 @@ bot.on('message', async (msg) => {
                 web_app: { url: SITE_URL + '/warehouse-app' }
               }]]
             }
-          }
-        );
-      } else {
+          });} else {
         return bot.sendMessage(chatId, 
           '❌ <b>Неверный PIN-код.</b>\n\n' +
           'Попробуйте еще раз.',
@@ -8597,38 +8601,68 @@ const countLine = totalActiveCount > 0
   }
 });
 
-app.get('/warehouse-app', (req, res) => {
-  let h = '<!DOCTYPE html><html><head>';
-  h += '<meta charset="UTF-8">';
-  h += '<meta name="viewport" content="width=device-width, ';
-  h += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-  h += '<script src="https://telegram.org/js/telegram-web-app.js"></script>';
-  h += '<style>';
-  h += 'body { font-family: -apple-system, sans-serif; ';
-  h += 'margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; text-align: center; }';
-  h += '.header { background: #fff; padding: 20px; border-radius: 20px; ';
-  h += 'box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 20px; }';
-  h += 'h1 { margin: 0; font-size: 24px; }';
-  h += '.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }';
-  h += '.btn { background: #fff; padding: 30px 10px; border-radius: 20px; ';
-  h += 'box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-decoration: none; ';
-  h += 'color: #2c3e50; font-weight: bold; font-size: 18px; ';
-  h += 'display: flex; flex-direction: column; align-items: center; justify-content: center; }';
-  h += '.btn span { font-size: 32px; margin-bottom: 10px; }';
-  h += '</style></head><body>';
-  h += '<div class="header">';
-  h += '<h1>📦 Мой склад</h1>';
-  h += '<p style="color:#888;margin:5px 0 0;">Выберите действие</p>';
-  h += '</div>';
-  h += '<div class="grid">';
-  h += '<a href="#" class="btn"><span>📥</span>Приход</a>';
-  h += '<a href="#" class="btn"><span>💰</span>Продажа</a>';
-  h += '<a href="#" class="btn"><span>🗑</span>Списание</a>';
-  h += '<a href="#" class="btn"><span>📊</span>Отчёты</a>';
-  h += '</div>';
-  h += '<script>Telegram.WebApp.ready();</script>';
-  h += '</body></html>';
-  res.send(h);
+app.get('/warehouse-app', async (req, res) => {
+  try {
+    const cookie = req.headers.cookie || '';
+    const match = cookie.match(/wh_auth=(\d+)/);
+    const chatIdStr = match ? match[1] : null;
+    const chatId = chatIdStr ? Number(chatIdStr) : null;
+
+    if (!chatId) {
+      return res.redirect('/warehouse-login?shop=kupidon');
+    }
+
+    const r = await pool.query(
+      `SELECT role, name, shop_id FROM admins ` +
+      `WHERE chat_id = $1 LIMIT 1`, [chatId]
+    );
+
+    if (r.rows.length === 0) {
+      return res.redirect('/warehouse-login?shop=kupidon');
+    }
+
+    const user = r.rows[0];
+    const isOwner = user.role === 'owner';
+    const userName = user.name || 'Флорист';
+
+    let h = '<!DOCTYPE html><html><head>';
+    h += '<meta charset="UTF-8">';
+    h += '<meta name="viewport" content="width=device-width, ';
+    h += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+    h += '<script src="https://telegram.org/js/telegram-web-app.js"></script>';
+    h += '<style>';
+    h += 'body { font-family: -apple-system, sans-serif; ';
+    h += 'margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; text-align: center; }';
+    h += '.header { background: #fff; padding: 20px; border-radius: 20px; ';
+    h += 'box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 20px; }';
+    h += 'h1 { margin: 0; font-size: 24px; }';
+    h += '.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }';
+    h += '.btn { background: #fff; padding: 30px 10px; border-radius: 20px; ';
+    h += 'box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-decoration: none; ';
+    h += 'color: #2c3e50; font-weight: bold; font-size: 18px; ';
+    h += 'display: flex; flex-direction: column; align-items: center; justify-content: center; }';
+    h += '.btn span { font-size: 32px; margin-bottom: 10px; }';
+    h += '.full { grid-column: 1 / -1; }';
+    h += '</style></head><body>';
+    h += '<div class="header">';
+    h += '<h1>📦 Склад</h1>';
+    h += '<p style="color:#888;margin:5px 0 0;">Вы вошли как: <b>' + userName + '</b> (' + (isOwner ? 'Владелец' : 'Флорист') + ')</p>';
+    h += '</div>';
+    h += '<div class="grid">';
+    h += '<a href="#" class="btn"><span>💰</span>Продажа</a>';
+    h += '<a href="#" class="btn"><span>🗑</span>Списание</a>';
+    if (isOwner) {
+      h += '<a href="#" class="btn"><span>📥</span>Приход</a>';
+      h += '<a href="#" class="btn"><span>📊</span>Отчёты</a>';
+      h += '<a href="#" class="btn full"><span>⚙️</span>Настройки и Флористы</a>';
+    }
+    h += '</div>';
+    h += '<script>Telegram.WebApp.ready();</script>';
+    h += '</body></html>';
+    res.send(h);
+  } catch (e) {
+    res.status(500).send('Ошибка сервера');
+  }
 });
 
 app.get('/warehouse-login', (req, res) => {
