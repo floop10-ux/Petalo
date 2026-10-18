@@ -1822,6 +1822,7 @@ function getMainKeyboard(shop, chatId) {
     rows.push([{ text: '✅ Я сегодня работаю' }]);
   }
 
+  rows.push([{ text: '📦 Склад' }]);
   rows.push([{ text: '⚙️ Настройки' }]);
 
   return {
