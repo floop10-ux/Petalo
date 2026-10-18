@@ -7170,56 +7170,6 @@ bot.on('message', async (msg) => {
   }
 
   // ========== ДАННЫЕ МАГАЗИНА ==========
-  // ========== PIN-КОД СКЛАДА ==========
-  if (awaitingWarehousePin[chatId]) {
-    const mode = warehousePinMode[chatId];
-    const pin = text.trim();
-
-    if (!/^\d{4}$/.test(pin)) {
-      return bot.sendMessage(chatId, 
-        '❌ PIN-код должен состоять ровно ' +
-        'из 4 цифр. Попробуйте еще раз.',
-        { parse_mode: 'HTML' }
-      );
-    }
-
-    delete awaitingWarehousePin[chatId];
-    delete warehousePinMode[chatId];
-
-    if (mode === 'set') {
-      shop.settings.warehousePin = pin;
-      await saveShopSettings(shopId, shop.settings);
-      
-      return bot.sendMessage(chatId, 
-        '✅ <b>PIN-код установлен!</b>\n\n' +
-        'Теперь при входе в склад бот ' +
-        'будет его спрашивать.',
-        { 
-          parse_mode: 'HTML',
-          reply_markup: getMainKeyboard(shop, chatId) 
-        }
-      );
-    }
-
-    if (mode === 'enter') {
-      if (pin === shop.settings.warehousePin) {
-        return bot.sendMessage(chatId, 
-          '✅ <b>Добро пожаловать в склад!</b>\n\n' +
-          '(Здесь скоро появится WebApp)',
-          { 
-            parse_mode: 'HTML',
-            reply_markup: getMainKeyboard(shop, chatId) 
-          }
-        );
-      } else {
-        return bot.sendMessage(chatId, 
-          '❌ <b>Неверный PIN-код.</b>\n\n' +
-          'Попробуйте еще раз.',
-          { parse_mode: 'HTML' }
-        );
-      }
-    }
-  }
 
   const input = awaitingInput[chatId];
   if (input && shopId) {
@@ -7390,6 +7340,58 @@ bot.on('message', async (msg) => {
 
   if (!shopId) return;
   const shop = await getShopFromDb(shopId);
+
+  // ========== PIN-КОД СКЛАДА ==========
+  if (awaitingWarehousePin[chatId]) {
+    const mode = warehousePinMode[chatId];
+    const pin = text.trim();
+
+    if (!/^\d{4}$/.test(pin)) {
+      return bot.sendMessage(chatId, 
+        '❌ PIN-код должен состоять ровно ' +
+        'из 4 цифр. Попробуйте еще раз.',
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    delete awaitingWarehousePin[chatId];
+    delete warehousePinMode[chatId];
+
+    if (mode === 'set') {
+      shop.settings.warehousePin = pin;
+      await saveShopSettings(shopId, shop.settings);
+      
+      return bot.sendMessage(chatId, 
+        '✅ <b>PIN-код установлен!</b>\n\n' +
+        'Теперь при входе в склад бот ' +
+        'будет его спрашивать.',
+        { 
+          parse_mode: 'HTML',
+          reply_markup: getMainKeyboard(shop, chatId) 
+        }
+      );
+    }
+
+    if (mode === 'enter') {
+      if (pin === shop.settings.warehousePin) {
+        return bot.sendMessage(chatId, 
+          '✅ <b>Добро пожаловать в склад!</b>\n\n' +
+          '(Здесь скоро появится WebApp)',
+          { 
+            parse_mode: 'HTML',
+            reply_markup: getMainKeyboard(shop, chatId) 
+          }
+        );
+      } else {
+        return bot.sendMessage(chatId, 
+          '❌ <b>Неверный PIN-код.</b>\n\n' +
+          'Попробуйте еще раз.',
+          { parse_mode: 'HTML' }
+        );
+      }
+    }
+  }
+  // ===================================
 
   // ========== ТЕКСТОВЫЕ КНОПКИ ==========
   if (text === '📷 Добавить букет') {
