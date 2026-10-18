@@ -7399,11 +7399,33 @@ bot.on('message', async (msg) => {
     });
   }
   if (text === '📦 Склад') {
-    return bot.sendMessage(chatId, 
-      '🚧 Склад на стадии разработки.\n\n' +
-      'Скоро здесь появится вход по PIN-коду!', 
-      { reply_markup: getMainKeyboard(shop, chatId) }
-    );
+    if (!isOwner(shop, chatId)) {
+      return bot.sendMessage(chatId, 
+        '🚫 Доступ к складу есть только ' +
+        'у владельца магазина.'
+      );
+    }
+
+    const hasPin = shop.settings && shop.settings.warehousePin;
+
+    if (!hasPin) {
+      warehousePinMode[chatId] = 'set';
+      awaitingWarehousePin[chatId] = true;
+      return bot.sendMessage(chatId, 
+        '🔐 <b>Установка PIN-кода для склада</b>\n\n' +
+        'Придумайте 4-значный код (только цифры).\n' +
+        'Он понадобится для входа в склад.',
+        { parse_mode: 'HTML' }
+      );
+    } else {
+      warehousePinMode[chatId] = 'enter';
+      awaitingWarehousePin[chatId] = true;
+      return bot.sendMessage(chatId, 
+        '🔐 <b>Вход в склад</b>\n\n' +
+        'Введите ваш 4-значный PIN-код:',
+        { parse_mode: 'HTML' }
+      );
+    }
   }
 
   if (text === '✅ Что в наличии?') {
