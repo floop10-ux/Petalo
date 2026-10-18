@@ -8576,6 +8576,61 @@ const countLine = totalActiveCount > 0
   }
 });
 
+app.get('/warehouse-login', (req, res) => {
+  const shopId = req.query.shop || '';
+  let h = '<!DOCTYPE html><html><head>';
+  h += '<meta charset="UTF-8">';
+  h += '<meta name="viewport" content="width=device-width, ';
+  h += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+  h += '<style>';
+  h += 'body { font-family: -apple-system, sans-serif; ';
+  h += 'text-align: center; padding: 50px 20px; background: #fafaf8; color: #2c3e50; }';
+  h += '.card { background: #fff; border-radius: 20px; padding: 30px; ';
+  h += 'max-width: 400px; margin: 0 auto; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }';
+  h += 'input { font-size: 24px; padding: 10px; width: 120px; ';
+  h += 'text-align: center; border: 2px solid #ddd; border-radius: 10px; margin: 20px 0; }';
+  h += 'button { background: #27ae60; color: white; border: none; ';
+  h += 'padding: 15px 40px; font-size: 18px; border-radius: 30px; font-weight: bold; }';
+  h += '</style></head><body>';
+  h += '<div class="card">';
+  h += '<h1>📦 Склад</h1>';
+  h += '<p>Введите PIN-код для входа</p>';
+  h += '<input type="password" id="pin" maxlength="4" inputmode="numeric" placeholder="****">';
+  h += '<br><button onclick="login()">Войти</button>';
+  h += '</div>';
+  h += '<script>';
+  h += 'function login() {';
+  h += '  var pin = document.getElementById("pin").value;';
+  h += '  if (!pin) return;';
+  h += '  fetch("/api/warehouse-auth", {';
+  h += '    method: "POST",';
+  h += '    headers: { "Content-Type": "application/json" },';
+  h += '    body: JSON.stringify({ shopId: "' + shopId + '", pin: pin })';
+  h += '  }).then(function(r) { return r.json(); }).then(function(data) {';
+  h += '    if (data.ok) {';
+  h += '      window.location.href = "/warehouse-app";';
+  h += '    } else {';
+  h += '      alert("Неверный PIN-код");';
+  h += '    }';
+  h += '  }).catch(function() { alert("Ошибка сети"); });';
+  h += '}';
+  h += '</script></body></html>';
+  res.send(h);
+});
+
+app.post('/api/warehouse-auth', async (req, res) => {
+  try {
+    const { shopId, pin } = req.body;
+    const shop = await getShopFromDb(shopId);
+    if (shop && shop.settings && shop.settings.warehousePin === pin) {
+      return res.json({ ok: true });
+    }
+    res.json({ ok: false });
+  } catch (e) {
+    res.status(500).json({ ok: false });
+  }
+});
+
 app.get('/', (req, res) => {
   let h = '<html><body style="font-family:sans-serif;';
   h += 'text-align:center;padding:50px;">';
