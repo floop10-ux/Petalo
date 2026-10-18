@@ -287,6 +287,7 @@ const MENU_BUTTONS = [
   '✅ Что в наличии?',
   '✏️ Мои букеты',
   '🔗 Витрина',
+  '📦 Склад',
   '⚙️ Настройки',
   '⚙️ Меню'
 ];
@@ -7343,6 +7344,13 @@ bot.on('message', async (msg) => {
       parse_mode: 'HTML',
       reply_markup: getMainKeyboard(shop, chatId)
     });
+  }
+  if (text === '📦 Склад') {
+    return bot.sendMessage(chatId, 
+      '🚧 Склад на стадии разработки.\n\n' +
+      'Скоро здесь появится вход по PIN-коду!', 
+      { reply_markup: getMainKeyboard(shop, chatId) }
+    );
   }
 
   if (text === '✅ Что в наличии?') {
