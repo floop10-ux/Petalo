@@ -7361,9 +7361,12 @@ bot.on('message', async (msg) => {
     delete awaitingWarehousePin[chatId];
     delete warehousePinMode[chatId];
 
-    if (mode === 'set') {
-      shop.settings.warehousePin = pin;
-      await saveShopSettings(shopId, shop.settings);
+  if (mode === 'set') {
+      await pool.query(
+        `UPDATE admins SET warehouse_pin = $1 ` +
+        `WHERE chat_id = $2 AND shop_id = $3`,
+        [pin, chatId, shopId]
+      );
       
       return bot.sendMessage(chatId, 
         '✅ <b>PIN-код установлен!</b>\n\n' +
@@ -7377,13 +7380,23 @@ bot.on('message', async (msg) => {
     }
 
     if (mode === 'enter') {
-      if (pin === shop.settings.warehousePin) {
+      const r = await pool.query(
+        `SELECT chat_id FROM admins ` +
+        `WHERE shop_id = $1 AND warehouse_pin = $2`,
+        [shopId, pin]
+      );
+      
+      if (r.rows.length > 0) {
         return bot.sendMessage(chatId, 
-          '✅ <b>Добро пожаловать в склад!</b>\n\n' +
-          '(Здесь скоро появится WebApp)',
+          '✅ <b>Добро пожаловать в склад!</b>',
           { 
             parse_mode: 'HTML',
-            reply_markup: getMainKeyboard(shop, chatId) 
+            reply_markup: {
+              inline_keyboard: [[{
+                text: '📦 Открыть склад',
+                web_app: { url: SITE_URL + '/warehouse-app' }
+              }]]
+            }
           }
         );
       } else {
@@ -7394,7 +7407,7 @@ bot.on('message', async (msg) => {
         );
       }
     }
-  }
+    }
   // ===================================
 
   // ========== ТЕКСТОВЫЕ КНОПКИ ==========
