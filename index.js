@@ -9074,24 +9074,64 @@ app.post('/api/warehouse/writeoff', async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+app.post('/api/warehouse/writeoff', async (req, res) => {
+  try {
+    const shopId = req.body.shopId;
+    const items = req.body.items;
+    const reason = req.body.reason;
+    const comment = req.body.comment || '';
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      await pool.query(
+        `UPDATE wh_shop_items ` +
+        `SET current_stock = current_stock - $1 ` +
+        `WHERE id = $2`,
+        [item.qty, item.id]
+      );
+      await pool.query(
+        `INSERT INTO wh_writeoffs (` +
+        `shop_id, shop_item_id, qty, ` +
+        `reason, comment) ` +
+        `VALUES ($1, $2, $3, $4, $5)`,
+        [shopId, item.id, item.qty, reason, comment]
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false });
+  }
+});
+
 app.get('/warehouse/writeoff', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
-  h += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+  h += '<meta name="viewport" ';
+  h += 'content="width=device-width, initial-scale=1.0">';
   h += '<style>';
-  h += 'body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; }';
-  h += '.header { display: flex; align-items: center; margin-bottom: 20px; }';
-  h += '.back { text-decoration: none; font-size: 24px; color: #2c3e50; margin-right: 15px; }';
-  h += 'h1 { margin: 0; font-size: 22px; }';
-  h += '.card { background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 15px; }';
-  h += 'label { display: block; font-size: 14px; color: #888; margin-bottom: 5px; }';
-  h += 'input[type="text"], input[type="number"], textarea { width: 100%; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; }';
-  h += 'input:focus, textarea:focus { border-color: #27ae60; outline: none; }';
-  h += '.reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }';
-  h += '.reason-btn { padding: 15px; border-radius: 12px; border: 2px solid #eee; background: #fff; font-size: 16px; font-weight: bold; color: #555; cursor: pointer; text-align: center; transition: 0.2s; }';
-  h += '.reason-btn.active { border-color: #e74c3c; background: #fdf2f5; color: #e74c3c; }';
-  h += '.file-upload { display: block; text-align: center; padding: 15px; border: 2px dashed #ccc; border-radius: 12px; color: #888; margin-bottom: 15px; cursor: pointer; }';
-  h += '.btn-save { width: 100%; background: #e74c3c; color: #fff; border: none; padding: 18px; border-radius: 15px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3); }';
+  h += 'body { font-family: sans-serif; ';
+  h += 'margin: 0; padding: 20px; background: #fafaf8; }';
+  h += '.header { display: flex; align-items: center; }';
+  h += '.back { font-size: 24px; text-decoration: none; }';
+  h += 'h1 { margin: 0; font-size: 22px; margin-left: 15px; }';
+  h += '.search { width: 100%; padding: 15px; ';
+  h += 'margin: 15px 0; border: 2px solid #eee; ';
+  h += 'border-radius: 12px; font-size: 16px; }';
+  h += '.grid { display: grid; ';
+  h += 'grid-template-columns: 1fr 1fr; gap: 10px; }';
+  h += '.card { background: #fff; padding: 15px; ';
+  h += 'border-radius: 15px; text-align: center; }';
+  h += '.card:active { border: 2px solid #e74c3c; }';
+  h += '.reasons { display: grid; ';
+  h += 'grid-template-columns: 1fr 1fr; gap: 10px; }';
+  h += '.reason { padding: 15px; border-radius: 12px; ';
+  h += 'border: 2px solid #eee; background: #fff; }';
+  h += '.reason.active { border-color: #e74c3c; }';
+  h += '.btn-save { width: 100%; padding: 18px; ';
+  h += 'background: #e74c3c; color: #fff; border: none; ';
+  h += 'border-radius: 15px; font-size: 18px; ';
+  h += 'font-weight: bold; margin-top: 20px; }';
   h += '</style></head><body>';
 
   h += '<div class="header">';
@@ -9099,33 +9139,120 @@ app.get('/warehouse/writeoff', async (req, res) => {
   h += '<h1>🗑 Списание</h1>';
   h += '</div>';
 
-  h += '<div class="card">';
-  h += '<label>Что списываем?</label>';
-  h += '<input type="text" placeholder="Название товара (напр. Роза Аваланж)">';
-  
-  h += '<label>Количество</label>';
-  h += '<input type="number" placeholder="0" min="1">';
-  
-  h += '<label>Причина</label>';
+  h += '<input type="text" class="search" id="search" ';
+  h += 'placeholder="🔍 Поиск товара..." ';
+  h += 'onkeyup="filterItems()">';
+  h += '<div class="grid" id="itemsGrid"></div>';
+
+  h += '<div id="form" style="display:none; ';
+  h += 'margin-top:20px;">';
+  h += '<h3>Причина</h3>';
   h += '<div class="reasons">';
-  h += '<div class="reason-btn active" onclick="selectReason(this)">Порча</div>';
-  h += '<div class="reason-btn" onclick="selectReason(this)">Потеря</div>';
-  h += '<div class="reason-btn" onclick="selectReason(this)">Уценка</div>';
-  h += '<div class="reason-btn" onclick="selectReason(this)">Пересорт</div>';
+  h += '<div class="reason active" ';
+  h += 'onclick="setR(this,\'spoilage\')">Порча</div>';
+  h += '<div class="reason" ';
+  h += 'onclick="setR(this,\'loss\')">Потеря</div>';
+  h += '<div class="reason" ';
+  h += 'onclick="setR(this,\'markdown\')">Уценка</div>';
+  h += '<div class="reason" ';
+  h += 'onclick="setR(this,\'sorting\')">Пересорт</div>';
   h += '</div>';
 
-  h += '<label>Комментарий</label>';
-  h += '<textarea rows="2" placeholder="Например: сломаны стебли..."></textarea>';
-
-  h += '<label class="file-upload">📷 Прикрепить фото (необязательно)<input type="file" accept="image/*" style="display:none;"></label>';
+  h += '<h3>Комментарий</h3>';
+  h += '<textarea id="comment" ';
+  h += 'style="width:100%; padding:10px; ';
+  h += 'border-radius:10px; border:2px solid #eee;">';
+  h += '</textarea>';
+  
+  h += '<button class="btn-save" ';
+  h += 'onclick="saveWriteoff()">Списать</button>';
   h += '</div>';
-
-  h += '<button class="btn-save" onclick="alert(\'Скоро заработает!\')">Списать</button>';
 
   h += '<script>';
-  h += 'function selectReason(el) {';
-  h += '  document.querySelectorAll(".reason-btn").forEach(function(b) { b.classList.remove("active"); });';
+  h += 'var allItems = [];';
+  h += 'var selectedItem = null;';
+  h += 'var selectedReason = "spoilage";';
+
+  h += 'fetch("/api/warehouse/items?shop=kupidon")';
+  h += '.then(function(r) { return r.json(); })';
+  h += '.then(function(d) { ';
+  h += '  allItems = d.items; render(); ';
+  h += '});';
+
+  h += 'function render() {';
+  h += '  var g = document.getElementById("itemsGrid");';
+  h += '  g.innerHTML = "";';
+  h += '  allItems.forEach(function(i) {';
+  h += '    var d = document.createElement("div");';
+  h += '    d.className = "card";';
+  h += '    d.innerHTML = "<b>" + i.name + "</b>";';
+  h += '    d.innerHTML += "<br>Ост: " + i.current_stock;';
+  h += '    d.onclick = function() { selectItem(i); };';
+  h += '    g.appendChild(d);';
+  h += '  });';
+  h += '}';
+
+  h += 'function filterItems() {';
+  h += '  var q = document.getElementById("search")';
+  h += '    .value.toLowerCase();';
+  h += '  var f = allItems.filter(function(i) { ';
+  h += '    return i.name.toLowerCase().indexOf(q) !== -1; ';
+  h += '  });';
+  h += '  var g = document.getElementById("itemsGrid");';
+  h += '  g.innerHTML = "";';
+  h += '  f.forEach(function(i) {';
+  h += '    var d = document.createElement("div");';
+  h += '    d.className = "card";';
+  h += '    d.innerHTML = "<b>" + i.name + "</b>";';
+  h += '    d.innerHTML += "<br>Ост: " + i.current_stock;';
+  h += '    d.onclick = function() { selectItem(i); };';
+  h += '    g.appendChild(d);';
+  h += '  });';
+  h += '}';
+
+  h += 'function selectItem(item) {';
+  h += '  var q = prompt("Сколько списать?", "1");';
+  h += '  if (q && parseInt(q) > 0) {';
+  h += '    selectedItem = { ';
+  h += '      id: item.id, qty: parseInt(q) ';
+  h += '    };';
+  h += '    document.getElementById("form")';
+  h += '      .style.display = "block";';
+  h += '  }';
+  h += '}';
+
+  h += 'function setR(el, r) {';
+  h += '  var list = document.querySelectorAll(".reason");';
+  h += '  for (var i = 0; i < list.length; i++) { ';
+  h += '    list[i].classList.remove("active"); ';
+  h += '  }';
   h += '  el.classList.add("active");';
+  h += '  selectedReason = r;';
+  h += '}';
+
+  h += 'function saveWriteoff() {';
+  h += '  if (!selectedItem) { ';
+  h += '    alert("Выберите товар"); return; ';
+  h += '  }';
+  h += '  var c = document.getElementById("comment").value;';
+  h += '  fetch("/api/warehouse/writeoff", {';
+  h += '    method: "POST",';
+  h += '    headers: { ';
+  h += '      "Content-Type": "application/json" ';
+  h += '    },';
+  h += '    body: JSON.stringify({';
+  h += '      shopId: "kupidon",';
+  h += '      items: [selectedItem],';
+  h += '      reason: selectedReason,';
+  h += '      comment: c';
+  h += '    })';
+  h += '  }).then(function(r) { return r.json(); })';
+  h += '  .then(function(d) {';
+  h += '    if (d.ok) { ';
+  h += '      alert("Списано!"); ';
+  h += '      window.location.href="/warehouse-app"; ';
+  h += '    } else { alert("Ошибка"); }';
+  h += '  });';
   h += '}';
   h += '</script></body></html>';
   res.send(h);
