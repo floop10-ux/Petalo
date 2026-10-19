@@ -8680,13 +8680,32 @@ app.post('/api/warehouse/receipt', async (req, res) => {
     } else {
       itemId = itemRes.rows[0].id;
     }
+const curr = await pool.query(
+      `SELECT current_stock, avg_cost ` +
+      `FROM wh_shop_items ` +
+      `WHERE shop_id = $1 AND item_id = $2`,
+      [shopId, itemId]
+    );
+
+    let oldStock = 0;
+    let oldAvg = 0;
+    if (curr.rows.length > 0) {
+      oldStock = parseFloat(curr.rows[0].current_stock);
+      oldAvg = parseFloat(curr.rows[0].avg_cost);
+    }
+
+    const newStock = oldStock + qty;
+    const newAvg = (oldStock * oldAvg + qty * price) / newStock;
+
     await pool.query(
-      `INSERT INTO wh_shop_items (shop_id, item_id, custom_name, current_stock, last_cost, avg_cost) ` +
-      `VALUES ($1, $2, $3, $4, $5, $5) ` +
+      `INSERT INTO wh_shop_items (shop_id, item_id, ` +
+      `custom_name, current_stock, last_cost, avg_cost) ` +
+      `VALUES ($1, $2, $3, $4, $5, $6) ` +
       `ON CONFLICT (shop_id, item_id) DO UPDATE SET ` +
-      `current_stock = wh_shop_items.current_stock + EXCLUDED.current_stock, ` +
-      `last_cost = EXCLUDED.last_cost`,
-      [shopId, itemId, name, qty, price]
+      `current_stock = $4, ` +
+      `last_cost = $5, ` +
+      `avg_cost = $6`,
+      [shopId, itemId, name, newStock, price, newAvg]
     );
     res.json({ ok: true });
   } catch (e) {
@@ -8823,11 +8842,24 @@ app.post('/api/warehouse/sale', async (req, res) => {
         [item.qty, item.id]
       );
       // Записываем детали продажи
-      await pool.query(
-        `INSERT INTO wh_sale_items (sale_id, shop_item_id, qty, cost_at_sale) ` +
-        `VALUES ($1, $2, $3, $4)`,
-        [saleId, item.id, item.qty, item.price || 0]
-      );
+const costQuery = await pool.query(
+      `SELECT avg_cost ` +
+      `FROM wh_shop_items ` +
+      `WHERE id = $1`,
+      [item.id]
+    );
+    
+    let realCost = 0;
+    if (costQuery.rows.length > 0) {
+      realCost = costQuery.rows[0].avg_cost;
+    }
+
+    await pool.query(
+      `INSERT INTO wh_sale_items ` +
+      `(sale_id, shop_item_id, qty, cost_at_sale) ` +
+      `VALUES ($1, $2, $3, $4)`,
+      [saleId, item.id, item.qty, realCost]
+    );
     }
     res.json({ ok: true });
   } catch (e) {
