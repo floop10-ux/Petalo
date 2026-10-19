@@ -8923,12 +8923,18 @@ app.get('/warehouse/sale', async (req, res) => {
   h += '  cart.forEach(function(item, index) {';
   h += '    var div = document.createElement("div");';
   h += '    div.className = "basket-item";';
-  h += '    div.innerHTML = "<span>" + item.name + " x" + item.qty + "</span>" +';
-  h += '      "<button onclick=\'cart.splice(" + index + ", 1); renderBasket();\' style=\'background:none;border:none;color:#e74c3c;font-size:18px;\'>✕</button>";';
+h += '    div.innerHTML = "<span style=\'flex:1;font-size:16px;\'>" + item.name + "</span>" +';
+    h += '      "<input type'" + item.qty + "\' min=\'1\' onchange=\'updateQty(" + index + ", this.value)\' style=\'width:70px;margin-right:10px;font-size:16px;text-align:center;\'>" +';
+    h += '      "<button onclick=\'cart.splice(" + index + ", 1); renderBasket();\' style=\'background:none;border:none;color:#e74c3c;font-size:20px;\'>✕</button>";';
   h += '    list.appendChild(div);';
   h += '  });';
   h += '}';
 
+  h += 'function updateQty(index, val) {';
+    h += '  var q = parseInt(val);';
+    h += '  if (isNaN(q) || q < 1) q = 1;';
+    h += '  cart[index].qty = q;';
+    h += '}';
   // Сохранение
   h += 'function saveSale() {';
   h += '  var total = document.getElementById("totalPrice").value;';
@@ -8945,7 +8951,87 @@ app.get('/warehouse/sale', async (req, res) => {
   h += '</script></body></html>';
   res.send(h);
 });
+app.get('/api/warehouse/reports', async (req, res) => {
+  try {
+    const shopId = req.query.shop || 'kupidon';
+    const revRes = await pool.query(
+      `SELECT COALESCE(SUM(real_price), 0) AS total FROM wh_sales WHERE shop_id = $1`,
+      [shopId]
+    );
+    const lossRes = await pool.query(
+      `SELECT COALESCE(SUM(wh_writeoffs.qty * wh_shop_items.avg_cost), 0) AS total ` +
+      `FROM wh_writeoffs JOIN wh_shop_items ON wh_shop_items.id = wh_writeoffs.shop_item_id ` +
+      `WHERE wh_writeoffs.shop_id = $1`,
+      [shopId]
+    );
+    const revenue = parseInt(revRes.rows[0].total) || 0;
+    const losses = parseInt(lossRes.rows[0].total) || 0;
+    const costRes = await pool.query(
+      `SELECT COALESCE(SUM(wh_sale_items.qty * wh_sale_items.cost_at_sale), 0) AS total ` +
+      `FROM wh_sale_items JOIN wh_sales ON wh_sales.id = wh_sale_items.sale_id ` +
+      `WHERE wh_sales.shop_id = $1`,
+      [shopId]
+    );
+    const cost = parseInt(costRes.rows[0].total) || 0;
+    const profit = revenue - cost;
+    const lossPercent = (revenue + losses) > 0 
+      ? Math.round((losses / (revenue + losses)) * 100) : 0;
+    res.json({ ok: true, revenue, profit, losses, lossPercent });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false });
+  }
+});
 
+app.get('/warehouse/reports', async (req, res) => {
+  let h = '<!DOCTYPE html><html><head>';
+  h += '<meta charset="UTF-8">';
+  h += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+  h += '<style>';
+  h += 'body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; }';
+  h += '.header { display: flex; align-items: center; margin-bottom: 20px; }';
+  h += '.back { text-decoration: none; font-size: 24px; color: #2c3e50; margin-right: 15px; }';
+  h += 'h1 { margin: 0; font-size: 22px; }';
+  h += '.card { background: #fff; border-radius: 20px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 15px; text-align: center; }';
+  h += '.val { font-size: 32px; font-weight: 800; margin: 5px 0; }';
+  h += '.label { font-size: 14px; color: #888; font-weight: 600; text-transform: uppercase; }';
+  h += '.green { color: #27ae60; } .red { color: #e74c3c; } .blue { color: #2980b9; }';
+  h += '.loss-card { background: #fdf2f5; border: 2px solid #e74c3c; }';
+  h += '</style></head><body>';
+  h += '<div class="header">';
+  h += '<a href="/warehouse-app" class="back">←</a>';
+  h += '<h1>📊 Отчёты</h1>';
+  h += '</div>';
+  h += '<div id="loading" style="text-align:center;padding:50px;">Загрузка...</div>';
+  h += '<div id="content" style="display:none;">';
+  h += '<div class="card">';
+  h += '<div class="label">Выручка</div>';
+  h += '<div class="val blue" id="revenue">0 ₽</div>';
+  h += '</div>';
+  h += '<div class="card">';
+  h += '<div class="label">Прибыль (за вычетом себестоимости)</div>';
+  h += '<div class="val green" id="profit">0 ₽</div>';
+  h += '</div>';
+  h += '<div class="card loss-card">';
+  h += '<div class="label" style="color:#e74c3c;">Потери</div>';
+  h += '<div class="val red" id="losses">0 ₽</div>';
+  h += '<div style="font-size:14px;color:#e74c3c;margin-top:5px;" id="lossPercent">0% от закупок</div>';
+  h += '</div>';
+  h += '</div>';
+  h += '<script>';
+  h += 'fetch("/api/warehouse/reports?shop=kupidon").then(function(r){ return r.json(); }).then(function(data){';
+  h += '  if(data.ok) {';
+  h += '    document.getElementById("loading").style.display = "none";';
+  h += '    document.getElementById("content").style.display = "block";';
+  h += '    document.getElementById("revenue").innerText = data.revenue.toLocaleString("ru-RU") + " ₽";';
+  h += '    document.getElementById("profit").innerText = data.profit.toLocaleString("ru-RU") + " ₽";';
+  h += '    document.getElementById("losses").innerText = data.losses.toLocaleString("ru-RU") + " ₽";';
+  h += '    document.getElementById("lossPercent").innerText = data.lossPercent + "% от закупок";';
+  h += '  }';
+  h += '});';
+  h += '</script></body></html>';
+  res.send(h);
+});
 app.get('/warehouse/writeoff', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
