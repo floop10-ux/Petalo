@@ -9045,6 +9045,35 @@ app.get('/warehouse/reports', async (req, res) => {
   h += '</script></body></html>';
   res.send(h);
 });
+app.post('/api/warehouse/writeoff', async (req, res) => {
+  try {
+    const shopId = req.body.shopId;
+    const items = req.body.items;
+    const reason = req.body.reason;
+    const comment = req.body.comment || '';
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      await pool.query(
+        `UPDATE wh_shop_items ` +
+        `SET current_stock = current_stock - $1 ` +
+        `WHERE id = $2`,
+        [item.qty, item.id]
+      );
+      await pool.query(
+        `INSERT INTO wh_writeoffs (` +
+        `shop_id, shop_item_id, qty, ` +
+        `reason, comment) ` +
+        `VALUES ($1, $2, $3, $4, $5)`,
+        [shopId, item.id, item.qty, reason, comment]
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false });
+  }
+});
 app.get('/warehouse/writeoff', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
