@@ -8620,6 +8620,40 @@ const countLine = totalActiveCount > 0
     res.status(500).send('Ошибка');
   }
 });
+app.post('/api/warehouse/upload', async (req, res) => {
+  try {
+    const base64Data = req.body.image;
+    if (!base64Data) {
+      return res.json({ ok: false });
+    }
+    
+    const base64Image = base64Data.split(';base64,').pop();
+    const buffer = Buffer.from(base64Image, 'base64');
+    const key = 'wh_' + Date.now() + '.jpg';
+
+    const cmd = new PutObjectCommand({
+      Bucket: YC_BUCKET, Key: key,
+      Body: buffer, ContentType: 'image/jpeg'
+    });
+    await s3.send(cmd);
+    const url = `https://${YC_BUCKET}.storage.yandexcloud.net/${key}`;
+
+    let urlBackup = null;
+    if (s3backup) {
+      const cmd2 = new PutObjectCommand({
+        Bucket: BC_BUCKET, Key: key,
+        Body: buffer, ContentType: 'image/jpeg'
+      });
+      await s3backup.send(cmd2);
+      urlBackup = BC_ENDPOINT + '/' + BC_BUCKET + '/' + key;
+    }
+    
+    res.json({ ok: true, url: url, urlBackup: urlBackup });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false });
+  }
+});
 
 app.get('/warehouse-app', async (req, res) => {
   try {
