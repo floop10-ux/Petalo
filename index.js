@@ -8633,7 +8633,7 @@ app.get('/warehouse-app', async (req, res) => {
     }
 
     const r = await pool.query(
-      `SELECT role, name, shop_id FROM admins ` +
+SELECT role, name, shop_id, can_receipt, can_sale, can_writeoff FROM admins
       `WHERE chat_id = $1 LIMIT 1`, [chatId]
     );
 
@@ -8669,10 +8669,20 @@ app.get('/warehouse-app', async (req, res) => {
     h += '<p style="color:#888;margin:5px 0 0;">Вы вошли как: <b>' + userName + '</b> (' + (isOwner ? 'Владелец' : 'Флорист') + ')</p>';
     h += '</div>';
     h += '<div class="grid">';
-h += '<a href="/warehouse/sale" class="btn"><span>💰</span>Продажа</a>';
-    h += '<a href="/warehouse/writeoff" class="btn"><span>🗑</span>Списание</a>';
-    if (isOwner) {
+const canSale = user.can_sale === true;
+    const canWriteoff = user.can_writeoff === true;
+    const canReceipt = user.can_receipt === true;
+
+    if (isOwner || canSale) {
+      h += '<a href="/warehouse/sale" class="btn"><span>💰</span>Продажа</a>';
+    }
+    if (isOwner || canWriteoff) {
+      h += '<a href="/warehouse/writeoff" class="btn"><span>🗑</span>Списание</a>';
+    }
+    if (isOwner || canReceipt) {
       h += '<a href="/warehouse/receipt" class="btn"><span>📥</span>Приход</a>';
+    }
+    if (isOwner) {
       h += '<a href="/warehouse/reports" class="btn"><span>📊</span>Отчёты</a>';
       h += '<a href="/warehouse/settings" class="btn full"><span>⚙️</span>Настройки и Флористы</a>';
     }
