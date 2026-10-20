@@ -9356,6 +9356,108 @@ app.get('/warehouse/settings', async (req, res) => {
   h += '</script></body></html>';
   res.send(h);
 });
+app.get('/warehouse/settings', async (req, res) => {
+  let h = '<!DOCTYPE html><html><head>';
+  h += '<meta charset="UTF-8">';
+  h += '<meta name="viewport" ';
+  h += 'content="width=device-width, initial-scale=1.0">';
+  h += '<style>';
+  h += 'body { font-family: sans-serif; ';
+  h += 'margin: 0; padding: 20px; background: #fafaf8; }';
+  h += '.header { display: flex; align-items: center; }';
+  h += '.back { font-size: 24px; text-decoration: none; }';
+  h += 'h1 { margin: 0; font-size: 22px; margin-left: 15px; }';
+  h += '.card { background: #fff; padding: 20px; ';
+  h += 'border-radius: 15px; margin-bottom: 15px; }';
+  h += '.name { font-size: 18px; font-weight: bold; }';
+  h += '.row { display: flex; justify-content: space-between; ';
+  h += 'align-items: center; margin-top: 15px; }';
+  h += '.btn { padding: 10px 15px; border-radius: 10px; ';
+  h += 'border: none; font-weight: bold; background: #eee; }';
+  h += '.btn-pin { background: #3498db; color: #fff; }';
+  h += '.pin-text { color: #27ae60; font-weight: bold; }';
+  h += '</style></head><body>';
+
+  h += '<div class="header">';
+  h += '<a href="/warehouse-app" class="back">←</a>';
+  h += '<h1>⚙️ Флористы</h1>';
+  h += '</div>';
+  h += '<div id="list"></div>';
+
+  h += '<script>';
+  h += 'fetch("/api/warehouse/florists?shop=kupidon")';
+  h += '.then(function(r) { return r.json(); })';
+  h += '.then(function(d) {';
+  h += '  if (!d.ok) return;';
+  h += '  var box = document.getElementById("list");';
+  h += '  if (d.florists.length === 0) {';
+  h += '    box.innerHTML = "Нет флористов.";';
+  h += '    return;';
+  h += '  }';
+  h += '  d.florists.forEach(function(f) {';
+  h += '    var c = document.createElement("div");';
+  h += '    c.className = "card";';
+  
+  h += '    var n = document.createElement("div");';
+  h += '    n.className = "name";';
+  h += '    n.innerText = f.name || "Без имени";';
+  h += '    c.appendChild(n);';
+  
+  h += '    var pinDiv = document.createElement("div");';
+  h += '    pinDiv.style.marginTop = "10px";';
+  h += '    pinDiv.innerHTML = "PIN: <span class=\'pin-text\'>" ';
+  h += '      + (f.warehouse_pin || "не задан") + "</span>";';
+  h += '    c.appendChild(pinDiv);';
+
+  h += '    var btn = document.createElement("button");';
+  h += '    btn.className = "btn btn-pin";';
+  h += '    btn.innerText = "Задать PIN";';
+  h += '    btn.style.marginTop = "10px";';
+  h += '    btn.onclick = function() { setPin(f.chat_id); };';
+  h += '    c.appendChild(btn);';
+
+  h += '    function makeCheck(label, field, isChecked, cId) {';
+  h += '      var r = document.createElement("div");';
+  h += '      r.className = "row";';
+  h += '      r.innerHTML = "<span>" + label + "</span>";';
+  h += '      var cb = document.createElement("input");';
+  h += '      cb.type = "checkbox";';
+  h += '      cb.checked = isChecked;';
+  h += '      cb.style.transform = "scale(1.5)";';
+  h += '      cb.onchange = function() { setRights(cId, field, cb.checked); };';
+  h += '      r.appendChild(cb);';
+  h += '      return r;';
+  h += '    }';
+
+  h += '    c.appendChild(makeCheck("Приход", "receipt", f.can_receipt, f.chat_id));';
+  h += '    c.appendChild(makeCheck("Продажа", "sale", f.can_sale, f.chat_id));';
+  h += '    c.appendChild(makeCheck("Списание", "writeoff", f.can_writeoff, f.chat_id));';
+
+  h += '    box.appendChild(c);';
+  h += '  });';
+  h += '});';
+
+  h += 'function setPin(chatId) {';
+  h += '  var p = prompt("Введите 4 цифры для флориста:");';
+  h += '  if (p && p.length === 4) {';
+  h += '    fetch("/api/warehouse/florist/pin", {';
+  h += '      method: "POST",';
+  h += '      headers: { "Content-Type": "application/json" },';
+  h += '      body: JSON.stringify({ shop: "kupidon", chatId: chatId, pin: p })';
+  h += '    }).then(function() { location.reload(); });';
+  h += '  }';
+  h += '}';
+
+  h += 'function setRights(chatId, field, val) {';
+  h += '  fetch("/api/warehouse/florist/rights", {';
+  h += '    method: "POST",';
+  h += '    headers: { "Content-Type": "application/json" },';
+  h += '    body: JSON.stringify({ shop: "kupidon", chatId: chatId, field: field, val: val })';
+  h += '  });';
+  h += '}';
+  h += '</script></body></html>';
+  res.send(h);
+});
 app.get('/warehouse/writeoff', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
