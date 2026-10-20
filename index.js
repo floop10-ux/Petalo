@@ -1443,6 +1443,21 @@ async function initDb() {
     `ADD COLUMN IF NOT EXISTS can_receipt BOOLEAN ` +
     `DEFAULT FALSE`
   );
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS can_sale BOOLEAN ` +
+    `DEFAULT TRUE`
+  );
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS can_writeoff BOOLEAN ` +
+    `DEFAULT TRUE`
+  );
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS can_receipt BOOLEAN ` +
+    `DEFAULT FALSE`
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bouquets (
       id SERIAL PRIMARY KEY,
