@@ -8632,9 +8632,11 @@ app.get('/warehouse-app', async (req, res) => {
       return res.redirect('/warehouse-login?shop=kupidon');
     }
 
-    const r = await pool.query(
-SELECT role, name, shop_id, can_receipt, can_sale, can_writeoff FROM admins
-      `WHERE chat_id = $1 LIMIT 1`, [chatId]
+const r = await pool.query(
+      `SELECT role, name, shop_id, ` +
+      `can_receipt, can_sale, can_writeoff ` +
+      `FROM admins WHERE chat_id = $1 LIMIT 1`,
+      [chatId]
     );
 
     if (r.rows.length === 0) {
