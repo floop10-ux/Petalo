@@ -8734,13 +8734,18 @@ const canSale = user.can_sale === true;
 app.post('/api/warehouse/receipt', async (req, res) => {
   try {
     const { shopId, name, qty, price } = req.body;
+    const photo = req.body.photo;
+    const photoBackup = req.body.photoBackup;
     let itemRes = await pool.query(
       `SELECT id FROM wh_items WHERE name = $1`, [name]
     );
     let itemId;
     if (itemRes.rows.length === 0) {
-      const newItem = await pool.query(
-        `INSERT INTO wh_items (name, unit) VALUES ($1, 'шт') RETURNING id`, [name]
+const newItem = await pool.query(
+        `INSERT INTO wh_items (name, unit, ` +
+        `photo_url, photo_url_backup) ` +
+        `VALUES ($1, 'шт', $2, $3) RETURNING id`,
+        [name, photo, photoBackup]
       );
       itemId = newItem.rows[0].id;
     } else {
