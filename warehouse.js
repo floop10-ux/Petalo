@@ -25,7 +25,10 @@ async function initWarehouseDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
-
+await pool.query(
+    `ALTER TABLE wh_items ` +
+    `ADD COLUMN IF NOT EXISTS photo_url_backup TEXT`
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_shop_items (
       id SERIAL PRIMARY KEY,
