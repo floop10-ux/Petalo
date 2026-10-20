@@ -9065,6 +9065,61 @@ app.post('/api/warehouse/florist/rights', async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+app.get('/api/warehouse/florists', async (req, res) => {
+  try {
+    const shopId = req.query.shop || 'kupidon';
+    const r = await pool.query(
+      `SELECT chat_id, name, role, ` +
+      `warehouse_pin, can_receipt, ` +
+      `can_sale, can_writeoff ` +
+      `FROM admins ` +
+      `WHERE shop_id = $1 AND role = 'florist'`,
+      [shopId]
+    );
+    res.json({ ok: true, florists: r.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post('/api/warehouse/florist/pin', async (req, res) => {
+  try {
+    const shopId = req.body.shop;
+    const chatId = req.body.chatId;
+    const pin = req.body.pin;
+    
+    await pool.query(
+      `UPDATE admins SET warehouse_pin = $1 ` +
+      `WHERE shop_id = $2 AND chat_id = $3`,
+      [pin, shopId, chatId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post('/api/warehouse/florist/rights', async (req, res) => {
+  try {
+    const shopId = req.body.shop;
+    const chatId = req.body.chatId;
+    const field = req.body.field;
+    const val = req.body.val;
+    
+    let col = 'can_receipt';
+    if (field === 'sale') col = 'can_sale';
+    if (field === 'writeoff') col = 'can_writeoff';
+
+    await pool.query(
+      `UPDATE admins SET ` + col + ` = $1 ` +
+      `WHERE shop_id = $2 AND chat_id = $3`,
+      [val, shopId, chatId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false });
+  }
+});
 app.get('/api/warehouse/reports', async (req, res) => {
   try {
     const shopId = req.query.shop || 'kupidon';
