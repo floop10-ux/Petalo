@@ -8872,7 +8872,9 @@ app.get('/api/warehouse/items', async (req, res) => {
     const shopId = req.query.shop || 'kupidon';
     const r = await pool.query(
       `SELECT wh_shop_items.id, wh_shop_items.current_stock, ` +
-      `COALESCE(wh_shop_items.custom_name, wh_items.name) AS name ` +
+      `COALESCE(wh_shop_items.custom_name, wh_items.name) AS name, 
+      ` `wh_items.photo_url, ` +
+`wh_items.photo_url_backup ` +
       `FROM wh_shop_items ` +
       `JOIN wh_items ON wh_items.id = wh_shop_items.item_id ` +
       `WHERE wh_shop_items.shop_id = $1 AND wh_shop_items.current_stock > 0`,
@@ -8985,7 +8987,29 @@ app.get('/warehouse/sale', async (req, res) => {
   h += '  items.forEach(function(item) {';
   h += '    var div = document.createElement("div");';
   h += '    div.className = "item-card";';
-  h += '    div.innerHTML = "<div class=\'item-name\'>" + item.name + "</div><div class=\'item-stock\'>Остаток: " + item.current_stock + "</div>";';
+h += '    var boxStyle = "width:100%;height:100px;";';
+h += '    boxStyle += "object-fit:cover;";';
+h += '    boxStyle += "border-radius:10px;";';
+h += '    boxStyle += "margin-bottom:10px;";';
+
+h += '    var imgTag = "";';
+h += '    if (item.photo_url) {';
+h += '      imgTag = "<img src=\'" + item.photo_url + "\'";';
+h += '      imgTag += " style=\'" + boxStyle + "\'>";';
+h += '    } else {';
+h += '      imgTag = "<div style=\'" + boxStyle + "\'>";';
+h += '      imgTag += "display:flex;";';
+h += '      imgTag += "align-items:center;";';
+h += '      imgTag += "justify-content:center;";';
+h += '      imgTag += "font-size:40px;\'>📷</div>";';
+h += '    }';
+
+h += '    var itemName = "<div class=\'item-name\'>";';
+h += '    itemName += item.name + "</div>";';
+h += '    var itemStock = "<div class=\'item-stock\'>";';
+h += '    itemStock += "Остаток: " + item.current_stock + "</div>";';
+
+h += '    div.innerHTML = imgTag + itemName + itemStock;';
   h += '    div.onclick = function() { addToCart(item); };';
   h += '    grid.appendChild(div);';
   h += '  });';
