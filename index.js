@@ -9271,6 +9271,7 @@ app.post('/api/warehouse/writeoff', async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+
 app.get('/warehouse/settings', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
@@ -9285,7 +9286,6 @@ app.get('/warehouse/settings', async (req, res) => {
   h += '.card { background: #fff; padding: 20px; ';
   h += 'border-radius: 15px; margin-bottom: 15px; }';
   h += '.name { font-size: 18px; font-weight: bold; }';
-  h += '.role { font-size: 12px; color: #888; }';
   h += '.row { display: flex; justify-content: space-between; ';
   h += 'align-items: center; margin-top: 15px; }';
   h += '.btn { padding: 10px 15px; border-radius: 10px; ';
@@ -9333,16 +9333,34 @@ app.get('/warehouse/settings', async (req, res) => {
   h += '    c.appendChild(btn);';
 
   h += '    var rRow = document.createElement("div");';
-  h += '    rRow.className = "row";';
-  h += '    rRow.innerHTML = "<span>Приход</span>";';
-  h += '    var cb = document.createElement("input");';
-  h += '    cb.type = "checkbox";';
-  h += '    cb.checked = f.can_receipt;';
-  h += '    cb.style.transform = "scale(1.5)";';
-  h += '    cb.onchange = function() { setRights(f.chat_id, cb.checked); };';
-  h += '    rRow.appendChild(cb);';
-  h += '    c.appendChild(rRow);';
+    h += '    rRow.className = "row";';
+    h += '    rRow.innerHTML = "<span>Приход</span>";';
+    h += '    var cb = document.createElement("input");';
+    h += '    cb.type = "checkbox";';
+    h += '    cb.checked = f.can_receipt;';
+    h += '    cb.onchange = function() { setRights(f.chat_id, "receipt", cb.checked); };';
+    h += '    rRow.appendChild(cb);';
+    h += '    c.appendChild(rRow);';
 
+    h += '    var rRow2 = document.createElement("div");';
+    h += '    rRow2.className = "row";';
+    h += '    rRow2.innerHTML = "<span>Продажа</span>";';
+    h += '    var cb2 = document.createElement("input");';
+    h += '    cb2.type = "checkbox";';
+    h += '    cb2.checked = f.can_sale;';
+    h += '    cb2.onchange = function() { setRights(f.chat_id, "sale", cb2.checked); };';
+    h += '    rRow2.appendChild(cb2);';
+    h += '    c.appendChild(rRow2);';
+
+    h += '    var rRow3 = document.createElement("div");';
+    h += '    rRow3.className = "row";';
+    h += '    rRow3.innerHTML = "<span>Списание</span>";';
+    h += '    var cb3 = document.createElement("input");';
+    h += '    cb3.type = "checkbox";';
+    h += '    cb3.checked = f.can_writeoff;';
+    h += '    cb3.onchange = function() { setRights(f.chat_id, "writeoff", cb3.checked); };';
+    h += '    rRow3.appendChild(cb3);';
+    h += '    c.appendChild(rRow3);';
   h += '    box.appendChild(c);';
   h += '  });';
   h += '});';
@@ -9358,16 +9376,17 @@ app.get('/warehouse/settings', async (req, res) => {
   h += '  }';
   h += '}';
 
-  h += 'function setRights(chatId, val) {';
+  h += 'function setRights(chatId, field, val) {';
   h += '  fetch("/api/warehouse/florist/rights", {';
   h += '    method: "POST",';
   h += '    headers: { "Content-Type": "application/json" },';
-  h += '    body: JSON.stringify({ shop: "kupidon", chatId: chatId, canReceipt: val })';
+  h += '    body: JSON.stringify({ shop: "kupidon", chatId: chatId, field: field, val: val })';
   h += '  });';
   h += '}';
   h += '</script></body></html>';
   res.send(h);
 });
+
 app.get('/warehouse/settings', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
