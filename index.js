@@ -8730,18 +8730,21 @@ const canSale = user.can_sale === true;
     res.status(500).send('Ошибка сервера');
   }
 });
-
 app.post('/api/warehouse/receipt', async (req, res) => {
   try {
-    const { shopId, name, qty, price } = req.body;
+    const shopId = req.body.shopId;
+    const name = req.body.name;
+    const qty = req.body.qty;
+    const price = req.body.price;
     const photo = req.body.photo;
     const photoBackup = req.body.photoBackup;
+
     let itemRes = await pool.query(
       `SELECT id FROM wh_items WHERE name = $1`, [name]
     );
     let itemId;
     if (itemRes.rows.length === 0) {
-const newItem = await pool.query(
+      const newItem = await pool.query(
         `INSERT INTO wh_items (name, unit, ` +
         `photo_url, photo_url_backup) ` +
         `VALUES ($1, 'шт', $2, $3) RETURNING id`,
@@ -8751,7 +8754,8 @@ const newItem = await pool.query(
     } else {
       itemId = itemRes.rows[0].id;
     }
-const curr = await pool.query(
+
+    const curr = await pool.query(
       `SELECT current_stock, avg_cost ` +
       `FROM wh_shop_items ` +
       `WHERE shop_id = $1 AND item_id = $2`,
@@ -8773,11 +8777,10 @@ const curr = await pool.query(
       `custom_name, current_stock, last_cost, avg_cost) ` +
       `VALUES ($1, $2, $3, $4, $5, $6) ` +
       `ON CONFLICT (shop_id, item_id) DO UPDATE SET ` +
-      `current_stock = $4, ` +
-      `last_cost = $5, ` +
-      `avg_cost = $6`,
+      `current_stock = $4, last_cost = $5, avg_cost = $6`,
       [shopId, itemId, name, newStock, price, newAvg]
     );
+
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -8785,20 +8788,20 @@ const curr = await pool.query(
   }
 });
 
+
 app.get('/warehouse/receipt', async (req, res) => {
   let h = '<!DOCTYPE html><html><head>';
   h += '<meta charset="UTF-8">';
-  h += '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+  h += '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
   h += '<style>';
-  h += 'body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #fafaf8; color: #2c3e50; }';
-  h += '.header { display: flex; align-items: center; margin-bottom: 20px; }';
-  h += '.back { text-decoration: none; font-size: 24px; color: #2c3e50; margin-right: 15px; }';
-  h += 'h1 { margin: 0; font-size: 22px; }';
-  h += '.card { background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 15px; }';
+  h += 'body { font-family: sans-serif; margin: 0; padding: 20px; background: #fafaf8; }';
+  h += '.header { display: flex; align-items: center; }';
+  h += '.back { font-size: 24px; text-decoration: none; }';
+  h += 'h1 { margin: 0; font-size: 22px; margin-left: 15px; }';
+  h += '.card { background: #fff; border-radius: 20px; padding: 20px; margin-bottom: 15px; }';
   h += 'label { display: block; font-size: 14px; color: #888; margin-bottom: 5px; }';
-  h += 'input[type="text"], input[type="number"] { width: 100%; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; }';
-  h += 'input:focus { border-color: #27ae60; outline: none; }';
-  h += '.btn-save { width: 100%; background: #27ae60; color: #fff; border: none; padding: 18px; border-radius: 15px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3); }';
+  h += 'input[type="text"], input[type="number"] { width: 100%; padding: 15px; border: 2px solid #eee; border-radius: 12px; font-size: 16px; box-sizing: border-box; margin-bottom: 15px; }';
+  h += '.btn-save { width: 100%; background: #27ae60; color: #fff; border: none; padding: 18px; border-radius: 15px; font-size: 18px; font-weight: bold; }';
   h += '</style></head><body>';
 
   h += '<div class="header">';
@@ -8808,13 +8811,12 @@ app.get('/warehouse/receipt', async (req, res) => {
 
   h += '<div class="card">';
   h += '<label>Что привезли?</label>';
-  h += '<input type="text" id="itemName" placeholder="Название (напр. Роза Аваланж)">';
-  
+  h += '<input type="text" id="itemName" placeholder="Роза Аваланж">';
   h += '<label>Количество (шт)</label>';
-  h += '<input type="number" id="itemQty" placeholder="0" min="1">';
-
-  h += '<label>Цена закупки (за 1 шт, ₽)</label>';
-  h += '<input type="number" id="itemPrice" placeholder="0" min="1">';
+  h += '<input type="number" id="itemQty" placeholder="0">';
+  h += '<label>Цена закупки (за 1 шт)</label>';
+  h += '<input type="number" id="itemPrice" placeholder="0">';
+  
   h += '<label>Фото товара</label>';
   h += '<input type="file" id="itemPhoto" accept="image/*" style="margin-bottom:15px;">';
   h += '</div>';
@@ -8822,14 +8824,12 @@ app.get('/warehouse/receipt', async (req, res) => {
   h += '<button class="btn-save" onclick="saveReceipt()">Добавить на склад</button>';
 
   h += '<script>';
-
-h += 'function saveReceipt() {';
+  h += 'function saveReceipt() {';
   h += '  var name = document.getElementById("itemName").value;';
   h += '  var qty = document.getElementById("itemQty").value;';
   h += '  var price = document.getElementById("itemPrice").value;';
   h += '  if (!name || !qty || !price) { alert("Заполните поля"); return; }';
-  h += '  var photoInput = document.getElementById("itemPhoto");';
-  h += '  var photoFile = photoInput.files[0];';
+  h += '  var photoFile = document.getElementById("itemPhoto").files[0];';
   h += '  if (photoFile) {';
   h += '    var reader = new FileReader();';
   h += '    reader.onload = function(e) { uploadPhoto(e.target.result, name, qty, price); };';
@@ -8863,11 +8863,10 @@ h += 'function saveReceipt() {';
   h += '      window.location.href = "/warehouse-app";';
   h += '    } else { alert("Ошибка при сохранении"); }';
   h += '  }).catch(function() { alert("Ошибка сети"); });';
-h += '}';
-h += '</script></body></html>';
-res.send(h);
+  h += '}';
+  h += '</script></body></html>';
+  res.send(h);
 });
-
 app.get('/api/warehouse/items', async (req, res) => {
   try {
     const shopId = req.query.shop || 'kupidon';
