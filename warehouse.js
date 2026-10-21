@@ -129,6 +129,27 @@ await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS chat_id BIGINT')
       cost_at_sale INTEGER NOT NULL
     );
   `);
+await pool.query(
+    'ALTER TABLE wh_shop_items ' +
+    'ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ' +
+    'ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ' +
+    'ADD COLUMN IF NOT EXISTS discount_reason TEXT'
+  );
+  await pool.query(
+    'CREATE TABLE IF NOT EXISTS wh_audit_log (' +
+    'id SERIAL PRIMARY KEY, ' +
+    'shop_id VARCHAR(50), ' +
+    'chat_id BIGINT, ' +
+    'action VARCHAR(50), ' +
+    'details TEXT, ' +
+    'date TIMESTAMPTZ DEFAULT NOW())'
+  );
 
   // Индексы
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_shop_items ON wh_shop_items(shop_id)`);

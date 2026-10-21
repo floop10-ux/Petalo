@@ -10136,7 +10136,7 @@ function cleanupMorningLater() {
 // ========== ЗАПУСК ==========
 initDb().then(async () => {
   await initWarehouseDb();
-  setupWarehouse(app);
+  setupWarehouse(app, bot);
   const existing = await getShopFromDb(
     PRESET_SHOP.shopId
   );
