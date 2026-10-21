@@ -115,6 +115,7 @@ await pool.query(
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS chat_id BIGINT');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_sale_items (
