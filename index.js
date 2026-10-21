@@ -93,7 +93,7 @@ process.on('uncaughtException', (e) => {
   console.error('⚠️ Uncaught exception:', e?.message || e);
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 
 const bot = new TelegramBot(token);
 
