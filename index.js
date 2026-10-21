@@ -9772,6 +9772,7 @@ app.get('/', (req, res) => {
   h += '<h1>🌸 Flowind</h1></body></html>';
   res.send(h);
 });
+*/
 // ========== ФОНОВЫЕ ЗАДАЧИ ==========
 async function checkAndNotify() {
   try {
@@ -10131,7 +10132,7 @@ function cleanupMorningLater() {
     }
   }
 }
-*/
+
 // ========== ЗАПУСК ==========
 initDb().then(async () => {
   await initWarehouseDb();
