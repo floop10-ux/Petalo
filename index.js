@@ -7,6 +7,7 @@ const {
 } = require('@aws-sdk/client-s3');
 const pool = require('./db');
 const { initWarehouseDb } = require('./warehouse');
+const { setupWarehouse } = require('./warehouse-ui');
 require('dotenv').config();
 
 const app = express();
@@ -8620,7 +8621,7 @@ const countLine = totalActiveCount > 0
     res.status(500).send('Ошибка');
   }
 });
-app.post('/api/warehouse/upload', async (req, res) => {
+/* app.post('/api/warehouse/upload', async (req, res) => {
   try {
     const base64Data = req.body.image;
     if (!base64Data) {
@@ -10130,10 +10131,11 @@ function cleanupMorningLater() {
     }
   }
 }
-
+*/
 // ========== ЗАПУСК ==========
 initDb().then(async () => {
   await initWarehouseDb();
+  setupWarehouse(app);
   const existing = await getShopFromDb(
     PRESET_SHOP.shopId
   );
