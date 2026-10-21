@@ -128,7 +128,7 @@ function setupWarehouse(app) {
         await pool.query('INSERT INTO wh_sale_items (sale_id, shop_item_id, qty, cost_at_sale) VALUES ($1, $2, $3, $4)', [saleRes.rows[0].id, item.id, item.qty, costQ.rows[0].avg_cost || 0]);
       }
       res.json({ ok: true });
-    } catch (e) { console.error('SALE ERROR:', e); res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // 6. Экран Продажи
@@ -149,26 +149,18 @@ function setupWarehouse(app) {
     html += '.btn-save { width: 100%; padding: 15px; background: ' + brandColor + '; color: #fff; border: none; border-radius: 10px; font-size: 18px; font-weight: bold; margin-top: 10px; }';
     html += '</style></head><body>';
 
-    html += '<div class="header">';
-    html += '<a href="/warehouse-app" class="back">←</a>';
-    html += '<h1>💰 Продажа</h1></div>';
-
+    html += '<div class="header"><a href="/warehouse-app" class="back">←</a><h1>💰 Продажа</h1></div>';
     html += '<div class="basket" id="basket">';
     html += '<h3 style="margin-top:0; font-size:16px;">Выбрано:</h3>';
     html += '<div id="bList"></div>';
     html += '<label style="font-size:12px; color:#666;">Сумма</label>';
     html += '<input type="number" id="totalPrice" step="0.01" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; margin-top:5px; box-sizing:border-box;">';
-    html += '<button class="btn-save" onclick="saveSale()">Продать</button>';
-    html += '</div>';
-
+    html += '<button class="btn-save" onclick="saveSale()">Продать</button></div>';
     html += '<input type="text" class="search" id="search" placeholder="🔍 Поиск..." onkeyup="filterItems()">';
     html += '<div class="grid" id="itemsGrid"></div>';
-
     html += '<script>';
     html += 'var allItems = []; var cart = [];';
-    html += 'fetch("/api/warehouse/items?shop=kupidon")';
-    html += '.then(r => r.json()).then(d => { allItems = d.items; render(allItems); });';
-    
+    html += 'fetch("/api/warehouse/items?shop=kupidon").then(r => r.json()).then(d => { allItems = d.items; render(allItems); });';
     html += 'function render(items) {';
     html += '  var g = document.getElementById("itemsGrid"); g.innerHTML = "";';
     html += '  items.forEach(item => {';
@@ -179,18 +171,12 @@ function setupWarehouse(app) {
     html += '    div.onclick = function() { addToCart(item); }; g.appendChild(div);';
     html += '  });';
     html += '}';
-
-    html += 'function filterItems() {';
-    html += '  var q = document.getElementById("search").value.toLowerCase();';
-    html += '  render(allItems.filter(i => i.name.toLowerCase().includes(q)));';
-    html += '}';
-
+    html += 'function filterItems() { var q = document.getElementById("search").value.toLowerCase(); render(allItems.filter(i => i.name.toLowerCase().includes(q))); }';
     html += 'function addToCart(item) {';
     html += '  var ex = cart.find(c => c.id === item.id);';
     html += '  if (ex) ex.qty += 1; else cart.push({ id: item.id, name: item.name, qty: 1 });';
     html += '  renderBasket();';
     html += '}';
-
     html += 'function renderBasket() {';
     html += '  var b = document.getElementById("basket"); var list = document.getElementById("bList");';
     html += '  if (cart.length === 0) { b.style.display = "none"; return; }';
@@ -203,19 +189,12 @@ function setupWarehouse(app) {
     html += '    list.appendChild(div);';
     html += '  });';
     html += '}';
-
-    html += 'function upQty(idx, val) {';
-    html += '  var v = parseFloat(val); if (isNaN(v) || v <= 0) v = 1;';
-    html += '  cart[idx].qty = v;';
-    html += '}';
-
+    html += 'function upQty(idx, val) { var v = parseFloat(val); if (isNaN(v) || v <= 0) v = 1; cart[idx].qty = v; }';
     html += 'function saveSale() {';
     html += '  var total = document.getElementById("totalPrice").value;';
     html += '  if (!total) { alert("Введите сумму"); return; }';
-    html += '  fetch("/api/warehouse/sale", {';
-    html += '    method: "POST", headers: { "Content-Type": "application/json" },';
-    html += '    body: JSON.stringify({ shopId: "kupidon", real_price: total, items: cart })';
-    html += '  }).then(r => r.json()).then(d => {';
+    html += '  fetch("/api/warehouse/sale", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopId: "kupidon", real_price: total, items: cart }) })';
+    html += '  .then(r => r.json()).then(d => {';
     html += '    if (d.ok) { alert("Продано!"); window.location.href="/warehouse-app"; }';
     html += '    else alert("Ошибка: " + (d.error || "unknown"));';
     html += '  });';
@@ -223,7 +202,6 @@ function setupWarehouse(app) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-
   // 7. Экран Прихода
   app.get('/warehouse/receipt', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>';
@@ -258,19 +236,17 @@ function setupWarehouse(app) {
     html += '    reader.readAsDataURL(file);';
     html += '  } else submit(name, qty, price, null, null);';
     html += '}';
-    
     html += 'function upload(base64, name, qty, price) {';
     html += '  fetch("/api/warehouse/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: base64 }) })';
     html += '  .then(r => r.json()).then(d => { submit(name, qty, price, d.url, d.urlBackup); })';
     html += '  .catch(() => { submit(name, qty, price, null, null); });';
     html += '}';
-    
     html += 'function submit(name, qty, price, url, url2) {';
     html += '  fetch("/api/warehouse/receipt", { method: "POST", headers: { "Content-Type": "application/json" },';
     html += '    body: JSON.stringify({ shopId: "kupidon", name: name, qty: qty, price: price, photo: url, photoBackup: url2 }) })';
     html += '  .then(r => r.json()).then(d => {';
     html += '    if (d.ok) { alert("Добавлено!"); window.location.href="/warehouse-app"; }';
-    html += '    else alert("Ошибка");';
+    html += '    else alert("Ошибка: " + (d.error || "unknown"));';
     html += '  });';
     html += '}';
     html += '<\/script></body></html>';
@@ -297,7 +273,6 @@ function setupWarehouse(app) {
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a><h1>🗑 Списание</h1></div>';
     html += '<input type="text" class="search" id="search" placeholder="🔍 Поиск..." onkeyup="filterItems()">';
     html += '<div class="grid" id="itemsGrid"></div>';
-    
     html += '<div id="form" style="display:none;">';
     html += '<h3>Причина</h3><div class="reasons">';
     html += '<div class="reason active" onclick="setR(this, \'spoilage\')">Порча</div>';
@@ -305,7 +280,6 @@ function setupWarehouse(app) {
     html += '<div class="reason" onclick="setR(this, \'markdown\')">Уценка</div>';
     html += '<div class="reason" onclick="setR(this, \'sorting\')">Пересорт</div>';
     html += '</div>';
-    
     html += '<label>Комментарий</label>';
     html += '<textarea id="comment" style="width:100%; padding:10px; border-radius:10px; border:1px solid #ddd; margin-bottom:10px;"></textarea>';
     html += '<label>Фото</label><input type="file" id="wPhoto" accept="image/*" style="margin-bottom:15px;">';
@@ -314,13 +288,11 @@ function setupWarehouse(app) {
     html += '<script>';
     html += 'var allItems = []; var selItem = null; var selReason = "spoilage";';
     html += 'fetch("/api/warehouse/items?shop=kupidon").then(r => r.json()).then(d => { allItems = d.items; render(); });';
-    
     html += 'function render() { drawCards(allItems); }';
     html += 'function filterItems() {';
     html += '  var q = document.getElementById("search").value.toLowerCase();';
     html += '  drawCards(allItems.filter(i => i.name.toLowerCase().includes(q)));';
     html += '}';
-    
     html += 'function drawCards(items) {';
     html += '  var g = document.getElementById("itemsGrid"); g.innerHTML = "";';
     html += '  items.forEach(i => {';
@@ -330,7 +302,6 @@ function setupWarehouse(app) {
     html += '    d.onclick = () => selectItem(i); g.appendChild(d);';
     html += '  });';
     html += '}';
-    
     html += 'function selectItem(item) {';
     html += '  var q = prompt("Сколько списать?", "1");';
     html += '  if (q && parseFloat(q) > 0) {';
@@ -338,24 +309,20 @@ function setupWarehouse(app) {
     html += '    document.getElementById("form").style.display = "block";';
     html += '  }';
     html += '}';
-    
     html += 'function setR(el, r) {';
     html += '  document.querySelectorAll(".reason").forEach(b => b.classList.remove("active"));';
     html += '  el.classList.add("active"); selReason = r;';
     html += '}';
-    
     html += 'function saveWriteoff() {';
     html += '  if (!selItem) return; var c = document.getElementById("comment").value;';
     html += '  var f = document.getElementById("wPhoto").files[0];';
     html += '  if (f) { var rd = new FileReader(); rd.onload = e => upload(e.target.result, c); rd.readAsDataURL(f); }';
     html += '  else submit(null, c);';
     html += '}';
-    
     html += 'function upload(base64, c) {';
     html += '  fetch("/api/warehouse/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: base64 }) })';
     html += '  .then(r => r.json()).then(d => submit(d.url, c)).catch(() => submit(null, c));';
     html += '}';
-    
     html += 'function submit(url, c) {';
     html += '  fetch("/api/warehouse/writeoff", { method: "POST", headers: { "Content-Type": "application/json" },';
     html += '    body: JSON.stringify({ shopId: "kupidon", items: [selItem], reason: selReason, comment: c, photo: url }) })';
@@ -364,6 +331,7 @@ function setupWarehouse(app) {
     html += '<\/script></body></html>';
     res.send(html);
   });
+
   // 9. API Прихода
   app.post('/api/warehouse/receipt', async (req, res) => {
     try {
@@ -379,7 +347,6 @@ function setupWarehouse(app) {
       } else {
         itemId = itemRes.rows[0].id;
       }
-      
       const curr = await pool.query('SELECT current_stock, avg_cost FROM wh_shop_items WHERE shop_id = $1 AND item_id = $2', [req.body.shopId, itemId]);
       let oldStock = 0; let oldAvg = 0;
       if (curr.rows.length > 0) { 
@@ -395,7 +362,7 @@ function setupWarehouse(app) {
         [req.body.shopId, itemId, newStock, req.body.price, newAvg]
       );
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // 10. API Списания
@@ -409,7 +376,7 @@ function setupWarehouse(app) {
         );
       }
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // 11. API Загрузки фото
@@ -420,18 +387,15 @@ function setupWarehouse(app) {
       const base64Image = base64Data.split(';base64,').pop();
       const buffer = Buffer.from(base64Image, 'base64');
       const key = 'wh_' + Date.now() + '.jpg';
-      
       const cmd = new PutObjectCommand({ Bucket: YC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' });
       await s3.send(cmd);
       const url = 'https://' + YC_BUCKET + '.storage.yandexcloud.net/' + key;
-      
       let urlBackup = null;
       if (s3backup) {
         const cmd2 = new PutObjectCommand({ Bucket: BC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' });
         await s3backup.send(cmd2);
         urlBackup = BC_ENDPOINT + '/' + BC_BUCKET + '/' + key;
       }
-      
       res.json({ ok: true, url: url, urlBackup: urlBackup });
     } catch (e) { res.status(500).json({ ok: false }); }
   });
@@ -440,35 +404,16 @@ function setupWarehouse(app) {
   app.get('/api/warehouse/reports', async (req, res) => {
     try {
       const shopId = req.query.shop || 'kupidon';
-      
-      const rev = await pool.query(
-        'SELECT COALESCE(SUM(real_price), 0) AS total ' +
-        'FROM wh_sales WHERE shop_id = $1', [shopId]
-      );
-      
-      const loss = await pool.query(
-        'SELECT COALESCE(SUM(w.qty * i.avg_cost), 0) AS total ' +
-        'FROM wh_writeoffs w ' +
-        'JOIN wh_shop_items i ON i.id = w.shop_item_id ' +
-        'WHERE w.shop_id = $1', [shopId]
-      );
-      
-      const cost = await pool.query(
-        'SELECT COALESCE(SUM(s.qty * s.cost_at_sale), 0) AS total ' +
-        'FROM wh_sale_items s ' +
-        'JOIN wh_sales sa ON sa.id = s.sale_id ' +
-        'WHERE sa.shop_id = $1', [shopId]
-      );
+      const rev = await pool.query('SELECT COALESCE(SUM(real_price), 0) AS total FROM wh_sales WHERE shop_id = $1', [shopId]);
+      const loss = await pool.query('SELECT COALESCE(SUM(w.qty * i.avg_cost), 0) AS total FROM wh_writeoffs w JOIN wh_shop_items i ON i.id = w.shop_item_id WHERE w.shop_id = $1', [shopId]);
+      const cost = await pool.query('SELECT COALESCE(SUM(s.qty * s.cost_at_sale), 0) AS total FROM wh_sale_items s JOIN wh_sales sa ON sa.id = s.sale_id WHERE sa.shop_id = $1', [shopId]);
       
       const revenue = parseInt(rev.rows[0].total) || 0;
       const losses = parseInt(loss.rows[0].total) || 0;
       const costVal = parseInt(cost.rows[0].total) || 0;
       const profit = revenue - costVal;
-      
       let lossPercent = 0;
-      if ((revenue + losses) > 0) {
-        lossPercent = Math.round((losses / (revenue + losses)) * 100);
-      }
+      if ((revenue + losses) > 0) lossPercent = Math.round((losses / (revenue + losses)) * 100);
       
       res.json({ ok: true, revenue, profit, losses, lossPercent });
     } catch (e) { res.status(500).json({ ok: false }); }
@@ -513,12 +458,7 @@ function setupWarehouse(app) {
   app.get('/api/warehouse/florists', async (req, res) => {
     try {
       const shopId = req.query.shop || 'kupidon';
-      const r = await pool.query(
-        'SELECT chat_id, name, warehouse_pin, can_receipt, ' +
-        'can_sale, can_writeoff ' +
-        'FROM admins WHERE shop_id = $1 AND role = \'florist\'',
-        [shopId]
-      );
+      const r = await pool.query('SELECT chat_id, name, warehouse_pin, can_receipt, can_sale, can_writeoff FROM admins WHERE shop_id = $1 AND role = \'florist\'', [shopId]);
       res.json({ ok: true, florists: r.rows });
     } catch (e) { res.status(500).json({ ok: false }); }
   });
@@ -535,7 +475,6 @@ function setupWarehouse(app) {
       let col = 'can_receipt';
       if (req.body.field === 'sale') col = 'can_sale';
       if (req.body.field === 'writeoff') col = 'can_writeoff';
-      
       await pool.query('UPDATE admins SET ' + col + ' = $1 WHERE shop_id = $2 AND chat_id = $3', [req.body.val, req.body.shop, req.body.chatId]);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false }); }
@@ -592,7 +531,6 @@ function setupWarehouse(app) {
       const shopId = req.body.shopId;
       const saleId = req.body.saleId;
       const action = req.body.action;
-      
       const itemsRes = await pool.query('SELECT shop_item_id, qty FROM wh_sale_items WHERE sale_id = $1', [saleId]);
       
       for (let i = 0; i < itemsRes.rows.length; i++) {
@@ -600,10 +538,7 @@ function setupWarehouse(app) {
         if (action === 'return') {
           await pool.query('UPDATE wh_shop_items SET current_stock = current_stock + $1 WHERE id = $2', [item.qty, item.shop_item_id]);
         } else {
-          await pool.query(
-            'INSERT INTO wh_writeoffs (shop_id, shop_item_id, qty, reason, comment, date) VALUES ($1, $2, $3, $4, $5, NOW())',
-            [shopId, item.shop_item_id, item.qty, 'loss', 'Отмена продажи']
-          );
+          await pool.query('INSERT INTO wh_writeoffs (shop_id, shop_item_id, qty, reason, comment, date) VALUES ($1, $2, $3, $4, $5, NOW())', [shopId, item.shop_item_id, item.qty, 'loss', 'Отмена']);
         }
       }
       await pool.query('DELETE FROM wh_sale_items WHERE sale_id = $1', [saleId]);
@@ -617,15 +552,28 @@ function setupWarehouse(app) {
     try {
       const shopId = req.query.shop || 'kupidon';
       const sales = await pool.query(
-        'SELECT id, real_price as amount, date, \'sale\' as type FROM wh_sales WHERE shop_id = $1 ORDER BY date DESC LIMIT 15', [shopId]
+        `SELECT s.id, s.real_price as amount, s.date, 'sale' as type, a.name as seller_name, ` +
+        `STRING_AGG(COALESCE(shi.custom_name, i.name) || ' x' || si.qty, ', ') as items_list ` +
+        `FROM wh_sales s ` +
+        `LEFT JOIN admins a ON a.chat_id = s.chat_id ` +
+        `LEFT JOIN wh_sale_items si ON si.sale_id = s.id ` +
+        `LEFT JOIN wh_shop_items shi ON shi.id = si.shop_item_id ` +
+        `LEFT JOIN wh_items i ON i.id = shi.item_id ` +
+        `WHERE s.shop_id = $1 GROUP BY s.id, a.name ORDER BY s.date DESC LIMIT 15`, [shopId]
       );
       const writeoffs = await pool.query(
-        'SELECT id, qty, date, reason, \'writeoff\' as type FROM wh_writeoffs WHERE shop_id = $1 ORDER BY date DESC LIMIT 15', [shopId]
+        `SELECT w.id, w.qty, w.date, w.reason, 'writeoff' as type, a.name as seller_name, ` +
+        `COALESCE(shi.custom_name, i.name) as items_list ` +
+        `FROM wh_writeoffs w ` +
+        `LEFT JOIN admins a ON a.chat_id = w.chat_id ` +
+        `LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id ` +
+        `LEFT JOIN wh_items i ON i.id = shi.item_id ` +
+        `WHERE w.shop_id = $1 ORDER BY w.date DESC LIMIT 15`, [shopId]
       );
       let list = [...sales.rows, ...writeoffs.rows];
       list.sort((a, b) => new Date(b.date) - new Date(a.date));
       res.json({ ok: true, history: list });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // 18. Экран Истории
@@ -634,14 +582,14 @@ function setupWarehouse(app) {
     html += 'body { font-family: sans-serif; margin: 0; padding: 15px; background: #fafaf8; color: ' + brandColor + '; }';
     html += '.header { display: flex; align-items: center; margin-bottom: 15px; }';
     html += '.back { font-size: 24px; text-decoration: none; color: ' + brandColor + '; margin-right: 15px; }';
-    html += '.item { background: #fff; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }';
+    html += '.item { background: #fff; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; }';
     html += '.item.sale { border-left: 4px solid #27ae60; }';
     html += '.item.writeoff { border-left: 4px solid ' + accentColor + '; }';
     html += '.date { font-size: 11px; color: #888; margin-top: 5px; }';
-    html += '.amount { font-weight: bold; font-size: 16px; }';
-    html += '.btn-cancel { background: #fff; border: 1px solid #e74c3c; color: #e74c3c; border-radius: 5px; padding: 5px 10px; font-size: 12px; margin-left: 10px; }';
+    html += '.amount { font-weight: bold; font-size: 16px; text-align: right; }';
+    html += '.items-list { font-size: 13px; color: #555; margin-top: 4px; font-style: italic; }';
+    html += '.btn-cancel { background: #fff; border: 1px solid #e74c3c; color: #e74c3c; border-radius: 5px; padding: 5px 10px; font-size: 12px; margin-top: 5px; }';
     html += '</style></head><body>';
-    
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a><h1>📋 История</h1></div>';
     html += '<div id="list">Загрузка...</div>';
     html += '<script>';
@@ -655,12 +603,18 @@ function setupWarehouse(app) {
     html += '      div.className = "item sale";';
     html += '      div.style.cursor = "pointer";';
     html += '      div.onclick = function() { window.location.href = "/warehouse/sale/details?id=" + h.id; };';
-    html += '      div.innerHTML = "<div><b>💰 Продажа</b><div class=\'date\'>" + ds + "</div></div>";';
-    html += '      var btn = "<button class=\'btn-cancel\' onclick=\'cancelSale(" + h.id + ")\'>Отменить</button>";';
-    html += '      div.innerHTML += "<div style=\'display:flex;align-items:center;\'><div class=\'amount\'>+" + h.amount.toLocaleString("ru-RU") + " ₽</div>" + btn + "</div>";';
+    html += '      var seller = h.seller_name ? h.seller_name : "Флорист";';
+    html += '      div.innerHTML = "<div><b>💰 Продажа</b> (" + seller + ")";';
+    html += '      div.innerHTML += "<div class=\'date\'>" + ds + "</div>";';
+    html += '      div.innerHTML += "<div class=\'items-list\'>" + (h.items_list || "Нет данных") + "</div></div>";';
+    html += '      var btn = "<button class=\'btn-cancel\' onclick=\'event.stopPropagation(); cancelSale(" + h.id + ")\'>Отменить</button>";';
+    html += '      div.innerHTML += "<div><div class=\'amount\'>+" + h.amount.toLocaleString("ru-RU") + " ₽</div>" + btn + "</div>";';
     html += '    } else {';
     html += '      div.className = "item writeoff";';
-    html += '      div.innerHTML = "<div><b>🗑 Списание</b> (" + h.reason + ")<div class=\'date\'>" + ds + "</div></div>";';
+    html += '      var seller = h.seller_name ? h.seller_name : "Флорист";';
+    html += '      div.innerHTML = "<div><b>🗑 Списание</b> (" + seller + ")";';
+    html += '      div.innerHTML += "<div class=\'date\'>" + ds + "</div>";';
+    html += '      div.innerHTML += "<div class=\'items-list\'>" + (h.items_list || "Нет данных") + " (" + h.reason + ")</div></div>";';
     html += '      div.innerHTML += "<div class=\'amount\' style=\'color:" + accentColor + "\'>-" + h.qty + " шт</div>";';
     html += '    }';
     html += '    b.appendChild(div);';
@@ -674,8 +628,7 @@ function setupWarehouse(app) {
     res.send(html);
   });
 
-}
-// 19. API Деталей продажи
+  // 19. API Деталей продажи
   app.get('/api/warehouse/sale/details', async (req, res) => {
     try {
       const saleId = req.query.id;
@@ -698,37 +651,7 @@ function setupWarehouse(app) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // 20. API Истории конкретного товара
-  app.get('/api/warehouse/item/history', async (req, res) => {
-    try {
-      const itemId = req.query.id;
-      const shopId = req.query.shop || 'kupidon';
-      
-      const sales = await pool.query(
-        `SELECT s.date, 'sale' as type, si.qty, ` +
-        `s.real_price as amount, a.name as person ` +
-        `FROM wh_sale_items si ` +
-        `JOIN wh_sales s ON s.id = si.sale_id ` +
-        `LEFT JOIN admins a ON a.chat_id = s.chat_id ` +
-        `WHERE si.shop_item_id = $1 AND s.shop_id = $2 ` +
-        `ORDER BY s.date DESC LIMIT 20`, [itemId, shopId]
-      );
-
-      const receipts = await pool.query(
-        `SELECT r.date, 'receipt' as type, ri.qty, ` +
-        `ri.unit_cost as amount, 'Приход' as person ` +
-        `FROM wh_receipt_items ri ` +
-        `JOIN wh_receipts r ON r.id = ri.receipt_id ` +
-        `WHERE ri.shop_item_id = $1 AND r.shop_id = $2 ` +
-        `ORDER BY r.date DESC LIMIT 20`, [itemId, shopId]
-      );
-      
-      let list = [...sales.rows, ...receipts.rows];
-      list.sort((a, b) => new Date(b.date) - new Date(a.date));
-      res.json({ ok: true, history: list });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-  // 21. Экран Деталей Продажи
+  // 20. Экран Деталей Продажи
   app.get('/warehouse/sale/details', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
@@ -744,12 +667,8 @@ function setupWarehouse(app) {
     html += '.item-name { font-weight: bold; font-size: 16px; }';
     html += '.item-qty { color: #e74c3c; font-weight: bold; }';
     html += '</style></head><body>';
-    
-    html += '<div class="header">';
-    html += '<a href="/warehouse/history" class="back">←</a>';
-    html += '<h1>🧾 Чек</h1></div>';
+    html += '<div class="header"><a href="/warehouse/history" class="back">←</a><h1>🧾 Чек</h1></div>';
     html += '<div class="card" id="content">Загрузка...</div>';
-    
     html += '<script>';
     html += 'var urlParams = new URLSearchParams(window.location.search);';
     html += 'var saleId = urlParams.get("id");';
@@ -771,6 +690,35 @@ function setupWarehouse(app) {
     html += '<\/script></body></html>';
     res.send(html);
   });
+
+  // 21. API Истории конкретного товара
+  app.get('/api/warehouse/item/history', async (req, res) => {
+    try {
+      const itemId = req.query.id;
+      const shopId = req.query.shop || 'kupidon';
+      const sales = await pool.query(
+        `SELECT s.date, 'sale' as type, si.qty, ` +
+        `s.real_price as amount, a.name as person ` +
+        `FROM wh_sale_items si ` +
+        `JOIN wh_sales s ON s.id = si.sale_id ` +
+        `LEFT JOIN admins a ON a.chat_id = s.chat_id ` +
+        `WHERE si.shop_item_id = $1 AND s.shop_id = $2 ` +
+        `ORDER BY s.date DESC LIMIT 20`, [itemId, shopId]
+      );
+      const receipts = await pool.query(
+        `SELECT r.date, 'receipt' as type, ri.qty, ` +
+        `ri.unit_cost as amount, 'Приход' as person ` +
+        `FROM wh_receipt_items ri ` +
+        `JOIN wh_receipts r ON r.id = ri.receipt_id ` +
+        `WHERE ri.shop_item_id = $1 AND r.shop_id = $2 ` +
+        `ORDER BY r.date DESC LIMIT 20`, [itemId, shopId]
+      );
+      let list = [...sales.rows, ...receipts.rows];
+      list.sort((a, b) => new Date(b.date) - new Date(a.date));
+      res.json({ ok: true, history: list });
+    } catch (e) { res.status(500).json({ ok: false }); }
+  });
+
   // 22. Экран Истории Товара
   app.get('/warehouse/item', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
@@ -785,12 +733,8 @@ function setupWarehouse(app) {
     html += '.date { font-size: 11px; color: #888; }';
     html += '.amount { font-weight: bold; font-size: 16px; }';
     html += '</style></head><body>';
-    
-    html += '<div class="header">';
-    html += '<a href="/warehouse/history" class="back">←</a>';
-    html += '<h1>📦 История товара</h1></div>';
+    html += '<div class="header"><a href="/warehouse/history" class="back">←</a><h1>📦 История товара</h1></div>';
     html += '<div id="list">Загрузка...</div>';
-    
     html += '<script>';
     html += 'var urlParams = new URLSearchParams(window.location.search);';
     html += 'var itemId = urlParams.get("id");';
@@ -816,4 +760,6 @@ function setupWarehouse(app) {
     html += '<\/script></body></html>';
     res.send(html);
   });
+
+}
 module.exports = { setupWarehouse };
