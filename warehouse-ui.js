@@ -653,6 +653,8 @@ function setupWarehouse(app) {
     html += '    var ds = new Date(h.date).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });';
     html += '    if (h.type === "sale") {';
     html += '      div.className = "item sale";';
+    html += '      div.style.cursor = "pointer";';
+    html += '      div.onclick = function() { window.location.href = "/warehouse/sale/details?id=" + h.id; };';
     html += '      div.innerHTML = "<div><b>💰 Продажа</b><div class=\'date\'>" + ds + "</div></div>";';
     html += '      var btn = "<button class=\'btn-cancel\' onclick=\'cancelSale(" + h.id + ")\'>Отменить</button>";';
     html += '      div.innerHTML += "<div style=\'display:flex;align-items:center;\'><div class=\'amount\'>+" + h.amount.toLocaleString("ru-RU") + " ₽</div>" + btn + "</div>";';
