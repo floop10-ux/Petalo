@@ -128,7 +128,7 @@ function setupWarehouse(app) {
         await pool.query('INSERT INTO wh_sale_items (sale_id, shop_item_id, qty, cost_at_sale) VALUES ($1, $2, $3, $4)', [saleRes.rows[0].id, item.id, item.qty, costQ.rows[0].avg_cost || 0]);
       }
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { console.error('SALE ERROR:', e); res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // 6. Экран Продажи
@@ -217,7 +217,7 @@ function setupWarehouse(app) {
     html += '    body: JSON.stringify({ shopId: "kupidon", real_price: total, items: cart })';
     html += '  }).then(r => r.json()).then(d => {';
     html += '    if (d.ok) { alert("Продано!"); window.location.href="/warehouse-app"; }';
-    html += '    else alert("Ошибка");';
+    html += '    else alert("Ошибка: " + (d.error || "unknown"));';
     html += '  });';
     html += '}';
     html += '<\/script></body></html>';
