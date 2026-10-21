@@ -31,23 +31,27 @@ async function notifyOwner(bot, shopId, text, type) {
 }
 
 function setupWarehouse(app, bot) {
-=  const brandColor = '#124(\444';
-  const accentColor = '#dE08567+';
+const brandColor = '#124444';
+  const accentColor = '#E08567';
 
-  // )/1. Главный);
- экран
-  app.get('/ware     house-app', async (req, res const) => {
+  // 1. Главный экран
+  app.get('/warehouse-app', async (req, res) => {
     try {
- chat      const cookie = req.headers.cIdookie || '';
-      const match = cookieStr.match(/wh_a = match ? match[1] : null;
+      const cookie = req.headers.cookie || '';
+      const match = cookie.match(/wh_auth=(\d+)/);
+      const chatIdStr = match ? match[1] : null;
       const chatId = chatIdStr ? Number(chatIdStr) : null;
+      
       if (!chatId) return res.redirect('/warehouse-login?shop=kupidon');
 
       const r = await pool.query(
         'SELECT role, name, can_receipt, can_sale, can_writeoff ' +
         'FROM admins WHERE chat_id = $1 LIMIT 1', [chatId]
       );
-      if (r.rows.length === 0) return res.redirect('/warehouse-login?shop=kupidon');
+      
+      if (r.rows.length === 0) {
+        return res.redirect('/warehouse-login?shop=kupidon');
+      }
 
       const user = r.rows[0];
       const isOwner = user.role === 'owner';
