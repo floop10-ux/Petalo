@@ -8871,18 +8871,18 @@ app.get('/api/warehouse/items', async (req, res) => {
   try {
     const shopId = req.query.shop || 'kupidon';
     const r = await pool.query(
-      `SELECT wh_shop_items.id, wh_shop_items.current_stock, ` +
-      `COALESCE(wh_shop_items.custom_name, wh_items.name) AS name, 
-      ` `wh_items.photo_url, ` +
-`wh_items.photo_url_backup ` +
-      `FROM wh_shop_items ` +
-      `JOIN wh_items ON wh_items.id = wh_shop_items.item_id ` +
-      `WHERE wh_shop_items.shop_id = $1 AND wh_shop_items.current_stock > 0`,
+      `SELECT i.id, i.current_stock, ` +
+      `COALESCE(i.custom_name, w.name) AS name, ` +
+      `w.photo_url, w.photo_url_backup ` +
+      `FROM wh_shop_items i ` +
+      `JOIN wh_items w ON w.id = i.item_id ` +
+      `WHERE i.shop_id = $1 AND i.current_stock > 0`,
       [shopId]
     );
     res.json({ ok: true, items: r.rows });
   } catch (e) {
-    res.status(500).json({ ok: false });
+    console.error('DB ERROR ITEMS:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
