@@ -2,8 +2,8 @@ const pool = require('./db');
 
 function setupWarehouse(app) {
   
-  const brandColor = '#124444';
-  const accentColor = '#E08567';
+  const brandColor = '#124444'; // Тёмно-бирюзовый (основной)
+  const accentColor = '#E08567'; // Терракотовый (акцент)
 
   // 1. Главный экран склада
   app.get('/warehouse-app', async (req, res) => {
@@ -37,8 +37,8 @@ function setupWarehouse(app) {
           .header { background: #fff; padding: 20px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 20px; border-bottom: 4px solid ${brandColor}; }
           h1 { margin: 0; font-size: 24px; }
           .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-          .btn { background: #fff; padding: 30px 10px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-decoration: none; color: ${brandColor}; font-weight: bold; font-size: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid #eee; }
-          .btn span { font-size: 32px; margin-bottom: 10px; }
+          .btn { background: #fff; padding: 20px 10px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-decoration: none; color: ${brandColor}; font-weight: bold; font-size: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid #eee; }
+          .btn span { font-size: 28px; margin-bottom: 8px; }
           .full { grid-column: 1 / -1; }
         </style></head><body>
         <div class="header">
@@ -49,8 +49,9 @@ function setupWarehouse(app) {
           ${(isOwner || canSale) ? '<a href="/warehouse/sale" class="btn"><span>💰</span>Продажа</a>' : ''}
           ${(isOwner || canWriteoff) ? '<a href="/warehouse/writeoff" class="btn"><span>🗑</span>Списание</a>' : ''}
           ${(isOwner || canReceipt) ? '<a href="/warehouse/receipt" class="btn"><span>📥</span>Приход</a>' : ''}
+          <a href="/warehouse/history" class="btn"><span>📋</span>История</a>
           ${isOwner ? '<a href="/warehouse/reports" class="btn"><span>📊</span>Отчёты</a>' : ''}
-          ${isOwner ? '<a href="/warehouse/settings" class="btn full"><span>⚙️</span>Настройки и Флористы</a>' : ''}
+          ${isOwner ? '<a href="/warehouse/settings" class="btn full"><span>⚙️</span>Настройки</a>' : ''}
         </div>
         <script>Telegram.WebApp.ready();<\/script>
         </body></html>
@@ -117,11 +118,10 @@ function setupWarehouse(app) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // 5. API Продажи (с сохранением chat_id)
+  // 5. API Продажи
   app.post('/api/warehouse/sale', async (req, res) => {
     try {
       const { shopId, real_price, items } = req.body;
-      
       const cookie = req.headers.cookie || '';
       const match = cookie.match(/wh_auth=(\d+)/);
       const chatId = match ? Number(match[1]) : null;
@@ -211,6 +211,7 @@ function setupWarehouse(app) {
     `;
     res.send(html);
   });
+
   // 7. Экран Прихода
   app.get('/warehouse/receipt', (req, res) => {
     let html = `
@@ -333,6 +334,26 @@ function setupWarehouse(app) {
     res.send(html);
   });
 
+  // 9.1 API для получения загрузки фото (этот роут нужен для Прихода и Списания)
+  app.post('/api/warehouse/upload', async (req, res) => {
+    try {
+      const base64Data = req.body.image;
+      if (!base64Data) return res.json({ ok: false });
+      const base64Image = base64Data.split(';base64,').pop();
+      const buffer = Buffer.from(base64Image, 'base64');
+      const key = 'wh_' + Date.now() + '.jpg';
+      const cmd = new PutObjectCommand({ Bucket: YC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' });
+      await s3.send(cmd);
+      const url = \`https://\${YC_BUCKET}.storage.yandexcloud.net/\${key}\`;
+      let urlBackup = null;
+      if (s3backup) {
+        const cmd2 = new PutObjectCommand({ Bucket: BC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' });
+        await s3backup.send(cmd2);
+        urlBackup = BC_ENDPOINT + '/' + BC_BUCKET + '/' + key;
+      }
+      res.json({ ok: true, url: url, urlBackup: urlBackup });
+    } catch (e) { res.status(500).json({ ok: false }); }
+  });
   // 10. API Отчётов
   app.get('/api/warehouse/reports', async (req, res) => {
     try {
@@ -392,7 +413,7 @@ function setupWarehouse(app) {
     try { const col = req.body.field === 'sale' ? 'can_sale' : req.body.field === 'writeoff' ? 'can_writeoff' : 'can_receipt'; await pool.query(`UPDATE admins SET ` + col + ` = $1 WHERE shop_id = $2 AND chat_id = $3`, [req.body.val, req.body.shop, req.body.chatId]); res.json({ ok: true }); } catch(e) { res.status(500).json({ ok: false }); }
   });
 
-  // 13. Экран Настроек
+  // 13. Экран Настроек (фирменные цвета)
   app.get('/warehouse/settings', (req, res) => {
     let html = `
       <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>
@@ -401,7 +422,8 @@ function setupWarehouse(app) {
         .back { font-size: 24px; text-decoration: none; color: ${brandColor}; margin-right: 15px; }
         .card { background: #fff; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); } 
         .row { display: flex; justify-content: space-between; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
-        .btn-pin { margin-top:10px; padding:8px 15px; border-radius:8px; border:none; background:#3498db; color:#fff; font-weight: bold; }
+        .btn-pin { margin-top:10px; padding:8px 15px; border-radius:8px; border:none; background:${brandColor}; color:#fff; font-weight: bold; }
+        input[type="checkbox"] { transform: scale(1.3); accent-color: ${brandColor}; }
       </style></head><body>
       <div class="header"><a href="/warehouse-app" class="back">←</a><h1>⚙️ Флористы</h1></div><div id="list"></div>
       <script>
@@ -421,7 +443,7 @@ function setupWarehouse(app) {
         });
         function makeCheck(label, field, checked, chatId) {
           var r = document.createElement("div"); r.className = "row"; r.innerHTML = "<span>" + label + "</span>";
-          var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.style.transform = "scale(1.3)";
+          var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; 
           cb.onchange = () => setRights(chatId, field, cb.checked); r.appendChild(cb); return r;
         }
         function setPin(id) {
@@ -433,6 +455,62 @@ function setupWarehouse(app) {
         function setRights(id, field, val) {
           fetch("/api/warehouse/florist/rights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shop: "kupidon", chatId: id, field: field, val: val }) });
         }
+      <\/script></body></html>
+    `;
+    res.send(html);
+  });
+
+  // 14. API Истории операций
+  app.get('/api/warehouse/history', async (req, res) => {
+    try {
+      const shopId = req.query.shop || 'kupidon';
+      const sales = await pool.query(`SELECT id, real_price as amount, date, chat_id, 'sale' as type FROM wh_sales WHERE shop_id = $1 ORDER BY date DESC LIMIT 15`, [shopId]);
+      const writeoffs = await pool.query(`SELECT id, qty, date, reason, 'writeoff' as type FROM wh_writeoffs WHERE shop_id = $1 ORDER BY date DESC LIMIT 15`, [shopId]);
+      
+      let list = [...sales.rows, ...writeoffs.rows];
+      list.sort((a, b) => new Date(b.date) - new Date(a.date));
+      
+      res.json({ ok: true, history: list });
+    } catch (e) { res.status(500).json({ ok: false }); }
+  });
+
+  // 15. Экран Истории операций
+  app.get('/warehouse/history', (req, res) => {
+    let html = `
+      <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>
+        body { font-family: sans-serif; margin: 0; padding: 15px; background: #fafaf8; color: ${brandColor}; }
+        .header { display: flex; align-items: center; margin-bottom: 15px; }
+        .back { font-size: 24px; text-decoration: none; color: ${brandColor}; margin-right: 15px; }
+        .item { background: #fff; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .item.sale { border-left: 4px solid #27ae60; }
+        .item.writeoff { border-left: 4px solid ${accentColor}; }
+        .info { text-align: left; }
+        .date { font-size: 11px; color: #888; margin-top: 5px; }
+        .amount { font-weight: bold; font-size: 16px; }
+      </style></head><body>
+      <div class="header"><a href="/warehouse-app" class="back">←</a><h1>📋 История</h1></div>
+      <div id="list">Загрузка...</div>
+      <script>
+        fetch("/api/warehouse/history?shop=kupidon").then(r => r.json()).then(d => {
+          var b = document.getElementById("list"); b.innerHTML = "";
+          if (!d.ok || d.history.length === 0) { b.innerHTML = "История пуста"; return; }
+          
+          d.history.forEach(h => {
+            var div = document.createElement("div");
+            var dateStr = new Date(h.date).toLocaleString("ru-RU", { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            
+            if (h.type === 'sale') {
+              div.className = "item sale";
+              div.innerHTML = "<div class='info'><b>💰 Продажа</b><div class='date'>" + dateStr + "</div></div>" +
+                              "<div class='amount'>+" + h.amount.toLocaleString("ru-RU") + " ₽</div>";
+            } else {
+              div.className = "item writeoff";
+              div.innerHTML = "<div class='info'><b>🗑 Списание</b> (" + h.reason + ")<div class='date'>" + dateStr + "</div></div>" +
+                              "<div class='amount' style='color:${accentColor}'>-" + h.qty + " шт</div>";
+            }
+            b.appendChild(div);
+          });
+        });
       <\/script></body></html>
     `;
     res.send(html);
