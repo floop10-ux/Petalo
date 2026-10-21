@@ -366,13 +366,17 @@ function setupWarehouse(app) {
   });
 
   // 10. API Списания
-  app.post('/api/warehouse/writeoff', async (req, res) => {
+app.post('/api/warehouse/writeoff', async (req, res) => {
     try {
+      const cookie = req.headers.cookie || '';
+      const match = cookie.match(/wh_auth=(\d+)/);
+      const chatId = match ? Number(match[1]) : null;
+
       for (let item of req.body.items) {
         await pool.query('UPDATE wh_shop_items SET current_stock = current_stock - $1 WHERE id = $2', [item.qty, item.id]);
         await pool.query(
-          'INSERT INTO wh_writeoffs (shop_id, shop_item_id, qty, reason, comment, photo_url) VALUES ($1, $2, $3, $4, $5, $6)', 
-          [req.body.shopId, item.id, item.qty, req.body.reason, req.body.comment, req.body.photo]
+          'INSERT INTO wh_writeoffs (shop_id, shop_item_id, qty, reason, comment, photo_url, chat_id) VALUES ($1, $2, $3, $4, $5, $6, $7)', 
+          [req.body.shopId, item.id, item.qty, req.body.reason, req.body.comment, req.body.photo, chatId]
         );
       }
       res.json({ ok: true });
