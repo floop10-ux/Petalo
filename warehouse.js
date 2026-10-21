@@ -110,6 +110,7 @@ await pool.query(
       bouquet_id INTEGER
         REFERENCES bouquets(id) ON DELETE SET NULL,
       real_price INTEGER NOT NULL,
+      chat_id BIGINT,
       date TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
