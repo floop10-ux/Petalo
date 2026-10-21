@@ -344,7 +344,7 @@ function setupWarehouse(app) {
       const key = 'wh_' + Date.now() + '.jpg';
       const cmd = new PutObjectCommand({ Bucket: YC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' });
       await s3.send(cmd);
-      const url = \`https://\${YC_BUCKET}.storage.yandexcloud.net/\${key}\`;
+    const url = `https://${YC_BUCKET}.storage.yandexcloud.net/${key}`;
       let urlBackup = null;
       if (s3backup) {
         const cmd2 = new PutObjectCommand({ Bucket: BC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' });
