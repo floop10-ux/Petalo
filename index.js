@@ -8980,41 +8980,34 @@ app.get('/warehouse/sale', async (req, res) => {
   h += '});';
   
   // Отрисовка сетки
-  h += 'function renderGrid(items) {';
+
+h += 'function renderGrid(items) {';
   h += '  var grid = document.getElementById("itemsGrid");';
   h += '  grid.innerHTML = "";';
-  h += '  if (items.length === 0) { grid.innerHTML = "<p>Нет товаров на складе</p>"; return; }';
+  h += '  if (items.length === 0) { ';
+  h += '    grid.innerHTML = "<p>Нет товаров</p>"; return; }';
   h += '  items.forEach(function(item) {';
   h += '    var div = document.createElement("div");';
   h += '    div.className = "item-card";';
-h += '    var boxStyle = "width:100%;height:100px;";';
-h += '    boxStyle += "object-fit:cover;";';
-h += '    boxStyle += "border-radius:10px;";';
-h += '    boxStyle += "margin-bottom:10px;";';
-
-h += '    var imgTag = "";';
-h += '    if (item.photo_url) {';
-h += '      imgTag = "<img src=\'" + item.photo_url + "\'";';
-h += '      imgTag += " style=\'" + boxStyle + "\'>";';
-h += '    } else {';
-h += '      imgTag = "<div style=\'" + boxStyle + "\'>";';
-h += '      imgTag += "display:flex;";';
-h += '      imgTag += "align-items:center;";';
-h += '      imgTag += "justify-content:center;";';
-h += '      imgTag += "font-size:40px;\'>📷</div>";';
-h += '    }';
-
-h += '    var itemName = "<div class=\'item-name\'>";';
-h += '    itemName += item.name + "</div>";';
-h += '    var itemStock = "<div class=\'item-stock\'>";';
-h += '    itemStock += "Остаток: " + item.current_stock + "</div>";';
-
-h += '    div.innerHTML = imgTag + itemName + itemStock;';
+  h += '    var imgTag = "";';
+  h += '    if (item.photo_url) {';
+  h += '      imgTag = "<img src=\'" + item.photo_url + "\'";';
+  h += '      imgTag += " style=\'width:100%;height:100px;";';
+  h += '      imgTag += "object-fit:cover;border-radius:10px;";';
+  h += '      imgTag += "margin-bottom:10px;\'>";';
+  h += '    } else {';
+  h += '      imgTag = "<div style=\'height:100px;";';
+  h += '      imgTag += "font-size:40px;\'>📷</div>";';
+  h += '    }';
+  h += '    var textTag = "<div class=\'item-name\'>";';
+  h += '    textTag += item.name + "</div>";';
+  h += '    textTag += "<div class=\'item-stock\'>Ост: ";';
+  h += '    textTag += item.current_stock + "</div>";';
+  h += '    div.innerHTML = imgTag + textTag;';
   h += '    div.onclick = function() { addToCart(item); };';
   h += '    grid.appendChild(div);';
   h += '  });';
   h += '}';
-
   // Фильтрация
   h += 'function filterItems() {';
   h += '  var query = document.getElementById("search").value.toLowerCase();';
