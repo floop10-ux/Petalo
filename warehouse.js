@@ -12,12 +12,11 @@ async function initWarehouseDb() {
     );
   `);
 
-  // 2. Глобальный каталог товаров
+  // 2. Глобальный каталог
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_items (
       id SERIAL PRIMARY KEY,
-      category_id INTEGER
-        REFERENCES wh_categories(id)
+      category_id INTEGER REFERENCES wh_categories(id)
         ON DELETE SET NULL,
       name VARCHAR(200) NOT NULL,
       unit VARCHAR(10) NOT NULL DEFAULT 'шт'
@@ -29,20 +28,20 @@ async function initWarehouseDb() {
     );
   `);
 
-  // 3. Товары на складе конкретного магазина
+  // 3. Товары на складе
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_shop_items (
       id SERIAL PRIMARY KEY,
-      shop_id VARCHAR(50) NOT NULL
-        REFERENCES shops(shop_id) ON DELETE CASCADE,
-      item_id INTEGER NOT NULL
-        REFERENCES wh_items(id) ON DELETE RESTRICT,
+      shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
+        ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES wh_items(id)
+        ON DELETE RESTRICT,
       custom_name VARCHAR(200),
       min_stock NUMERIC(10,3) DEFAULT 0,
-      avg_cost INTEGER DEFAULT 0,
-      last_cost INTEGER DEFAULT 0,
+      avg_cost NUMERIC(10,2) DEFAULT 0,
+      last_cost NUMERIC(10,2) DEFAULT 0,
       current_stock NUMERIC(10,3) DEFAULT 0,
-      retail_price INTEGER DEFAULT 0,
+      retail_price NUMERIC(10,2) DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (shop_id, item_id)
     );
@@ -52,8 +51,8 @@ async function initWarehouseDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_suppliers (
       id SERIAL PRIMARY KEY,
-      shop_id VARCHAR(50) NOT NULL
-        REFERENCES shops(shop_id) ON DELETE CASCADE,
+      shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
+        ON DELETE CASCADE,
       name VARCHAR(200) NOT NULL,
       phone VARCHAR(50),
       notes TEXT,
@@ -61,45 +60,46 @@ async function initWarehouseDb() {
     );
   `);
 
-  // 5. Приходные накладные
+  // 5. Приходные накладные (с добавленным статусом)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_receipts (
       id SERIAL PRIMARY KEY,
-      shop_id VARCHAR(50) NOT NULL
-        REFERENCES shops(shop_id) ON DELETE CASCADE,
-      supplier_id INTEGER
-        REFERENCES wh_suppliers(id) ON DELETE SET NULL,
+      shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
+        ON DELETE CASCADE,
+      supplier_id INTEGER REFERENCES wh_suppliers(id)
+        ON DELETE SET NULL,
       date TIMESTAMPTZ DEFAULT NOW(),
-      total_sum INTEGER DEFAULT 0,
-      delivery_cost INTEGER DEFAULT 0,
+      total_sum NUMERIC(10,2) DEFAULT 0,
+      delivery_cost NUMERIC(10,2) DEFAULT 0,
       comment TEXT,
       chat_id BIGINT,
+      status VARCHAR(20) DEFAULT 'completed',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
 
-  // 6. Позиции приходной накладной
+  // 6. Позиции накладной
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_receipt_items (
       id SERIAL PRIMARY KEY,
-      receipt_id INTEGER NOT NULL
-        REFERENCES wh_receipts(id) ON DELETE CASCADE,
-      shop_item_id INTEGER NOT NULL
-        REFERENCES wh_shop_items(id) ON DELETE RESTRICT,
+      receipt_id INTEGER NOT NULL REFERENCES wh_receipts(id)
+        ON DELETE CASCADE,
+      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
+        ON DELETE RESTRICT,
       qty NUMERIC(10,3) NOT NULL,
-      unit_cost INTEGER NOT NULL,
-      sum INTEGER NOT NULL
+      unit_cost NUMERIC(10,2) NOT NULL,
+      sum NUMERIC(10,2) NOT NULL
     );
   `);
 
-  // 7. Списания
+  // 7. Списания (с добавленным photo_url)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_writeoffs (
       id SERIAL PRIMARY KEY,
-      shop_id VARCHAR(50) NOT NULL
-        REFERENCES shops(shop_id) ON DELETE CASCADE,
-      shop_item_id INTEGER NOT NULL
-        REFERENCES wh_shop_items(id) ON DELETE RESTRICT,
+      shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
+        ON DELETE CASCADE,
+      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
+        ON DELETE RESTRICT,
       qty NUMERIC(10,3) NOT NULL,
       reason VARCHAR(20) NOT NULL
         CHECK (reason IN ('markdown','loss','spoilage','sorting')),
@@ -115,17 +115,17 @@ async function initWarehouseDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_sales (
       id SERIAL PRIMARY KEY,
-      shop_id VARCHAR(50) NOT NULL
-        REFERENCES shops(shop_id) ON DELETE CASCADE,
-      bouquet_id INTEGER
-        REFERENCES bouquets(id) ON DELETE SET NULL,
-      real_price INTEGER NOT NULL,
-      retail_price INTEGER DEFAULT 0,
+      shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
+        ON DELETE CASCADE,
+      bouquet_id INTEGER REFERENCES bouquets(id)
+        ON DELETE SET NULL,
+      real_price NUMERIC(10,2) NOT NULL,
+      retail_price NUMERIC(10,2) DEFAULT 0,
       discount_reason TEXT,
       chat_id BIGINT,
-      pay_cash INTEGER DEFAULT 0,
-      pay_card INTEGER DEFAULT 0,
-      pay_qr INTEGER DEFAULT 0,
+      pay_cash NUMERIC(10,2) DEFAULT 0,
+      pay_card NUMERIC(10,2) DEFAULT 0,
+      pay_qr NUMERIC(10,2) DEFAULT 0,
       date TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -135,16 +135,16 @@ async function initWarehouseDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_sale_items (
       id SERIAL PRIMARY KEY,
-      sale_id INTEGER NOT NULL
-        REFERENCES wh_sales(id) ON DELETE CASCADE,
-      shop_item_id INTEGER NOT NULL
-        REFERENCES wh_shop_items(id) ON DELETE RESTRICT,
+      sale_id INTEGER NOT NULL REFERENCES wh_sales(id)
+        ON DELETE CASCADE,
+      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
+        ON DELETE RESTRICT,
       qty NUMERIC(10,3) NOT NULL,
-      cost_at_sale INTEGER NOT NULL
+      cost_at_sale NUMERIC(10,2) NOT NULL
     );
   `);
 
-  // 10. Журнал действий (Audit Log)
+  // 10. Журнал действий
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_audit_log (
       id SERIAL PRIMARY KEY,
@@ -157,18 +157,33 @@ async function initWarehouseDb() {
     );
   `);
 
-  // СТРАХОВКА (Миграции для уже существующих таблиц)
+  // --- МИГРАЦИИ (Для уже существующих баз) ---
+  
+  // Добавление новых колонок
   await pool.query('ALTER TABLE wh_items ADD COLUMN IF NOT EXISTS photo_url_backup TEXT');
-  await pool.query('ALTER TABLE wh_shop_items ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0');
+  await pool.query('ALTER TABLE wh_receipts ADD COLUMN IF NOT EXISTS chat_id BIGINT');
+  await pool.query('ALTER TABLE wh_receipts ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\'');
+  await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS chat_id BIGINT');
+  await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS photo_url TEXT');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS retail_price NUMERIC(10,2) DEFAULT 0');
   await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS discount_reason TEXT');
   await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS chat_id BIGINT');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_cash INTEGER DEFAULT 0');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_card INTEGER DEFAULT 0');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_qr INTEGER DEFAULT 0');
-  await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS chat_id BIGINT');
-  await pool.query('ALTER TABLE wh_receipts ADD COLUMN IF NOT EXISTS chat_id BIGINT');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_cash NUMERIC(10,2) DEFAULT 0');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_card NUMERIC(10,2) DEFAULT 0');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_qr NUMERIC(10,2) DEFAULT 0');
   await pool.query('ALTER TABLE wh_audit_log ADD COLUMN IF NOT EXISTS ref_id INTEGER');
+
+  // Смена типов с INTEGER на NUMERIC(10,2)
+  await pool.query('ALTER TABLE wh_shop_items ALTER COLUMN avg_cost TYPE NUMERIC(10,2) USING avg_cost::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_shop_items ALTER COLUMN last_cost TYPE NUMERIC(10,2) USING last_cost::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_shop_items ALTER COLUMN retail_price TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_sales ALTER COLUMN real_price TYPE NUMERIC(10,2) USING real_price::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_sales ALTER COLUMN retail_price TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_receipts ALTER COLUMN total_sum TYPE NUMERIC(10,2) USING total_sum::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_receipts ALTER COLUMN delivery_cost TYPE NUMERIC(10,2) USING delivery_cost::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_receipt_items ALTER COLUMN unit_cost TYPE NUMERIC(10,2) USING unit_cost::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_receipt_items ALTER COLUMN sum TYPE NUMERIC(10,2) USING sum::numeric(10,2)');
+  await pool.query('ALTER TABLE wh_sale_items ALTER COLUMN cost_at_sale TYPE NUMERIC(10,2) USING cost_at_sale::numeric(10,2)');
 
   // Индексы
   await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_shop_items ON wh_shop_items(shop_id)');
@@ -178,7 +193,7 @@ async function initWarehouseDb() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sales ON wh_sales(shop_id, date DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sale_items ON wh_sale_items(sale_id)');
 
-  console.log('✅ Таблицы склада готовы (v3.0)');
+  console.log('✅ Таблицы склада готовы (v3.1)');
 }
 
 module.exports = { initWarehouseDb };
