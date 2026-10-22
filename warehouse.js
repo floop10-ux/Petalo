@@ -1,6 +1,7 @@
 const pool = require('./db');
 
 async function initWarehouseDb() {
+  // 1. Категории
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_categories (
       id SERIAL PRIMARY KEY,
@@ -11,6 +12,7 @@ async function initWarehouseDb() {
     );
   `);
 
+  // 2. Глобальный каталог товаров
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_items (
       id SERIAL PRIMARY KEY,
@@ -21,14 +23,13 @@ async function initWarehouseDb() {
       unit VARCHAR(10) NOT NULL DEFAULT 'шт'
         CHECK (unit IN ('шт','г','м','уп')),
       photo_url TEXT,
+      photo_url_backup TEXT,
       is_active BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
-await pool.query(
-    `ALTER TABLE wh_items ` +
-    `ADD COLUMN IF NOT EXISTS photo_url_backup TEXT`
-  );
+
+  // 3. Товары на складе конкретного магазина
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_shop_items (
       id SERIAL PRIMARY KEY,
@@ -41,11 +42,13 @@ await pool.query(
       avg_cost INTEGER DEFAULT 0,
       last_cost INTEGER DEFAULT 0,
       current_stock NUMERIC(10,3) DEFAULT 0,
+      retail_price INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (shop_id, item_id)
     );
   `);
 
+  // 4. Поставщики
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_suppliers (
       id SERIAL PRIMARY KEY,
@@ -58,6 +61,7 @@ await pool.query(
     );
   `);
 
+  // 5. Приходные накладные
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_receipts (
       id SERIAL PRIMARY KEY,
@@ -69,11 +73,12 @@ await pool.query(
       total_sum INTEGER DEFAULT 0,
       delivery_cost INTEGER DEFAULT 0,
       comment TEXT,
+      chat_id BIGINT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
-  await pool.query('ALTER TABLE wh_receipts ADD COLUMN IF NOT EXISTS chat_id BIGINT');
 
+  // 6. Позиции приходной накладной
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_receipt_items (
       id SERIAL PRIMARY KEY,
@@ -87,6 +92,7 @@ await pool.query(
     );
   `);
 
+  // 7. Списания
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_writeoffs (
       id SERIAL PRIMARY KEY,
@@ -99,10 +105,13 @@ await pool.query(
         CHECK (reason IN ('markdown','loss','spoilage','sorting')),
       date TIMESTAMPTZ DEFAULT NOW(),
       comment TEXT,
+      photo_url TEXT,
+      chat_id BIGINT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
-await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS chat_id BIGINT');
+
+  // 8. Продажи
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_sales (
       id SERIAL PRIMARY KEY,
@@ -111,13 +120,15 @@ await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS chat_id BIGI
       bouquet_id INTEGER
         REFERENCES bouquets(id) ON DELETE SET NULL,
       real_price INTEGER NOT NULL,
+      retail_price INTEGER DEFAULT 0,
+      discount_reason TEXT,
       chat_id BIGINT,
       date TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
-await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS chat_id BIGINT');
 
+  // 9. Позиции продажи
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_sale_items (
       id SERIAL PRIMARY KEY,
@@ -129,7 +140,25 @@ await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS chat_id BIGINT')
       cost_at_sale INTEGER NOT NULL
     );
   `);
-await pool.query(
+
+  // 10. Журнал действий (Audit Log)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wh_audit_log (
+      id SERIAL PRIMARY KEY,
+      shop_id VARCHAR(50),
+      chat_id BIGINT,
+      action VARCHAR(50),
+      details TEXT,
+      date TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  // СТРАХОВКА (Миграции для уже существующих таблиц)
+  await pool.query(
+    'ALTER TABLE wh_items ' +
+    'ADD COLUMN IF NOT EXISTS photo_url_backup TEXT'
+  );
+  await pool.query(
     'ALTER TABLE wh_shop_items ' +
     'ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0'
   );
@@ -142,13 +171,16 @@ await pool.query(
     'ADD COLUMN IF NOT EXISTS discount_reason TEXT'
   );
   await pool.query(
-    'CREATE TABLE IF NOT EXISTS wh_audit_log (' +
-    'id SERIAL PRIMARY KEY, ' +
-    'shop_id VARCHAR(50), ' +
-    'chat_id BIGINT, ' +
-    'action VARCHAR(50), ' +
-    'details TEXT, ' +
-    'date TIMESTAMPTZ DEFAULT NOW())'
+    'ALTER TABLE wh_sales ' +
+    'ADD COLUMN IF NOT EXISTS chat_id BIGINT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_writeoffs ' +
+    'ADD COLUMN IF NOT EXISTS chat_id BIGINT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_receipts ' +
+    'ADD COLUMN IF NOT EXISTS chat_id BIGINT'
   );
 
   // Индексы
