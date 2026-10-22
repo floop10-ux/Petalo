@@ -123,6 +123,9 @@ async function initWarehouseDb() {
       retail_price INTEGER DEFAULT 0,
       discount_reason TEXT,
       chat_id BIGINT,
+      pay_cash INTEGER DEFAULT 0,
+      pay_card INTEGER DEFAULT 0,
+      pay_qr INTEGER DEFAULT 0,
       date TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -149,49 +152,33 @@ async function initWarehouseDb() {
       chat_id BIGINT,
       action VARCHAR(50),
       details TEXT,
+      ref_id INTEGER,
       date TIMESTAMPTZ DEFAULT NOW()
     );
   `);
 
   // СТРАХОВКА (Миграции для уже существующих таблиц)
-  await pool.query(
-    'ALTER TABLE wh_items ' +
-    'ADD COLUMN IF NOT EXISTS photo_url_backup TEXT'
-  );
-  await pool.query(
-    'ALTER TABLE wh_shop_items ' +
-    'ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0'
-  );
-  await pool.query(
-    'ALTER TABLE wh_sales ' +
-    'ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0'
-  );
-  await pool.query(
-    'ALTER TABLE wh_sales ' +
-    'ADD COLUMN IF NOT EXISTS discount_reason TEXT'
-  );
-  await pool.query(
-    'ALTER TABLE wh_sales ' +
-    'ADD COLUMN IF NOT EXISTS chat_id BIGINT'
-  );
-  await pool.query(
-    'ALTER TABLE wh_writeoffs ' +
-    'ADD COLUMN IF NOT EXISTS chat_id BIGINT'
-  );
-  await pool.query(
-    'ALTER TABLE wh_receipts ' +
-    'ADD COLUMN IF NOT EXISTS chat_id BIGINT'
-  );
+  await pool.query('ALTER TABLE wh_items ADD COLUMN IF NOT EXISTS photo_url_backup TEXT');
+  await pool.query('ALTER TABLE wh_shop_items ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS retail_price INTEGER DEFAULT 0');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS discount_reason TEXT');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS chat_id BIGINT');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_cash INTEGER DEFAULT 0');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_card INTEGER DEFAULT 0');
+  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_qr INTEGER DEFAULT 0');
+  await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS chat_id BIGINT');
+  await pool.query('ALTER TABLE wh_receipts ADD COLUMN IF NOT EXISTS chat_id BIGINT');
+  await pool.query('ALTER TABLE wh_audit_log ADD COLUMN IF NOT EXISTS ref_id INTEGER');
 
   // Индексы
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_shop_items ON wh_shop_items(shop_id)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_receipts ON wh_receipts(shop_id, date DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_receipt_items ON wh_receipt_items(receipt_id)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_writeoffs ON wh_writeoffs(shop_id, date DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_sales ON wh_sales(shop_id, date DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_sale_items ON wh_sale_items(sale_id)`);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_shop_items ON wh_shop_items(shop_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_receipts ON wh_receipts(shop_id, date DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_receipt_items ON wh_receipt_items(receipt_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_writeoffs ON wh_writeoffs(shop_id, date DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sales ON wh_sales(shop_id, date DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sale_items ON wh_sale_items(sale_id)');
 
-  console.log('✅ Таблицы склада готовы (v2.0)');
+  console.log('✅ Таблицы склада готовы (v3.0)');
 }
 
 module.exports = { initWarehouseDb };
