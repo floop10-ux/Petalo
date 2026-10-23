@@ -177,44 +177,148 @@ async function initWarehouseDb() {
     );
   `);
 
-  // --- МИГРАЦИИ (Для уже существующих баз) ---
-  
-  // Добавление новых колонок
-  await pool.query('ALTER TABLE wh_items ADD COLUMN IF NOT EXISTS photo_url_backup TEXT');
-  await pool.query('ALTER TABLE wh_receipts ADD COLUMN IF NOT EXISTS chat_id BIGINT');
-  await pool.query('ALTER TABLE wh_receipts ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\'');
-  await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS chat_id BIGINT');
-  await pool.query('ALTER TABLE wh_writeoffs ADD COLUMN IF NOT EXISTS photo_url TEXT');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS retail_price NUMERIC(10,2) DEFAULT 0');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS discount_reason TEXT');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS chat_id BIGINT');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_cash NUMERIC(10,2) DEFAULT 0');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_card NUMERIC(10,2) DEFAULT 0');
-  await pool.query('ALTER TABLE wh_sales ADD COLUMN IF NOT EXISTS pay_qr NUMERIC(10,2) DEFAULT 0');
-  await pool.query('ALTER TABLE wh_audit_log ADD COLUMN IF NOT EXISTS ref_id INTEGER');
+  // --- МИГРАЦИИ ---
+  await pool.query(
+    'ALTER TABLE wh_items ADD COLUMN ' +
+    'IF NOT EXISTS photo_url_backup TEXT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_receipts ADD COLUMN ' +
+    'IF NOT EXISTS chat_id BIGINT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_receipts ADD COLUMN ' +
+    'IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\''
+  );
+  await pool.query(
+    'ALTER TABLE wh_writeoffs ADD COLUMN ' +
+    'IF NOT EXISTS chat_id BIGINT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_writeoffs ADD COLUMN ' +
+    'IF NOT EXISTS photo_url TEXT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS retail_price NUMERIC(10,2) DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS discount_reason TEXT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS chat_id BIGINT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS pay_cash NUMERIC(10,2) DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS pay_card NUMERIC(10,2) DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS pay_qr NUMERIC(10,2) DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_audit_log ADD COLUMN ' +
+    'IF NOT EXISTS ref_id INTEGER'
+  );
 
   // Смена типов с INTEGER на NUMERIC(10,2)
-  await pool.query('ALTER TABLE wh_shop_items ALTER COLUMN avg_cost TYPE NUMERIC(10,2) USING avg_cost::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_shop_items ALTER COLUMN last_cost TYPE NUMERIC(10,2) USING last_cost::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_shop_items ALTER COLUMN retail_price TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_sales ALTER COLUMN real_price TYPE NUMERIC(10,2) USING real_price::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_sales ALTER COLUMN retail_price TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_receipts ALTER COLUMN total_sum TYPE NUMERIC(10,2) USING total_sum::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_receipts ALTER COLUMN delivery_cost TYPE NUMERIC(10,2) USING delivery_cost::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_receipt_items ALTER COLUMN unit_cost TYPE NUMERIC(10,2) USING unit_cost::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_receipt_items ALTER COLUMN sum TYPE NUMERIC(10,2) USING sum::numeric(10,2)');
-  await pool.query('ALTER TABLE wh_sale_items ALTER COLUMN cost_at_sale TYPE NUMERIC(10,2) USING cost_at_sale::numeric(10,2)');
+  await pool.query(
+    'ALTER TABLE wh_shop_items ALTER COLUMN avg_cost ' +
+    'TYPE NUMERIC(10,2) USING avg_cost::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_shop_items ALTER COLUMN last_cost ' +
+    'TYPE NUMERIC(10,2) USING last_cost::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_shop_items ALTER COLUMN retail_price ' +
+    'TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ALTER COLUMN real_price ' +
+    'TYPE NUMERIC(10,2) USING real_price::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sales ALTER COLUMN retail_price ' +
+    'TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_receipts ALTER COLUMN total_sum ' +
+    'TYPE NUMERIC(10,2) USING total_sum::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_receipts ALTER COLUMN delivery_cost ' +
+    'TYPE NUMERIC(10,2) USING delivery_cost::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_receipt_items ALTER COLUMN unit_cost ' +
+    'TYPE NUMERIC(10,2) USING unit_cost::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_receipt_items ALTER COLUMN sum ' +
+    'TYPE NUMERIC(10,2) USING sum::numeric(10,2)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_sale_items ALTER COLUMN cost_at_sale ' +
+    'TYPE NUMERIC(10,2) USING cost_at_sale::numeric(10,2)'
+  );
 
   // Индексы
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_shop_items ON wh_shop_items(shop_id)');
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_receipts ON wh_receipts(shop_id, date DESC)');
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_receipt_items ON wh_receipt_items(receipt_id)');
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_writeoffs ON wh_writeoffs(shop_id, date DESC)');
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sales ON wh_sales(shop_id, date DESC)');
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sale_items ON wh_sale_items(sale_id)');
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_shifts ON wh_shifts(shop_id, status)');
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_shop_items ' +
+    'ON wh_shop_items(shop_id)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_receipts ' +
+    'ON wh_receipts(shop_id, date DESC)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_receipt_items ' +
+    'ON wh_receipt_items(receipt_id)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_writeoffs ' +
+    'ON wh_writeoffs(shop_id, date DESC)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_sales ' +
+    'ON wh_sales(shop_id, date DESC)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_sale_items ' +
+    'ON wh_sale_items(sale_id)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_shifts ' +
+    'ON wh_shifts(shop_id, status)'
+  );
 
-  console.log('✅ Таблицы склада готовы (v4.0)');
+  // --- ДОБАВЛЕНИЕ БАЗОВЫХ КАТЕГОРИЙ ---
+  const defaultCats = [
+    'Цветы', 'Упаковка', 'Декор', 'Игрушки', 'Канцелярия'
+  ];
+  
+  for (var i = 0; i < defaultCats.length; i++) {
+    var catName = defaultCats[i];
+    var checkRes = await pool.query(
+      'SELECT id FROM wh_categories WHERE name = $1', [catName]
+    );
+    if (checkRes.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO wh_categories (name, sort_order) ' +
+        'VALUES ($1, $2)', [catName, i]
+      );
+    }
+  }
+
+  console.log('✅ Таблицы склада готовы (v5.0)');
+  console.log('✅ Базовые категории проверены');
 }
 
 module.exports = { initWarehouseDb };
