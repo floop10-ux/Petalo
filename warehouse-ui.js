@@ -352,7 +352,7 @@ function setupWarehouse(app, bot) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-  // 6. API Истории товара
+  // 6. API Истории товара (Выписка с остатками)
   app.get('/api/warehouse/item/history', async (req, res) => {
     try {
       const itemId = req.query.id;
@@ -369,26 +369,26 @@ function setupWarehouse(app, bot) {
       }
 
       const sales = await pool.query(
-        'SELECT s.date, \'sale\' as type, si.qty, a.name as person ' +
-        'FROM wh_sale_items si JOIN wh_sales s ON s.id = si.sale_id ' +
+        'SELECT s.id, s.date, \'sale\' as type, si.qty, ' +
+        'a.name as person FROM wh_sale_items si ' +
+        'JOIN wh_sales s ON s.id = si.sale_id ' +
         'LEFT JOIN admins a ON a.chat_id = s.chat_id ' +
         'WHERE si.shop_item_id = $1 AND s.shop_id = $2 ' +
         'ORDER BY s.date DESC LIMIT 30', [itemId, shopId]
       );
       
       const receipts = await pool.query(
-        'SELECT r.date, \'receipt\' as type, ri.qty, ' +
-        '\'Приход\' as person ' +
-        'FROM wh_receipt_items ri ' +
+        'SELECT r.id, r.date, \'receipt\' as type, ri.qty, ' +
+        '\'Приход\' as person FROM wh_receipt_items ri ' +
         'JOIN wh_receipts r ON r.id = ri.receipt_id ' +
         'WHERE ri.shop_item_id = $1 AND r.shop_id = $2 ' +
         'ORDER BY r.date DESC LIMIT 30', [itemId, shopId]
       );
 
       const writeoffs = await pool.query(
-        'SELECT w.date, \'writeoff\' as type, w.qty, ' +
-        'a.name as person, w.reason ' +
-        'FROM wh_writeoffs w LEFT JOIN admins a ON a.chat_id = w.chat_id ' +
+        'SELECT w.id, w.date, \'writeoff\' as type, w.qty, ' +
+        'a.name as person, w.reason FROM wh_writeoffs w ' +
+        'LEFT JOIN admins a ON a.chat_id = w.chat_id ' +
         'WHERE w.shop_item_id = $1 AND w.shop_id = $2 ' +
         'ORDER BY w.date DESC LIMIT 30', [itemId, shopId]
       );
@@ -396,6 +396,20 @@ function setupWarehouse(app, bot) {
       let list = [...sales.rows, ...receipts.rows, ...writeoffs.rows];
       list.sort(function(a, b) { 
         return new Date(b.date) - new Date(a.date); 
+      });
+
+      // Расчет остатков (Выписка)
+      let runningStock = parseFloat(itemInfo.rows[0].current_stock);
+      list.forEach(function(op) {
+        let qty = parseFloat(op.qty);
+        op.stock_after = runningStock;
+        if (op.type === 'receipt') {
+          op.stock_before = runningStock - qty;
+          runningStock -= qty;
+        } else {
+          op.stock_before = runningStock + qty;
+          runningStock += qty;
+        }
       });
       
       res.json({ ok: true, item: itemInfo.rows[0], history: list });
@@ -485,7 +499,7 @@ function setupWarehouse(app, bot) {
     }
   });
 
-  // 9. Экран Карточки Товара
+  // 9. Экран Карточки Товара (Выписка)
   app.get('/warehouse/item', (req, res) => {
     let html = '<!DOCTYPE html><html><head>';
     html += '<meta charset="UTF-8">';
@@ -499,14 +513,16 @@ function setupWarehouse(app, bot) {
     html += '.back { font-size: 24px; text-decoration: none; ';
     html += 'color: ' + brandColor + '; margin-right: 15px; }';
     html += '.item { background: #fff; border-radius: 10px; ';
-    html += 'padding: 15px; margin-bottom: 10px; display: flex; ';
-    html += 'justify-content: space-between; align-items: center; }';
+    html += 'padding: 12px; margin-bottom: 10px; display: flex; ';
+    html += 'justify-content: space-between; align-items: center; ';
+    html += 'text-decoration: none; color: ' + brandColor + '; }';
     html += '.item.sale { border-left: 4px solid #2980b9; }'; 
     html += '.item.receipt { border-left: 4px solid #27ae60; }'; 
     html += '.item.writeoff { border-left: 4px solid #e74c3c; }'; 
     html += '.date { font-size: 11px; color: #888; margin-top: 3px; }';
-    html += '.amount { font-weight: bold; font-size: 16px; }';
+    html += '.amount { font-weight: bold; font-size: 16px; text-align: right; }';
     html += '.reason { font-size: 12px; color: #e74c3c; margin-top: 2px; }';
+    html += '.stock-flow { font-size: 13px; color: #555; margin-top: 5px; }';
     html += '.actions { display: flex; gap: 10px; margin-top: 15px; ';
     html += 'justify-content: center; margin-bottom: 15px; }';
     html += '.btn-act { padding: 10px 15px; border-radius: 10px; ';
@@ -516,7 +532,7 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse/inventory" ';
-    html += 'class="back">←</a><h1>📦 История</h1></div>';
+    html += 'class="back">←</a><h1>📦 Выписка</h1></div>';
     html += '<div id="header-info" style="text-align:center; ';
     html += 'margin-bottom:15px;"></div>';
     html += '<div class="actions" id="actions" style="display:none;">';
@@ -554,31 +570,39 @@ function setupWarehouse(app, bot) {
     html += 'itemName + "</h2>";';
     html += '    hi.innerHTML += "<div style=\'font-size:20px; ';
     html += 'font-weight:bold; color:" + col + "; margin-top:5px;\'>';
-    html += 'Остаток: " + fmtNum(d.item.current_stock) + " шт</div>";';
+    html += 'Текущий остаток: " + fmtNum(d.item.current_stock) + " шт</div>";';
     html += '  }';
     html += '  if (d.history.length === 0) { ';
     html += 'b.innerHTML = "<div style=\'text-align:center; ';
     html += 'color:#888; margin-top:20px;\'>Нет операций</div>"; return; }';
     
     html += '  d.history.forEach(function(h) {';
-    html += '    var div = document.createElement("div");';
+    html += '    var a = document.createElement("a");';
     html += '    var ds = new Date(h.date).toLocaleString("ru-RU", ';
     html += '{ day: "2-digit", month: "2-digit", ';
     html += 'hour: "2-digit", minute: "2-digit" });';
+    
     html += '    var title = document.createElement("div");';
     html += '    var amt = document.createElement("div");';
     html += '    var dateLbl = document.createElement("div");';
     html += '    dateLbl.className = "date"; dateLbl.innerText = ds;';
+    html += '    var stockFlow = document.createElement("div");';
+    html += '    stockFlow.className = "stock-flow";';
+    html += '    stockFlow.innerText = "Остаток: " + fmtNum(h.stock_before) ';
+    html += '+ " → " + fmtNum(h.stock_after);';
     
     html += '    if (h.type === "sale") {';
-    html += '      div.className = "item sale";';
-    html += '      title.innerHTML = "<b>💰 Продажа</b> (" + ';
+    html += '      a.className = "item sale";';
+    html += '      a.href = "/warehouse/sale/details?id=" + h.id;';
+    html += '      title.innerHTML = "<b>💰 Продажа №" + h.id + "</b> (" + ';
     html += '(h.person || "Флорист") + ")";';
     html += '      amt.innerText = "-" + fmtNum(h.qty) + " шт";';
     html += '      amt.style.color = "#2980b9";';
     html += '    } else if (h.type === "writeoff") {';
-    html += '      div.className = "item writeoff";';
-    html += '      title.innerHTML = "<b>🗑 Списание</b> (" + ';
+    html += '      a.className = "item writeoff";';
+    html += '      a.href = "/warehouse/documents/details?id=" + h.id ';
+    html += '+ "&type=writeoffs";';
+    html += '      title.innerHTML = "<b>🗑 Списание №" + h.id + "</b> (" + ';
     html += '(h.person || "Флорист") + ")";';
     html += '      var rs = document.createElement("div");';
     html += '      rs.className = "reason"; rs.innerText = h.reason;';
@@ -586,17 +610,18 @@ function setupWarehouse(app, bot) {
     html += '      amt.innerText = "-" + fmtNum(h.qty) + " шт";';
     html += '      amt.style.color = "#e74c3c";';
     html += '    } else {';
-    html += '      div.className = "item receipt";';
-    html += '      title.innerHTML = "<b>📥 Приход</b>";';
+    html += '      a.className = "item receipt";';
+    html += '      a.href = "/warehouse/documents/details?id=" + h.id ';
+    html += '+ "&type=receipts";';
+    html += '      title.innerHTML = "<b>📥 Приход №" + h.id + "</b>";';
     html += '      amt.innerText = "+" + fmtNum(h.qty) + " шт";';
     html += '      amt.style.color = "#27ae60";';
     html += '    }';
     
-    html += '    var left = document.createElement("div");';
-    html += '    left.appendChild(title); left.appendChild(dateLbl);';
+    html += '    title.appendChild(dateLbl); title.appendChild(stockFlow);';
     html += '    amt.className = "amount";';
-    html += '    div.appendChild(left); div.appendChild(amt);';
-    html += '    b.appendChild(div);';
+    html += '    a.appendChild(title); a.appendChild(amt);';
+    html += '    b.appendChild(a);';
     html += '  });';
     html += '});';
     
@@ -1149,7 +1174,7 @@ function setupWarehouse(app, bot) {
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
-// 14. Экран Списка накладных
+  // 14. Экран Списка накладных
   app.get('/warehouse/receipts', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
@@ -1517,7 +1542,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // 21. Экран Списания
+  // 21. Экран Списания (Обновленный с модальным окном)
   app.get('/warehouse/writeoff', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
@@ -1553,7 +1578,19 @@ function setupWarehouse(app, bot) {
     html += '.reason.active { border-color: ' + accentColor + '; ';
     html += 'color: ' + accentColor + '; font-weight: bold; }';
     html += '.btn-save { width: 100%; padding: 15px; background: ' + accentColor + '; ';
-    html += 'color: #fff; border: none; border-radius: 10px; font-size: 18px; font-weight: bold; }';
+    html += 'color: #fff; border: none; border-radius: 10px; ';
+    html += 'font-size: 18px; font-weight: bold; }';
+    html += '.modal-bg { display: none; position: fixed; top: 0; left: 0; ';
+    html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.5); ';
+    html += 'align-items: center; justify-content: center; z-index: 1000; }';
+    html += '.modal { background: #fff; padding: 20px; border-radius: 15px; ';
+    html += 'width: 80%; max-width: 300px; text-align: center; }';
+    html += '.modal input { font-size: 24px; text-align: center; ';
+    html += 'width: 100%; box-sizing: border-box; padding: 10px; ';
+    html += 'border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; }';
+    html += '.modal-btns { display: flex; gap: 10px; }';
+    html += '.modal-btns button { flex: 1; padding: 12px; border: none; ';
+    html += 'border-radius: 8px; font-size: 16px; }';
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a>';
@@ -1579,8 +1616,18 @@ function setupWarehouse(app, bot) {
     html += 'placeholder="🔍 Поиск..." onkeyup="filterItems()">';
     html += '<div class="grid" id="itemsGrid"></div>';
     
+    html += '<div class="modal-bg" id="qtyModal">';
+    html += '<div class="modal">';
+    html += '<h3 style="margin-top:0; color:' + brandColor + ';">Сколько списать?</h3>';
+    html += '<input type="number" id="qtyInput" inputmode="decimal">';
+    html += '<div class="modal-btns">';
+    html += '<button onclick="closeQtyModal()" style="background:#eee; color:#333;">Отмена</button>';
+    html += '<button onclick="confirmQty()" style="background:' + brandColor + '; color:#fff;">ОК</button>';
+    html += '</div></div></div>';
+    
     html += '<script>';
     html += 'var allItems = []; var cart = []; var selReason = "spoilage";';
+    html += 'var currentItem = null;';
     html += 'function fmtNum(n) {';
     html += '  var num = parseFloat(n);';
     html += '  if (isNaN(num)) return "0";';
@@ -1610,15 +1657,28 @@ function setupWarehouse(app, bot) {
     html += '}';
     
     html += 'function addToBasket(item) {';
-    // Правка №1: убрали "1" из prompt
-    html += '  var q = prompt("Сколько списать?");';
-    html += '  if (q && parseFloat(q) > 0) {';
-    html += '    var ex = cart.find(function(c) { return c.id === item.id; });';
-    html += '    if (ex) ex.qty += parseFloat(q); ';
-    html += '    else cart.push({ id: item.id, name: item.name, qty: parseFloat(q) });';
+    html += '  currentItem = item;';
+    html += '  document.getElementById("qtyInput").value = "";';
+    html += '  document.getElementById("qtyModal").style.display = "flex";';
+    html += '  setTimeout(function() { ';
+    html += '    document.getElementById("qtyInput").focus();';
+    html += '  }, 100);';
+    html += '}';
+    
+    html += 'function closeQtyModal() {';
+    html += '  document.getElementById("qtyModal").style.display = "none";';
+    html += '}';
+    
+    html += 'function confirmQty() {';
+    html += '  var q = parseFloat(document.getElementById("qtyInput").value);';
+    html += '  if (q && q > 0) {';
+    html += '    var ex = cart.find(function(c) { return c.id === currentItem.id; });';
+    html += '    if (ex) ex.qty += q; ';
+    html += '    else cart.push({ id: currentItem.id, name: currentItem.name, qty: q });';
     html += '    renderBasket();';
     html += '    window.scrollTo(0, 0);';
     html += '  }';
+    html += '  closeQtyModal();';
     html += '}';
     
     html += 'function renderBasket() {';
@@ -1639,8 +1699,10 @@ function setupWarehouse(app, bot) {
     html += '  });';
     html += '}';
     
-    html += 'function setR(el, r) { document.querySelectorAll(".reason").forEach(function(b) ';
-    html += '{ b.classList.remove("active"); }); el.classList.add("active"); selReason = r; }';
+    html += 'function setR(el, r) { ';
+    html += 'document.querySelectorAll(".reason").forEach(function(b) { ';
+    html += 'b.classList.remove("active"); }); ';
+    html += 'el.classList.add("active"); selReason = r; }';
     
     html += 'function saveWriteoff() {';
     html += '  if (cart.length === 0) return;';
@@ -1792,7 +1854,7 @@ function setupWarehouse(app, bot) {
     html += '" · " + author + "</div>";';
     html += '      div.innerHTML += "<div class=\'meta\'>" + ';
     html += '(doc.item_name || "") + " (" + doc.reason + ")</div></div>";';
-    // Правка №7: Починили вставку accentColor
+    // Правка №7: корректная передача accentColor
     html += '      div.innerHTML += "<div class=\'amount\' ';
     html += 'style=\'color:' + accentColor + '\'>-" + ';
     html += 'parseFloat(doc.amount) + " шт</div>";';
@@ -2224,6 +2286,7 @@ function setupWarehouse(app, bot) {
     html += 'color: ' + brandColor + '; display: block; } ';
     html += '.log.clickable { border-left: 4px solid #2980b9; } ';
     html += '.date { font-size: 11px; color: #888; margin-top: 5px; }';
+    html += '.link-hint { font-size: 12px; color: #2980b9; margin-top: 5px; }';
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a>';
@@ -2247,24 +2310,21 @@ function setupWarehouse(app, bot) {
     html += 'div.className = "log clickable"; ';
     html += 'div.onclick = function() { window.location.href = ';
     html += '"/warehouse/sale/details?id=" + l.ref_id; }; ';
-    html += 'div.innerHTML += "<div style=\'font-size:12px; color:#2980b9; ';
-    html += 'margin-top:5px;\'>Нажмите, чтобы посмотреть чек</div>"; } ';
+    html += 'div.innerHTML += "<div class=\'link-hint\'>Посмотреть чек</div>"; } ';
     
     html += 'else if (l.ref_id && l.action === "receipt") { ';
     html += 'div.className = "log clickable"; ';
     html += 'div.onclick = function() { window.location.href = ';
     html += '"/warehouse/documents/details?id=" + l.ref_id + ';
     html += '"&type=receipts"; }; ';
-    html += 'div.innerHTML += "<div style=\'font-size:12px; color:#2980b9; ';
-    html += 'margin-top:5px;\'>Нажмите, чтобы открыть накладную</div>"; } ';
+    html += 'div.innerHTML += "<div class=\'link-hint\'>Открыть накладную</div>"; } ';
     
     html += 'else if (l.ref_id && l.action === "writeoff") { ';
     html += 'div.className = "log clickable"; ';
     html += 'div.onclick = function() { window.location.href = ';
     html += '"/warehouse/documents/details?id=" + l.ref_id + ';
     html += '"&type=writeoffs"; }; ';
-    html += 'div.innerHTML += "<div style=\'font-size:12px; color:#2980b9; ';
-    html += 'margin-top:5px;\'>Нажмите, чтобы открыть акт списания</div>"; } ';
+    html += 'div.innerHTML += "<div class=\'link-hint\'>Открыть акт списания</div>"; } ';
     
     html += 'b.appendChild(div); }); });';
     html += '<\/script></body></html>';
