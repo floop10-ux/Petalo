@@ -60,7 +60,7 @@ async function initWarehouseDb() {
     );
   `);
 
-  // 5. Приходные накладные (с добавленным статусом)
+  // 5. Приходные накладные
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_receipts (
       id SERIAL PRIMARY KEY,
@@ -92,7 +92,7 @@ async function initWarehouseDb() {
     );
   `);
 
-  // 7. Списания (с добавленным photo_url)
+  // 7. Списания
   await pool.query(`
     CREATE TABLE IF NOT EXISTS wh_writeoffs (
       id SERIAL PRIMARY KEY,
@@ -157,6 +157,26 @@ async function initWarehouseDb() {
     );
   `);
 
+  // 11. Смены (Касса)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wh_shifts (
+      id SERIAL PRIMARY KEY,
+      shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
+        ON DELETE CASCADE,
+      chat_id BIGINT,
+      open_time TIMESTAMPTZ DEFAULT NOW(),
+      close_time TIMESTAMPTZ,
+      start_cash NUMERIC(10,2) DEFAULT 0,
+      end_cash_fact NUMERIC(10,2) DEFAULT 0,
+      total_sales NUMERIC(10,2) DEFAULT 0,
+      cash_sales NUMERIC(10,2) DEFAULT 0,
+      card_sales NUMERIC(10,2) DEFAULT 0,
+      qr_sales NUMERIC(10,2) DEFAULT 0,
+      discrepancy NUMERIC(10,2) DEFAULT 0,
+      status VARCHAR(20) DEFAULT 'open'
+    );
+  `);
+
   // --- МИГРАЦИИ (Для уже существующих баз) ---
   
   // Добавление новых колонок
@@ -192,8 +212,9 @@ async function initWarehouseDb() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_writeoffs ON wh_writeoffs(shop_id, date DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sales ON wh_sales(shop_id, date DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_sale_items ON wh_sale_items(sale_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wh_shifts ON wh_shifts(shop_id, status)');
 
-  console.log('✅ Таблицы склада готовы (v3.1)');
+  console.log('✅ Таблицы склада готовы (v4.0)');
 }
 
 module.exports = { initWarehouseDb };
