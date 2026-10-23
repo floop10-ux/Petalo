@@ -731,7 +731,7 @@ function setupWarehouse(app, bot) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-  // 12. Экран Смены
+  // 12. Экран Смены (Правка 2: Автопереход)
   app.get('/warehouse/shift', async (req, res) => {
     try {
       const cookie = req.headers.cookie || '';
@@ -826,7 +826,9 @@ function setupWarehouse(app, bot) {
       html += 'body: JSON.stringify({ action: "open", val: v }) })';
       html += '  .then(function(r) { return r.json(); })';
       html += '  .then(function(d) {';
-      html += '    if (d.ok) location.reload(); else alert(d.error);';
+      // Правка 2: Автопереход на главный экран
+      html += '    if (d.ok) window.location.href = "/warehouse-app";';
+      html += '    else alert(d.error);';
       html += '  });';
       html += '}';
       
@@ -902,7 +904,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // 14. Экран Продажи (Касса) - НОВЫЙ ДИЗАЙН
+  // 14. Экран Продажи (Касса) - Правка 1: Красивая заглушка
   app.get('/warehouse/sale', async (req, res) => {
     const cookie = req.headers.cookie || '';
     const match = cookie.match(/wh_auth=(\d+)/);
@@ -915,13 +917,36 @@ function setupWarehouse(app, bot) {
     );
     
     if (shiftRes.rows.length === 0) {
-      return res.send('<html><body style="text-align:center; ' +
-        'padding:50px; font-family:sans-serif;">' +
-        '<h2>Смена не открыта</h2>' +
-        '<a href="/warehouse/shift">Открыть смену</a>' +
-        '</body></html>');
+      // Правка 1: Красивая заглушка вместо голого HTML
+      let errHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
+      errHtml += '<meta name="viewport" content="width=device-width, ';
+      errHtml += 'initial-scale=1.0">';
+      errHtml += '<style>';
+      errHtml += 'body { font-family: sans-serif; margin: 0; padding: 15px; ';
+      errHtml += 'background: #fafaf8; color: ' + brandColor + '; ';
+      errHtml += 'display: flex; flex-direction: column; ';
+      errHtml += 'align-items: center; justify-content: center; height: 100vh; }';
+      errHtml += '.card { background: #fff; border-radius: 20px; ';
+      errHtml += 'padding: 40px 20px; text-align: center; max-width: 300px; ';
+      errHtml += 'box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; }';
+      errHtml += 'h1 { font-size: 50px; margin: 0 0 10px 0; }';
+      errHtml += 'h2 { margin: 0 0 10px 0; color: ' + brandColor + '; }';
+      errHtml += 'p { color: #888; font-size: 14px; margin-bottom: 20px; }';
+      errHtml += '.btn { display: block; width: 100%; box-sizing: border-box; ';
+      errHtml += 'padding: 15px; background: ' + brandColor + '; color: #fff; ';
+      errHtml += 'text-decoration: none; border-radius: 10px; ';
+      errHtml += 'font-weight: bold; font-size: 16px; }';
+      errHtml += '</style></head><body>';
+      errHtml += '<div class="card">';
+      errHtml += '<h1>⏱</h1>';
+      errHtml += '<h2>Смена не открыта</h2>';
+      errHtml += '<p>Для оформления продаж сначала откройте смену.</p>';
+      errHtml += '<a href="/warehouse/shift" class="btn">Открыть смену</a>';
+      errHtml += '</div></body></html>';
+      return res.send(errHtml);
     }
 
+    // Дальше пойдет основной HTML Кассы (в следующей части)
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
     html += 'initial-scale=1.0">';
@@ -943,7 +968,7 @@ function setupWarehouse(app, bot) {
     html += '.cat-btn.active { background: ' + brandColor + '; ';
     html += 'color: #fff; border-color: ' + brandColor + '; }';
     html += '.grid { display: grid; grid-template-columns: 1fr 1fr; ';
-    html += 'gap: 8px; }';
+    html += 'gap: 8px; margin-bottom: 15px; }';
     html += '.card { background: #fff; padding: 8px; ';
     html += 'border-radius: 8px; text-align: center; cursor: pointer; }';
     html += '.card img { width: 100%; height: 60px; object-fit: cover; ';
@@ -976,10 +1001,11 @@ function setupWarehouse(app, bot) {
     html += '.pay-input-row { display: flex; gap: 5px; margin-top: 10px; }';
     html += '.pay-input-row input { font-size: 24px; font-weight: bold; ';
     html += 'text-align: right; flex: 1; padding: 10px; border: 1px solid #ddd; ';
-    html += 'border-radius: 8px; box-sizing: border-box; }';
+    html += 'border-radius: 8px; box-sizing: border-box; width: 100%; }';
     html += '.pay-input-row button { background: ' + brandColor + '; color: #fff; ';
     html += 'border: none; border-radius: 8px; padding: 0 15px; ';
-    html += 'font-size: 16px; font-weight: bold; white-space: nowrap; }';
+    html += 'font-size: 16px; font-weight: bold; white-space: nowrap; ';
+    html += 'flex-shrink: 0; }';
     html += '.btn-submit { width: 100%; padding: 15px; font-size: 18px; ';
     html += 'font-weight: bold; color: #fff; background: #ccc; ';
     html += 'border: none; border-radius: 10px; margin-top: 10px; }';
@@ -1009,14 +1035,25 @@ function setupWarehouse(app, bot) {
     html += '<div class="header"><a href="/warehouse-app" ';
     html += 'class="back">←</a><h1>💰 Касса</h1></div>';
     
+    // 1. Поиск (наверху)
     html += '<input type="text" class="search" id="search" ';
-    html += 'placeholder="🔍 Поиск..." onkeyup="filterItems()">';
+    html += 'placeholder="🔍 Поиск..." onkeyup="filterItems()" ';
+    html += 'autocomplete="off">';
+    html += '<div id="searchResults" style="display:none; ';
+    html += 'background:#fff; border:1px solid #ddd; border-radius:8px; ';
+    html += 'margin-top:-10px; margin-bottom:10px; max-height:200px; ';
+    html += 'overflow-y:auto; position:relative; z-index:10;"></div>';
     
+    // 2. Категории
     html += '<div class="h-scroll" id="catList">';
     html += '<div class="cat-btn active" id="cat-0" ';
     html += 'onclick="setCat(0)">Все</div>';
     html += '</div>';
 
+    // 3. Сетка товаров (ВЫШЕ корзины)
+    html += '<div class="grid" id="itemsGrid"></div>';
+
+    // 4. Корзина и оплата (ВНИЗУ)
     html += '<div class="basket" id="basket">';
     html += '<div id="bList"></div>';
     
@@ -1070,8 +1107,7 @@ function setupWarehouse(app, bot) {
     html += 'onclick="saveSale()">Принять оплату</button>';
     html += '</div>';
 
-    html += '<div class="grid" id="itemsGrid"></div>';
-    
+    // Модальное окно успеха
     html += '<div class="modal-bg" id="successModal">';
     html += '<div class="modal">';
     html += '<h1>🎉 Успешно!</h1>';
@@ -1081,11 +1117,15 @@ function setupWarehouse(app, bot) {
     html += '<div class="change" id="changeAmount">0</div>';
     html += '<div class="change-label">Куда выдать?</div>';
     html += '<div class="change-methods" id="changeMethods">';
-    html += '<div class="change-method active" id="cm-cash" onclick="setChangeMethod(\'cash\')">💵 Нал</div>';
-    html += '<div class="change-method" id="cm-card" onclick="setChangeMethod(\'card\')">💳 Карта</div>';
-    html += '<div class="change-method" id="cm-qr" onclick="setChangeMethod(\'qr\')">📱 QR</div>';
+    html += '<div class="change-method active" id="cm-cash" ';
+    html += 'onclick="setChangeMethod(\'cash\')">💵 Нал</div>';
+    html += '<div class="change-method" id="cm-card" ';
+    html += 'onclick="setChangeMethod(\'card\')">💳 Карта</div>';
+    html += '<div class="change-method" id="cm-qr" ';
+    html += 'onclick="setChangeMethod(\'qr\')">📱 QR</div>';
     html += '</div></div>';
-    html += '<button class="close-btn" id="closeSuccessBtn" onclick="closeSuccess()">Готово</button>';
+    html += '<button class="close-btn" id="closeSuccessBtn" ';
+    html += 'onclick="closeSuccess()">Готово</button>';
     html += '</div></div>';
     html += '<script>';
     html += 'var allItems = []; var cart = []; ';
@@ -1130,10 +1170,38 @@ function setupWarehouse(app, bot) {
 
     html += 'function filterItems() { ';
     html += '  var q = document.getElementById("search").value.toLowerCase(); ';
+    html += '  var sr = document.getElementById("searchResults"); ';
     html += '  var items = allItems.filter(function(i) { ';
     html += '    var matchQ = i.name.toLowerCase().includes(q); ';
     html += '    var matchC = (currentCat === 0 || i.category_id === currentCat);';
     html += '    return matchQ && matchC; }); ';
+    
+    // Автокомплит (Правка 4)
+    html += '  if (q.length >= 2) {';
+    html += '    sr.style.display = "block"; sr.innerHTML = "";';
+    html += '    var top5 = items.slice(0, 5);';
+    html += '    if (top5.length === 0) {';
+html += '        sr.innerHTML = "<div style=\'padding:10px; ';
+      html += 'color:#888;\'>Не найдено</div>";';
+      html += '      } else {';
+    html += '      top5.forEach(function(it) {';
+    html += '        var div = document.createElement("div");';
+    html += '        div.style = "padding:10px; border-bottom:1px solid #eee; ';
+    html += 'cursor:pointer; display:flex; justify-content:space-between;";';
+    html += '        div.innerHTML = "<span>" + it.name + "</span>";';
+    html += '        div.innerHTML += "<span style=\'color:#27ae60;\'>" + ';
+    html += 'fmtNum(it.current_stock) + " шт</span>";';
+    html += '        div.onclick = function() { ';
+    html += '          addToCart(it); ';
+    html += '          document.getElementById("search").value = ""; ';
+    html += '          sr.style.display = "none"; ';
+    html += '          drawCards(items); ';
+    html += '        };';
+    html += '        sr.appendChild(div);';
+    html += '      });';
+    html += '    }';
+    html += '  } else { sr.style.display = "none"; }';
+    
     html += '  drawCards(items); ';
     html += '}';
 
@@ -1210,7 +1278,8 @@ function setupWarehouse(app, bot) {
     html += '  resetPayments();';
     html += '}';
 
-    html += 'function onManualPriceChange() { resetPayments(); }';
+    // Правка 6: Ручной ввод суммы не затирается
+    html += 'function onManualPriceChange() { renderPayments(); }';
 
     html += 'function setPay(method) {';
     html += '  payMethod = method;';
@@ -1252,6 +1321,15 @@ function setupWarehouse(app, bot) {
     html += '  var btn = document.getElementById("btnSubmit");';
     html += '  var amtInp = document.getElementById("payAmount");';
     
+    // Правка 7: Запрет нулевых продаж
+    html += '  if (total <= 0) {';
+    html += '    rTxt.innerText = "Укажите сумму чека";';
+    html += '    rTxt.style.color = "#e74c3c";';
+    html += '    btn.classList.remove("ready");';
+    html += '    amtInp.value = "";';
+    html += '    return;';
+    html += '  }';
+    
     html += '  if (remain > 0) {';
     html += '    rTxt.innerText = "Осталось внести: " + remain + " ₽";';
     html += '    rTxt.style.color = "#e74c3c";';
@@ -1286,6 +1364,12 @@ function setupWarehouse(app, bot) {
     
     html += '  var tp = document.getElementById("totalPrice").value;';
     html += '  var total = parseFloat(tp);';
+    
+    // Защита на фронте
+    html += '  if (total <= 0) { ';
+    html += '    alert("Сумма чека должна быть больше нуля"); ';
+    html += '    btn.disabled = false; btn.innerText = "Принять оплату"; return; }';
+
     html += '  var paid = 0;';
     html += '  payments.forEach(function(p) { paid += p.amount; });';
     html += '  var change = paid - total;';
@@ -1296,15 +1380,16 @@ function setupWarehouse(app, bot) {
     html += '    for (var i = 0; i < finalPayments.length; i++) {';
     html += '      if (finalPayments[i].method === changeMethod) {';
     html += '        if (finalPayments[i].amount >= change) {';
-    html += '          finalPayments[i].amount -= change;';
-    html += '          found = true; break;';
+    html += '          finalтуPayments[i].amount -= change;';
+    html += ' found = true; break;';
     html += '        } else {';
-    html += '          btn.disabled = false; btn.innerText = "Принять оплату";';
-    html += '          alert("Недостаточно средств для сдачи");';
-    html += '          return;';
-    html += '        }';
-    html += '      }';
-    html += '    }';
+html += '          btn.disabled = false; ';
+html += '          btn.innerText = "Принять оплату";';
+html += '          alert("Недостаточно средств для сдачи");';
+html += '          return;';
+html += '        }';
+html += '      }';
+html += '    }';
     html += '    if (!found) {';
     html += '      btn.disabled = false; btn.innerText = "Принять оплату";';
     html += '      alert("Вы не вносили оплату этим способом"); return;';
@@ -1346,11 +1431,17 @@ function setupWarehouse(app, bot) {
   // 15. API Продажи (Обновленный)
   app.post('/api/warehouse/sale', async (req, res) => {
     try {
+      const real_price = parseFloat(req.body.real_price);
+      
+      // Защита на бэкенде (Правка 7)
+      if (!real_price || real_price <= 0) {
+        return res.json({ ok: false, error: 'Сумма должна быть больше нуля' });
+      }
+
       const cookie = req.headers.cookie || '';
       const match = cookie.match(/wh_auth=(\d+)/);
       const chatId = match ? Number(match[1]) : null;
       
-      const real_price = parseFloat(req.body.real_price);
       const payments = req.body.payments || [];
       
       let payCash = 0, payCard = 0, payQr = 0;
@@ -1981,61 +2072,6 @@ function setupWarehouse(app, bot) {
     html += '}';
     html += '<\/script></body></html>';
     res.send(html);
-  });
-
-  // 25. API Списания
-  app.post('/api/warehouse/writeoff', async (req, res) => {
-    try {
-      const cookie = req.headers.cookie || '';
-      const match = cookie.match(/wh_auth=(\d+)/);
-      const chatId = match ? Number(match[1]) : null;
-      
-      let wId = null;
-      for (var item of req.body.items) {
-        await pool.query(
-          'UPDATE wh_shop_items SET current_stock = current_stock - $1 ' +
-          'WHERE id = $2', [item.qty, item.id]
-        );
-        const wRes = await pool.query(
-          'INSERT INTO wh_writeoffs (shop_id, shop_item_id, qty, reason, ' +
-          'comment, photo_url, chat_id) ' +
-          'VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', 
-          [req.body.shopId, item.id, item.qty, req.body.reason, 
-           req.body.comment, req.body.photo, chatId]
-        );
-        if (!wId) wId = wRes.rows[0].id;
-      }
-      await logAction(req.body.shopId, chatId, 'writeoff', 
-        'Списание: ' + req.body.items[0].name + ' и др.', wId);
-      await notifyOwner(bot, req.body.shopId, 
-        '🗑 Крупное списание!', 'writeoff');
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
-  });
-
-  // 26. API Загрузки фото
-  app.post('/api/warehouse/upload', async (req, res) => {
-    try {
-      const base64Data = req.body.image;
-      if (!base64Data) return res.json({ ok: false });
-      const base64Image = base64Data.split(';base64,').pop();
-      const buffer = Buffer.from(base64Image, 'base64');
-      const key = 'wh_' + Date.now() + '.jpg';
-      const cmd = new PutObjectCommand({ 
-        Bucket: YC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' 
-      });
-      await s3.send(cmd);
-      const url = 'https://' + YC_BUCKET + '.storage.yandexcloud.net/' + key;
-      let urlBackup = null;
-      if (s3backup) {
-        const cmd2 = new PutObjectCommand({ 
-          Bucket: BC_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg' 
-        });
-        await s3backup.send(cmd2);
-        urlBackup = BC_ENDPOINT + '/' + BC_BUCKET + '/' + key;
-      }
-      res.json({ ok: true, url: url, urlBackup: urlBackup });
-    } catch (e) { res.status(500).json({ ok: false }); }
   });
   // 27. Экран Документов (Список)
   app.get('/warehouse/documents', (req, res) => {
