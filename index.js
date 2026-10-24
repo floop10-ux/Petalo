@@ -7348,6 +7348,366 @@ const headerHTML = logoUrl
   }
 });
 
+// ========== ФОНОВЫЕ ЗАДАЧИ ==========
+async function checkAndNotify() {
+  try {
+    const shops = await pool.query(
+      'SELECT shop_id, hours FROM shops ' +
+      'WHERE blocked = FALSE'
+    );
+    for (const s of shops.rows) {
+      if (!isWithinWorkingHours(s.hours)) continue;
+      const active = await getBouquetsFromDb(s.shop_id);
+      for (const b of active) {
+        if (b.isPinned || b.hidden ||
+            b.reminded || !b.confirmedAt) continue;
+        const rem = 3 * 24 * 60 * 60 * 1000 -
+          (Date.now() -
+            new Date(b.confirmedAt).getTime());
+        if (rem > 0 && rem <= 12 * 60 * 60 * 1000) {
+          let n = '⚠️ Букет №' + b.shopNumber + ' «';
+          n += esc(b.name) + '» скоро скроется. ';
+          n += 'Продлить?';
+          bot.sendMessage(b.chatId, n, {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[{
+                text: '🌿 Продлить',
+                callback_data: 'extend_' + b.id
+              }]]
+            }
+          }).catch(function(){});
+          await updateBouquetField(b.id, 'reminded', true);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Notify error:', e?.message || e);
+  }
+}
+
+// ========== УТРЕННЕЕ НАПОМИНАНИЕ ==========
+async function morningReminder() {
+  try {
+    const now = getNowMoscow();
+    const todayKey = now.toISOString().slice(0, 10);
+    const shops = await pool.query(
+      'SELECT shop_id, hours FROM shops ' +
+      'WHERE blocked = FALSE'
+    );
+    for (const s of shops.rows) {
+      const parsed = parseShopHours(s.hours);
+      let openH = 8;
+      let openM = 0;
+      if (parsed) {
+        openH = parsed.openH;
+        openM = parsed.openM;
+      }
+      const nowMinutes = now.getHours() * 60 +
+        now.getMinutes();
+      const openMinutes = openH * 60 + openM;
+      const diffMin = nowMinutes - openMinutes;
+      if (diffMin < 0 || diffMin > 15) continue;
+
+      const sentKey = s.shop_id + ':' + todayKey;
+      if (morningReminderSent[sentKey]) continue;
+
+      const laterKey = s.shop_id + ':' + todayKey;
+      const laterTime = morningLaterSent[laterKey];
+      if (laterTime) {
+        const diffHr = (Date.now() - laterTime) /
+          3600000;
+        if (diffHr < 1) continue;
+        if (diffHr >= 1 && diffHr < 1.5) {
+          // финальное напоминание
+        } else if (diffHr >= 1.5) {
+          morningReminderSent[sentKey] = Date.now();
+          continue;
+        }
+      }
+
+      const shop = await getShopFromDb(s.shop_id);
+      if (!shop) continue;
+      if (!isSubscriptionActive(shop)) continue;
+
+      const all = await getBouquetsFromDb(s.shop_id);
+      const active = all.filter(isConfirmedRecently);
+      if (active.length < 3) continue;
+
+      let lastConfirmMs = 0;
+      for (const b of all) {
+        if (b.confirmedAt) {
+          const t = new Date(b.confirmedAt).getTime();
+          if (t > lastConfirmMs) lastConfirmMs = t;
+        }
+      }
+      if (lastConfirmMs > 0) {
+        const hoursSince = (Date.now() -
+          lastConfirmMs) / 3600000;
+        if (hoursSince < 12) {
+          morningReminderSent[sentKey] = Date.now();
+          continue;
+        }
+      }
+
+      const targets = shop.admins.filter(
+        a => a.role === 'owner' || a.onShift
+      );
+      const unique = new Set();
+      const text =
+        '🌸 <b>Доброе утро!</b>\n\n' +
+        'Магазин открылся. Проверьте, что ' +
+        'на витрине — всё актуально?\n\n' +
+        '<i>Это займёт минуту.</i>';
+      const kb = {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{
+              text: '✅ Проверить наличие',
+              callback_data: 'check_start'
+            }],
+            [{
+              text: '⏰ Позже',
+              callback_data: 'morning_later'
+            }]
+          ]
+        }
+      };
+      for (const admin of targets) {
+        if (unique.has(admin.chatId)) continue;
+        unique.add(admin.chatId);
+        bot.sendMessage(admin.chatId, text, kb)
+          .catch(function(){});
+      }
+      morningReminderSent[sentKey] = Date.now();
+      console.log(
+        '🌅 Утреннее напоминание: ' + s.shop_id
+      );
+    }
+  } catch (e) {
+    console.error(
+      'Ошибка morningReminder:', e?.message || e
+    );
+  }
+}
+
+// ========== НАПОМИНАНИЕ О ПЕРВОМ БУКЕТЕ ==========
+async function checkFirstBouquetReminder() {
+  try {
+    const shops = await pool.query(
+      'SELECT shop_id, trial_start, settings ' +
+      'FROM shops WHERE blocked = FALSE'
+    );
+    for (const s of shops.rows) {
+      const settings = s.settings || {};
+      if (settings.onboardingPassed) continue;
+      if (settings.firstBouquetReminded) continue;
+      if (!s.trial_start) continue;
+
+      const daysSince = (
+        Date.now() -
+        new Date(s.trial_start).getTime()
+      ) / (24 * 60 * 60 * 1000);
+      if (daysSince < 3) continue;
+
+      const bouquets = await getBouquetsFromDb(s.shop_id);
+      if (bouquets.length > 0) {
+        settings.firstBouquetReminded = true;
+        await saveShopSettings(s.shop_id, settings);
+        continue;
+      }
+
+      const shop = await getShopFromDb(s.shop_id);
+      const owner = shop.admins.find(
+        a => a.role === 'owner'
+      );
+      if (!owner) continue;
+
+      let txt = '👋 Привет!\n\n';
+      txt += 'Хотите попробовать добавить первый ';
+      txt += 'букет на витрину? Это ';
+      txt += '<b>1 минута</b>.\n\n';
+      txt += 'Просто пришлите фото букета ';
+      txt += 'с подписью:\n';
+      txt += '<code>31 роза 3500</code>\n\n';
+      txt += 'Если что-то непонятно — /help';
+
+      bot.sendMessage(owner.chatId, txt, {
+        parse_mode: 'HTML'
+      }).catch(function(){});
+
+      settings.firstBouquetReminded = true;
+      await saveShopSettings(s.shop_id, settings);
+      console.log(
+        '📨 Напоминание о первом букете: ' + s.shop_id
+      );
+    }
+  } catch (e) {
+    console.error(
+      'Ошибка checkFirstBouquetReminder:',
+      e?.message || e
+    );
+  }
+}
+
+// ========== ОТЧЁТ ЗА НЕДЕЛЮ ==========
+const weeklyReportSent = {};
+
+async function weeklyReport() {
+  try {
+    const now = getNowMoscow();
+    if (now.getDay() !== 0) return;
+    if (now.getHours() !== 19) return;
+
+    const weekAgo = new Date(
+      Date.now() - 7 * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const shops = await pool.query(
+      'SELECT shop_id FROM shops WHERE blocked = FALSE'
+    );
+    for (const s of shops.rows) {
+      const shop = await getShopFromDb(s.shop_id);
+      if (!shop) continue;
+      if (!isSubscriptionActive(shop)) continue;
+
+      const lastSent = weeklyReportSent[s.shop_id];
+      if (lastSent &&
+          (Date.now() - lastSent) <
+            6 * 24 * 60 * 60 * 1000) {
+        continue;
+      }
+
+      const addedRes = await pool.query(
+        'SELECT COUNT(*) AS cnt FROM bouquets ' +
+        'WHERE shop_id = $1 AND created_at >= $2 ' +
+        'AND deleted = FALSE',
+        [s.shop_id, weekAgo]
+      );
+      const addedCount =
+        parseInt(addedRes.rows[0].cnt) || 0;
+
+      const clicksRes = await pool.query(
+        'SELECT COALESCE(SUM(clicks), 0) AS total ' +
+        'FROM bouquets ' +
+        'WHERE shop_id = $1 AND deleted = FALSE',
+        [s.shop_id]
+      );
+      const totalClicks =
+        parseInt(clicksRes.rows[0].total) || 0;
+
+      const topRes = await pool.query(
+        'SELECT shop_number, name, clicks ' +
+        'FROM bouquets ' +
+        'WHERE shop_id = $1 AND deleted = FALSE ' +
+        'AND clicks > 0 ' +
+        'ORDER BY clicks DESC LIMIT 3',
+        [s.shop_id]
+      );
+
+      const archRes = await pool.query(
+        'SELECT COUNT(*) AS cnt FROM bouquets ' +
+        'WHERE shop_id = $1 AND deleted = FALSE ' +
+        'AND (hidden = TRUE OR confirmed_at < $2)',
+        [s.shop_id, weekAgo]
+      );
+      const archCount =
+        parseInt(archRes.rows[0].cnt) || 0;
+
+      const all = await getBouquetsFromDb(s.shop_id);
+      const activeNow =
+        all.filter(isConfirmedRecently).length;
+
+      let txt = '📊 <b>Итоги недели «';
+      txt += esc(shop.displayName) + '»</b>\n\n';
+      txt += '📷 Добавлено букетов: <b>' +
+        addedCount + '</b>\n';
+      txt += '🟢 Сейчас на витрине: <b>' +
+        activeNow + '</b>\n';
+      txt += '📦 В архиве: <b>' + archCount +
+        '</b>\n';
+      txt += '👀 Всего кликов: <b>' +
+        totalClicks + '</b>\n';
+
+      if (topRes.rows.length > 0) {
+        txt += '\n🔥 <b>Топ-3 по кликам:</b>\n';
+        for (let i = 0; i < topRes.rows.length; i++) {
+          const r = topRes.rows[i];
+          const medal = ['🥇', '🥈', '🥉'][i];
+          txt += medal + ' №' + r.shop_number + ' ';
+          txt += esc(shortName(r.name, 24)) + ' — ';
+          txt += r.clicks + '\n';
+        }
+      }
+
+      txt += '\n━━━━━━━━━━━━━━━\n';
+      txt += '🌿 Продолжайте — витрина работает!\n';
+      txt += SITE_URL + '/shop/' + s.shop_id;
+
+      const targetAdmins = shop.admins.filter(
+        a => a.role === 'owner' || a.onShift
+      );
+      const uniqueChats = new Set();
+      for (const admin of targetAdmins) {
+        if (uniqueChats.has(admin.chatId)) continue;
+        uniqueChats.add(admin.chatId);
+        bot.sendMessage(admin.chatId, txt, {
+          parse_mode: 'HTML'
+        }).catch(function(){});
+      }
+
+      weeklyReportSent[s.shop_id] = Date.now();
+      console.log(
+        '📊 Отчёт за неделю: ' + s.shop_id
+      );
+    }
+  } catch (e) {
+    console.error(
+      'Ошибка weeklyReport:', e?.message || e
+    );
+  }
+}
+
+// ========== ОЧИСТКА ==========
+function cleanupExpiredCheckSessions() {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const chatId of Object.keys(checkSessions)) {
+    const s = checkSessions[chatId];
+    if (!s || !s.lastActivity ||
+        now - s.lastActivity > CHECK_SESSION_TTL) {
+      delete checkSessions[chatId];
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    console.log(
+      '🧹 Очищено сессий проверки: ' + cleaned
+    );
+  }
+}
+
+function cleanupMorningLater() {
+  const now = Date.now();
+  const nowMoscow = getNowMoscow();
+  const todayKey = nowMoscow.toISOString().slice(0, 10);
+  for (const key of Object.keys(morningLaterSent)) {
+    const parts = key.split(':');
+    if (parts.length < 2) {
+      delete morningLaterSent[key];
+      continue;
+    }
+    const datePart = parts[parts.length - 1];
+    if (datePart !== todayKey) {
+      if (now - morningLaterSent[key] >
+          25 * 60 * 60 * 1000) {
+        delete morningLaterSent[key];
+      }
+    }
+  }
+}
+
 // ========== ЗАПУСК ==========
 initDb().then(async () => {
   await initWarehouseDb();
