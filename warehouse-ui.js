@@ -76,6 +76,16 @@ function setupWarehouse(app, bot) {
       .btn-ok { background: ${brandColor}; color: #fff; }
       .btn-danger { background: ${dangerColor}; color: #fff; }
       .btn-success { background: ${successColor}; color: #fff; }
+      
+      .flowind-watermark { position: fixed; bottom: 15px; left: 15px;
+        display: flex; align-items: center; gap: 5px;
+        font-family: "Manrope", sans-serif; font-weight: 800;
+        font-size: 12px; color: ${brandColor}; opacity: 0.3;
+        pointer-events: none; z-index: 9999; }
+        
+      .svg-ico { width: 24px; height: 24px; vertical-align: middle; 
+        margin-right: 8px; color: ${brandColor}; }
+      .svg-ico-sm { width: 18px; height: 18px; margin-right: 5px; }
     </style>
     <div class="custom-modal-overlay" id="uiModal">
       <div class="custom-modal">
@@ -83,6 +93,15 @@ function setupWarehouse(app, bot) {
         <p id="uiModalText"></p>
         <div class="custom-modal-btns" id="uiModalBtns"></div>
       </div>
+    </div>
+    <div class="flowind-watermark">
+      <svg viewBox="0 0 100 100" style="width: 16px; height: 16px;">
+        <circle cx="50" cy="50" r="50" fill="${brandColor}"/>
+        <path d="M25 30 L70 30 Q75 30 75 35 L75 60 Q75 65 70 65 L55 65 L45 75 L45 65 L30 65 Q25 65 25 60 L25 35 Q25 30 30 30 Z" fill="none" stroke="#fff" stroke-width="8"/>
+        <path d="M40 45 Q55 35 60 50 Q45 60 40 45 Z" fill="${accentColor}"/>
+        <path d="M55 45 Q70 35 75 50 Q60 60 55 45 Z" fill="#fff"/>
+      </svg>
+      Flowind
     </div>
     <script>
       function showAlert(title, text, isSuccess) {
@@ -112,10 +131,28 @@ function setupWarehouse(app, bot) {
       function closeModal() {
         document.getElementById('uiModal').style.display = 'none';
       }
+      
+      function getIconSvg(type) {
+        var c = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ' +
+                'fill="none" stroke="currentColor" stroke-width="2" ' +
+                'stroke-linecap="round" stroke-linejoin="round" class="svg-ico"';
+        if (type === 'sale') return '<svg ' + c + '><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>';
+        if (type === 'receipt') return '<svg ' + c + '><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
+        if (type === 'writeoff') return '<svg ' + c + '><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+        if (type === 'inventory') return '<svg ' + c + '><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>';
+        if (type === 'history') return '<svg ' + c + '><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+        if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
+        if (type === 'reports') return '<svg ' + c + '><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>';
+        if (type === 'staff') return '<svg ' + c + '><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+        if (type === 'settings') return '<svg ' + c + '><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+        if (type === 'audit') return '<svg ' + c + '><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        if (type === 'shift') return '<svg ' + c + '><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+        return '';
+      }
     </script>
   `;
 
-  // 1. Главный экран с логотипом и бургер-меню
+  // 1. Главный экран
   app.get('/warehouse-app', async (req, res) => {
     try {
       const cookie = req.headers.cookie || '';
@@ -167,7 +204,6 @@ function setupWarehouse(app, bot) {
       html += '.top-bar { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 20px; }';
       
-      // Логотип
       html += '.logo-wrap { display: flex; align-items: center; gap: 10px; }';
       html += '.logo-svg { width: 40px; height: 40px; }';
       html += '.logo-text { font-size: 20px; font-weight: 800; ';
@@ -196,7 +232,7 @@ function setupWarehouse(app, bot) {
       html += 'flex-direction: column; align-items: center; ';
       html += 'justify-content: center; box-shadow: 0 4px 15px ';
       html += 'rgba(15, 61, 62, 0.05); border: none; }';
-      html += '.btn span { font-size: 32px; margin-bottom: 8px; }';
+      html += '.btn svg { width: 32px; height: 32px; margin-bottom: 8px; }';
       html += '.full { grid-column: 1 / -1; }';
       
       html += '.sidebar { position: fixed; top: 0; right: -280px; ';
@@ -209,9 +245,10 @@ function setupWarehouse(app, bot) {
       html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.4); ';
       html += 'display: none; z-index: 999; }';
       html += '.sidebar-overlay.open { display: block; }';
-      html += '.menu-item { display: block; padding: 15px 0; ';
-      html += 'text-decoration: none; color: ' + brandColor + '; ';
-      html += 'font-size: 16px; border-bottom: 1px solid #eee; }';
+      html += '.menu-item { display: flex; align-items: center; ';
+      html += 'padding: 15px 0; text-decoration: none; ';
+      html += 'color: ' + brandColor + '; font-size: 16px; ';
+      html += 'border-bottom: 1px solid #eee; }';
       html += '</style></head><body>';
       
       html += '<div class="top-bar">';
@@ -245,20 +282,20 @@ function setupWarehouse(app, bot) {
       html += '<div class="grid">';
       if (isOwner || canSale) {
         html += '<a href="/warehouse/sale" class="btn">';
-        html += '<span>💰</span>Продажа</a>';
+        html += getIconSvg('sale') + 'Продажа</a>';
       }
       if (isOwner || canReceipt) {
         html += '<a href="/warehouse/receipts" class="btn">';
-        html += '<span>📥</span>Приход</a>';
+        html += getIconSvg('receipt') + 'Приход</a>';
       }
       if (isOwner || canWriteoff) {
         html += '<a href="/warehouse/writeoff" class="btn">';
-        html += '<span>🗑</span>Списание</a>';
+        html += getIconSvg('writeoff') + 'Списание</a>';
       }
       html += '<a href="/warehouse/inventory" class="btn">';
-      html += '<span>📦</span>Обзор</a>';
+      html += getIconSvg('inventory') + 'Обзор</a>';
       html += '<a href="/warehouse/history" class="btn full">';
-      html += '<span>📋</span>История</a>';
+      html += getIconSvg('history') + 'История</a>';
       html += '</div>';
 
       if (isOwner) {
@@ -267,15 +304,15 @@ function setupWarehouse(app, bot) {
         html += '<div class="sidebar" id="sidebar">';
         html += '<h3>Меню</h3>';
         html += '<a href="/warehouse/documents" class="menu-item">';
-        html += '📑 Документы</a>';
+        html += getIconSvg('docs') + 'Документы</a>';
         html += '<a href="/warehouse/reports" class="menu-item">';
-        html += '📊 Отчёты</a>';
+        html += getIconSvg('reports') + 'Отчёты</a>';
         html += '<a href="/warehouse/staff" class="menu-item">';
-        html += '👥 Флористы</a>';
+        html += getIconSvg('staff') + 'Флористы</a>';
         html += '<a href="/warehouse/audit" class="menu-item">';
-        html += '👁 Журнал</a>';
+        html += getIconSvg('audit') + 'Журнал</a>';
         html += '<a href="/warehouse/settings" class="menu-item">';
-        html += '⚙️ Настройки</a>';
+        html += getIconSvg('settings') + 'Настройки</a>';
         html += '</div>';
       }
 
@@ -332,8 +369,7 @@ function setupWarehouse(app, bot) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-
-  // 3. API Авторизации
+// 3. API Авторизации
   app.post('/api/warehouse/auth', async (req, res) => {
     try {
       const r = await pool.query(
@@ -360,7 +396,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // 5. API Товаров (защита от кэша)
+  // 5. API Товаров (с защитой от кэша)
   app.get('/api/warehouse/items', async (req, res) => {
     try {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -424,7 +460,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" ';
-    html += 'class="back">←</a><h2 style="margin:0;">📦 Обзор</h2></div>';
+    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+    html += 'align-items:center;">' + getIconSvg('inventory') + 'Обзор</h2></div>';
     html += '<input type="text" class="search" id="search" ';
     html += 'placeholder="🔍 Поиск..." onkeyup="applyFilters()">';
     html += '<div class="h-scroll" id="catList">';
@@ -507,7 +544,8 @@ function setupWarehouse(app, bot) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-  // 7. API Истории товара (Выписка с остатками)
+
+  // 7. API Истории товара
   app.get('/api/warehouse/item/history', async (req, res) => {
     try {
       const itemId = req.query.id;
@@ -670,8 +708,7 @@ function setupWarehouse(app, bot) {
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false }); }
   });
-
-  // 11. Экран Карточки Товара (Выписка)
+// 11. Экран Карточки Товара (Выписка) со сжатием фото
   app.get('/warehouse/item', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
@@ -703,7 +740,9 @@ function setupWarehouse(app, bot) {
     html += 'justify-content: center; margin-bottom: 15px; }';
     html += '.btn-act { padding: 10px 15px; border-radius: 10px; ';
     html += 'border: none; font-weight: 600; color: #fff; ';
-    html += 'font-family: inherit; cursor: pointer; }';
+    html += 'font-family: inherit; cursor: pointer; display: flex; ';
+    html += 'align-items: center; }';
+    html += '.btn-act svg { width: 16px; height: 16px; margin-right: 5px; }';
     html += '.btn-rename { background: #E67E22; } ';
     html += '.btn-merge { background: ' + dangerColor + '; }';
     html += '.btn-photo { background: #3C7A89; }';
@@ -719,10 +758,10 @@ function setupWarehouse(app, bot) {
     html += 'margin-bottom:15px;"></div>';
     
     html += '<div class="actions" id="actions" style="display:none;">';
-    html += '<button class="btn-act btn-rename" ';
-    html += 'onclick="renameItem()">✏️ Имя</button>';
-    html += '<button class="btn-act btn-merge" ';
-    html += 'onclick="mergeItem()">🔗 Слить</button>';
+    html += '<button class="btn-act btn-rename" onclick="renameItem()">';
+    html += '✏️ Имя</button>';
+    html += '<button class="btn-act btn-merge" onclick="mergeItem()">';
+    html += '🔗 Слить</button>';
     html += '<button class="btn-act btn-photo" ';
     html += 'onclick="document.getElementById(\'photoInput\').click()">';
     html += '📷 Фото</button>';
@@ -848,24 +887,51 @@ function setupWarehouse(app, bot) {
     html += 'function uploadPhoto() {';
     html += '  var f = document.getElementById("photoInput").files[0];';
     html += '  if (!f) return;';
+    html += '  showAlert("Загрузка", "Сжимаем и отправляем фото...", true);';
     html += '  var rd = new FileReader();';
     html += '  rd.onload = function(e) {';
-    html += '    fetch("/api/warehouse/upload", { method: "POST", ';
-    html += 'headers: { "Content-Type": "application/json" }, ';
-    html += 'body: JSON.stringify({ image: e.target.result }) })';
-    html += '    .then(function(r) { return r.json(); })';
-    html += '    .then(function(d) { if(d.ok) { savePhoto(d.url); } });';
+    html += '    var img = new Image();';
+    html += '    img.onload = function() {';
+    html += '      var canvas = document.createElement("canvas");';
+    html += '      var MAX = 800;';
+    html += '      var w = img.width, h = img.height;';
+    html += '      if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }';
+    html += '      else { if (h > MAX) { w *= MAX / h; h = MAX; } }';
+    html += '      canvas.width = w; canvas.height = h;';
+    html += '      var ctx = canvas.getContext("2d");';
+    html += '      ctx.drawImage(img, 0, 0, w, h);';
+    html += '      var dataUrl = canvas.toDataURL("image/jpeg", 0.7);';
+    html += '      sendCompressedPhoto(dataUrl);';
+    html += '    };';
+    html += '    img.src = e.target.result;';
     html += '  };';
     html += '  rd.readAsDataURL(f);';
     html += '}';
+    
+    html += 'function sendCompressedPhoto(base64) {';
+    html += '  fetch("/api/warehouse/upload", { method: "POST", ';
+    html += '  headers: { "Content-Type": "application/json" }, ';
+    html += '  body: JSON.stringify({ image: base64 }) })';
+    html += '  .then(function(r) { return r.json(); })';
+    html += '  .then(function(d) { ';
+    html += '    if (d.ok) { savePhoto(d.url); } ';
+    html += '    else { showAlert("Ошибка", "Сервер не принял фото", false); }';
+    html += '  })';
+    html += '  .catch(function(err) { ';
+    html += '    showAlert("Ошибка сети", "Не удалось загрузить фото", false); ';
+    html += '  });';
+    html += '}';
+
     html += 'function savePhoto(url) {';
     html += '  fetch("/api/warehouse/item/set-photo", { method: "POST", ';
-    html += 'headers: { "Content-Type": "application/json" }, ';
-    html += 'body: JSON.stringify({ id: itemId, url: url }) })';
+    html += '  headers: { "Content-Type": "application/json" }, ';
+    html += '  body: JSON.stringify({ id: itemId, url: url }) })';
     html += '  .then(function(r) { return r.json(); }).then(function(d) {';
     html += '    if(d.ok) { showAlert("Успех", "Фото обновлено", true); ';
-    html += 'setTimeout(function() { location.reload(); }, 1000); }';
-    html += '    else showAlert("Ошибка", d.error, false);';
+    html += '    setTimeout(function() { location.reload(); }, 1000); }';
+    html += '    else showAlert("Ошибка базы", d.error, false);';
+    html += '  }).catch(function() { ';
+    html += '    showAlert("Ошибка", "Сбой при сохранении", false); ';
     html += '  });';
     html += '}';
     html += '<\/script></body></html>';
@@ -911,7 +977,9 @@ function setupWarehouse(app, bot) {
     
     html += '.log-top { display: flex; justify-content: space-between; ';
     html += 'align-items: center; margin-bottom: 8px; }';
-    html += '.log-title { font-weight: 800; font-size: 15px; }';
+    html += '.log-title { font-weight: 800; font-size: 15px; ';
+    html += 'display: flex; align-items: center; }';
+    html += '.log-title svg { width: 18px; height: 18px; margin-right: 6px; }';
     html += '.log-date { font-size: 11px; color: #888; }';
     html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
     html += '.log-link { font-size: 12px; color: #3C7A89; margin-top: 8px; ';
@@ -919,17 +987,18 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a>';
-    html += '<h2 style="margin:0;">👁 Журнал</h2></div>';
+    html += '<h2 style="margin:0; display:flex; align-items:center;">' + 
+            getIconSvg('audit') + 'Журнал</h2></div>';
     html += '<div id="list">Загрузка...</div>';
     
     html += '<script>';
-    html += 'function getIcon(action) {';
-    html += '  if (action === "sale") return "💰";';
-    html += '  if (action === "receipt") return "📥";';
-    html += '  if (action === "writeoff") return "🗑";';
-    html += '  if (action === "cancel") return "⚠️";';
-    html += '  if (action === "shift") return "⏱";';
-    html += '  return "⚙️";';
+    html += 'function getIconName(action) {';
+    html += '  if (action === "sale") return "sale";';
+    html += '  if (action === "receipt") return "receipt";';
+    html += '  if (action === "writeoff") return "writeoff";';
+    html += '  if (action === "cancel") return "writeoff";';
+    html += '  if (action === "shift") return "shift";';
+    html += '  return "settings";';
     html += '}';
     
     html += 'fetch("/api/warehouse/audit?shop=kupidon")';
@@ -949,9 +1018,9 @@ function setupWarehouse(app, bot) {
     html += 'hour: "2-digit", minute: "2-digit" }); ';
     html += 'var p = l.person || "Система"; ';
     
-    html += 'var icon = getIcon(l.action);';
+    html += 'var iconSvg = getIconSvg(getIconName(l.action));';
     html += 'var hc = "<div class=\'log-top\'>";';
-    html += 'hc += "<div class=\'log-title\'>" + icon + " " + p + "</div>";';
+    html += 'hc += "<div class=\'log-title\'>" + iconSvg + p + "</div>";';
     html += 'hc += "<div class=\'log-date\'>" + ds + "</div></div>";';
     html += 'hc += "<div class=\'log-desc\'>" + l.details + "</div>";';
     
@@ -977,7 +1046,8 @@ function setupWarehouse(app, bot) {
     html += 'b.appendChild(div); }); });';
     html += '<\/script></body></html>';
     res.send(html);
-  });// 12. Экран Смены
+  });
+  // 12. Экран Смены (Правка 7: Редирект в Кассу)
   app.get('/warehouse/shift', async (req, res) => {
     try {
       const cookie = req.headers.cookie || '';
@@ -1023,7 +1093,8 @@ function setupWarehouse(app, bot) {
       html += '</style></head><body>';
 
       html += '<div class="header"><a href="/warehouse-app" ';
-      html += 'class="back">←</a><h2 style="margin:0;">⏱ Смена</h2></div>';
+      html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+      html += 'align-items:center;">' + getIconSvg('shift') + 'Смена</h2></div>';
 
       if (shiftRes.rows.length === 0) {
         html += '<div class="card"><h3 style="margin-top:0;">Открытие смены</h3>';
@@ -1074,7 +1145,8 @@ function setupWarehouse(app, bot) {
       html += 'body: JSON.stringify({ action: "open", val: v }) })';
       html += '  .then(function(r) { return r.json(); })';
       html += '  .then(function(d) {';
-      html += '    if (d.ok) window.location.href = "/warehouse-app";';
+      // Правка 7: Редирект сразу в Кассу
+      html += '    if (d.ok) window.location.href = "/warehouse/sale";';
       html += '    else showAlert("Ошибка", d.error, false);';
       html += '  });';
       html += '}';
@@ -1152,7 +1224,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // 14. Экран Продажи (Касса) - Bottom Sheet
+  // 14. Экран Продажи (Касса) - Плотная сетка + Бургер-меню
   app.get('/warehouse/sale', async (req, res) => {
     const cookie = req.headers.cookie || '';
     const match = cookie.match(/wh_auth=(\d+)/);
@@ -1204,8 +1276,11 @@ function setupWarehouse(app, bot) {
     html += 'color: ' + brandColor + '; }';
     html += '.header { display: flex; align-items: center; ';
     html += 'margin-bottom: 15px; justify-content: space-between; }';
+    html += '.header-left { display: flex; align-items: center; }';
     html += '.back { font-size: 24px; text-decoration: none; ';
-    html += 'color: ' + brandColor + '; }';
+    html += 'color: ' + brandColor + '; margin-right: 15px; }';
+    html += '.burger { font-size: 24px; background: none; border: none; ';
+    html += 'color: ' + brandColor + '; cursor: pointer; padding: 0; }';
     
     html += '.search-wrapper { position: relative; margin-bottom: 15px; }';
     html += '.search { width: 100%; padding: 15px; border: none; ';
@@ -1229,19 +1304,21 @@ function setupWarehouse(app, bot) {
     html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
     html += '.cat-btn.active { background: ' + brandColor + '; color: #fff; }';
     
-    html += '.grid { display: grid; grid-template-columns: 1fr 1fr; ';
-    html += 'gap: 10px; }';
-    html += '.card { background: #fff; padding: 10px; border-radius: 16px; ';
+    // Правка 7: Плотная сетка (3 колонки)
+    html += '.grid { display: grid; grid-template-columns: repeat(3, 1fr); ';
+    html += 'gap: 8px; }';
+    html += '.card { background: #fff; padding: 8px; border-radius: 12px; ';
     html += 'text-align: center; cursor: pointer; ';
     html += 'box-shadow: 0 4px 15px rgba(15,61,62,0.05); }';
-    html += '.card img { width: 100%; height: 80px; object-fit: cover; ';
-    html += 'border-radius: 12px; margin-bottom: 5px; }';
-    html += '.card .ph { height: 80px; border-radius: 12px; ';
+    html += '.card img { width: 100%; height: 60px; object-fit: cover; ';
+    html += 'border-radius: 8px; margin-bottom: 4px; }';
+    html += '.card .ph { height: 60px; border-radius: 8px; ';
     html += 'background: #F0F4F4; display: flex; align-items: center; ';
-    html += 'justify-content: center; margin-bottom: 5px; }';
-    html += '.card .ph svg { width: 32px; height: 32px; }';
-    html += '.card .name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }';
-    html += '.card .stock { font-size: 12px; font-weight: 800; color: ' + successColor + '; }';
+    html += 'justify-content: center; margin-bottom: 4px; }';
+    html += '.card .ph svg { width: 24px; height: 24px; }';
+    html += '.card .name { font-size: 11px; font-weight: 600; ';
+    html += 'margin-bottom: 2px; line-height: 1.2; }';
+    html += '.card .stock { font-size: 10px; font-weight: 800; color: ' + successColor + '; }';
     
     html += '.floating-cart { position: fixed; bottom: 20px; left: 15px; ';
     html += 'right: 15px; background: ' + brandColor + '; color: #fff; ';
@@ -1308,10 +1385,30 @@ function setupWarehouse(app, bot) {
     html += 'box-sizing:border-box; box-shadow:0 2px 8px rgba(0,0,0,0.05); }';
     html += '.btn-clear { background: none; border: none; color: ' + dangerColor + '; ';
     html += 'font-size: 14px; font-weight: 600; margin-top: 10px; width: 100%; }';
+    html += '.sidebar { position: fixed; top: 0; right: -280px; ';
+    html += 'width: 250px; height: 100%; background: #fff; ';
+    html += 'box-shadow: -5px 0 15px rgba(0,0,0,0.1); ';
+    html += 'transition: right 0.3s ease; z-index: 1000; ';
+    html += 'padding: 20px; box-sizing: border-box; }';
+    html += '.sidebar.open { right: 0; }';
+    html += '.sidebar-overlay { position: fixed; top: 0; left: 0; ';
+    html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.4); ';
+    html += 'display: none; z-index: 999; }';
+    html += '.sidebar-overlay.open { display: block; }';
+    html += '.menu-item { display: flex; align-items: center; ';
+    html += 'padding: 15px 0; text-decoration: none; ';
+    html += 'color: ' + brandColor + '; font-size: 16px; ';
+    html += 'border-bottom: 1px solid #eee; }';
     html += '</style></head><body>';
     
-    html += '<div class="header"><a href="/warehouse-app" ';
-    html += 'class="back">←</a><h2 style="margin:0;">💰 Касса</h2></div>';
+    html += '<div class="header">';
+    html += '<div class="header-left">';
+    html += '<a href="/warehouse-app" class="back">←</a>';
+    html += '<h2 style="margin:0; display:flex; align-items:center;">' + 
+            getIconSvg('sale') + 'Касса</h2>';
+    html += '</div>';
+    html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+    html += '</div>';
     
     html += '<div class="search-wrapper">';
     html += '<input type="text" class="search" id="search" ';
@@ -1325,7 +1422,7 @@ function setupWarehouse(app, bot) {
 
     html += '<div class="grid" id="itemsGrid"></div>';
 
-    html += '<div class="floating-cart" id="floatingCart" onclick="openSheet()">';
+    html += '<div class="floating-cart" id="floatingCart">';
     html += '<span id="fcCount">0 товаров</span>';
     html += '<span id="fcTotal">0 ₽</span>';
     html += '</div>';
@@ -1394,6 +1491,26 @@ function setupWarehouse(app, bot) {
     html += '</div>';
     html += '</div>';
     
+    html += '<div class="sidebar-overlay" id="overlay" ';
+    html += 'onclick="toggleMenu()"></div>';
+    html += '<div class="sidebar" id="sidebar">';
+    html += '<h3>Меню</h3>';
+    html += '<a href="/warehouse/receipts" class="menu-item">';
+    html += getIconSvg('receipt') + 'Приход</a>';
+    html += '<a href="/warehouse/writeoff" class="menu-item">';
+    html += getIconSvg('writeoff') + 'Списание</a>';
+    html += '<a href="/warehouse/inventory" class="menu-item">';
+    html += getIconSvg('inventory') + 'Обзор</a>';
+    html += '<a href="/warehouse/history" class="menu-item">';
+    html += getIconSvg('history') + 'История</a>';
+    html += '<a href="/warehouse/documents" class="menu-item">';
+    html += getIconSvg('docs') + 'Документы</a>';
+    html += '<a href="/warehouse/reports" class="menu-item">';
+    html += getIconSvg('reports') + 'Отчёты</a>';
+    html += '<a href="/warehouse/audit" class="menu-item">';
+    html += getIconSvg('audit') + 'Журнал</a>';
+    html += '</div>';
+    
     html += '<div class="sheet-overlay" id="successModal" ';
     html += 'style="z-index:2000; align-items:center; justify-content:center;">';
     html += '<div style="background:#fff; padding:30px; border-radius:24px; ';
@@ -1439,7 +1556,6 @@ function setupWarehouse(app, bot) {
     html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "");';
     html += '}';
     
-    // Память корзины (Правка 4)
     html += 'function saveCart() {';
     html += '  localStorage.setItem("wh_cart_kupidon", JSON.stringify(cart));';
     html += '}';
@@ -1448,7 +1564,6 @@ function setupWarehouse(app, bot) {
     html += '  if (c) { try { cart = JSON.parse(c); } catch(e) { cart = []; } }';
     html += '}';
 
-    // Свайп для удаления (Правка 3)
     html += 'var fc = document.getElementById("floatingCart");';
     html += 'var startX = 0; var isSwiping = false;';
     html += 'fc.addEventListener("touchstart", function(e) {';
@@ -1473,15 +1588,22 @@ function setupWarehouse(app, bot) {
     html += '  if (diff < -80) {';
     html += '    fc.style.transform = "translateX(-150%)";';
     html += '    setTimeout(function() {';
-    html += '      clearCart();';
+    html += '      clearCartDirect();';
     html += '      fc.style.transform = "translateX(0)";';
     html += '      fc.classList.remove("swiping");';
     html += '    }, 300);';
     html += '  } else {';
     html += '    fc.style.transform = "translateX(0)";';
     html += '    fc.classList.remove("swiping"); renderBasket();';
+    html += '    if (diff > -30 && diff < 30) { openSheet(); }';
     html += '  }';
     html += '});';
+
+    html += 'function clearCartDirect() {';
+    html += '  cart = []; payments = [];';
+    html += '  localStorage.removeItem("wh_cart_kupidon");';
+    html += '  renderBasket();';
+    html += '}';
 
     html += 'loadCart();';
     
@@ -1580,9 +1702,7 @@ function setupWarehouse(app, bot) {
     html += 'function clearCart() {';
     html += '  showConfirm("Очистка", "Вы уверены, что хотите удалить все ';
     html += 'товары из корзины?", function() {';
-    html += '    cart = []; payments = [];';
-    html += '    localStorage.removeItem("wh_cart_kupidon");';
-    html += '    renderBasket();';
+    html += '    clearCartDirect();';
     html += '    closeSheet();';
     html += '  }, true);';
     html += '}';
@@ -1796,6 +1916,12 @@ function setupWarehouse(app, bot) {
     html += '}';
 
     html += 'function closeSuccess() { window.location.reload(); }';
+    
+    html += 'function toggleMenu() {';
+    html += '  document.getElementById("sidebar").classList.toggle("open");';
+    html += '  document.getElementById("overlay").classList.toggle("open");';
+    html += '}';
+    
     html += '<\/script></body></html>';
     res.send(html);
   });
@@ -1851,7 +1977,7 @@ function setupWarehouse(app, bot) {
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
-  // 16. Экран Списка накладных
+// 16. Экран Списка накладных
   app.get('/warehouse/receipts', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
@@ -1885,7 +2011,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" ';
-    html += 'class="back">←</a><h2 style="margin:0;">📥 Приходы</h2></div>';
+    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+    html += 'align-items:center;">' + getIconSvg('receipt') + 'Приходы</h2></div>';
     html += '<a href="/warehouse/receipt/new" class="btn-new">';
     html += '+ Создать накладную</a>';
     html += '<div id="list">Загрузка...</div>';
@@ -1983,7 +2110,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).send('Ошибка создания'); }
   });
 
-  // 20. Экран Редактирования черновика (с фото и подсказками)
+  // 20. Экран Редактирования черновика
   app.get('/warehouse/receipt/edit', (req, res) => {
     const receiptId = req.query.id;
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
@@ -2028,7 +2155,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse/receipts" ';
-    html += 'class="back">←</a><h2 style="margin:0;">📥 Накладная</h2></div>';
+    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+    html += 'align-items:center;">' + getIconSvg('receipt') + 'Накладная</h2></div>';
     
     html += '<div class="card">';
     html += '<label>Название</label>';
@@ -2081,7 +2209,6 @@ function setupWarehouse(app, bot) {
     html += '<script>';
     html += 'var receiptId = "' + receiptId + '";';
     html += 'var currentLastCost = 0; var itemsCatalog = [];';
-    html += 'var uploadedPhotoUrl = "";';
     
     html += 'function checkCat() {';
     html += '  var sel = document.getElementById("itemCategory");';
@@ -2189,17 +2316,34 @@ function setupWarehouse(app, bot) {
     html += 'document.getElementById("photoPreview").style.display = "none";';
     html += 'document.getElementById("costDiff").innerText = "";';
     html += 'renderList(d.items); } else showAlert("Ошибка", d.error, false);';
+    html += '    }).catch(function() { ';
+    html += '      btn.disabled = false; btn.innerText = "+ Добавить в накладную"; ';
+    html += '      showAlert("Ошибка", "Сбой сохранения", false); ';
     html += '    });';
     html += '  };';
 
     html += '  if (f) {';
     html += '    var rd = new FileReader();';
     html += '    rd.onload = function(e) {';
-    html += '      fetch("/api/warehouse/upload", { method: "POST", ';
-    html += '      headers: { "Content-Type": "application/json" }, ';
-    html += '      body: JSON.stringify({ image: e.target.result }) })';
-    html += '      .then(function(r) { return r.json(); })';
-    html += '      .then(function(d) { finish(d.ok ? d.url : null); });';
+    html += '      var img = new Image();';
+    html += '      img.onload = function() {';
+    html += '        var canvas = document.createElement("canvas");';
+    html += '        var MAX = 800;';
+    html += '        var w = img.width, h = img.height;';
+    html += '        if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }';
+    html += '        else { if (h > MAX) { w *= MAX / h; h = MAX; } }';
+    html += '        canvas.width = w; canvas.height = h;';
+    html += '        var ctx = canvas.getContext("2d");';
+    html += '        ctx.drawImage(img, 0, 0, w, h);';
+    html += '        var dataUrl = canvas.toDataURL("image/jpeg", 0.7);';
+    html += '        fetch("/api/warehouse/upload", { method: "POST", ';
+    html += '        headers: { "Content-Type": "application/json" }, ';
+    html += '        body: JSON.stringify({ image: dataUrl }) })';
+    html += '        .then(function(r) { return r.json(); })';
+    html += '        .then(function(d) { finish(d.ok ? d.url : null); })';
+    html += '        .catch(function() { finish(null); });';
+    html += '      };';
+    html += '      img.src = e.target.result;';
     html += '    };';
     html += '    rd.readAsDataURL(f);';
     html += '  } else { finish(null); }';
@@ -2208,13 +2352,15 @@ function setupWarehouse(app, bot) {
     html += 'function renderList(items) {';
     html += '  var b = document.getElementById("basket"); ';
     html += 'var list = document.getElementById("bList");';
-    html += '  var totalSum = 0;';
-    html += '  if (items.length === 0) { b.style.display = "none"; return; }';
+    html += '  if (!items || !Array.isArray(items) || items.length === 0) { ';
+    html += '    b.style.display = "none"; list.innerHTML = ""; return; ';
+    html += '  }';
     html += '  b.style.display = "block"; list.innerHTML = "";';
+    html += '  var totalSum = 0;';
     html += '  items.forEach(function(item) {';
-    html += '    totalSum += parseFloat(item.sum);';
+    html += '    totalSum += parseFloat(item.sum || 0);';
     html += '    var div = document.createElement("div"); div.className = "b-row";';
-    html += '    var n = document.createElement("span"); n.innerText = item.name;';
+    html += '    var n = document.createElement("span"); n.innerText = item.name || "Товар";';
     html += '    var p = document.createElement("span"); ';
     html += 'p.innerText = fmtNum(item.qty) + " x " + fmtNum(item.unit_cost) + " ₽";';
     html += '    div.appendChild(n); div.appendChild(p); list.appendChild(div);';
@@ -2257,7 +2403,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // 22. API добавления позиции (с категорией, фото, дублями)
+  // 22. API добавления позиции
   app.post('/api/warehouse/receipt/item/add', async (req, res) => {
     try {
       const { receipt_id, qty, price, retail, cat_id, unit, photo_url } = req.body;
@@ -2387,7 +2533,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // 24. Экран Списания (с модалкой ввода)
+  // 24. Экран Списания
   app.get('/warehouse/writeoff', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
@@ -2437,7 +2583,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a>';
-    html += '<h2 style="margin:0;">🗑 Списание</h2></div>';
+    html += '<h2 style="margin:0; display:flex; align-items:center;">' + 
+            getIconSvg('writeoff') + 'Списание</h2></div>';
     
     html += '<div class="basket" id="basket">';
     html += '<h3 style="margin-top:0; font-size:16px;">Выбрано:</h3><div id="bList"></div>';
@@ -2705,7 +2852,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" ';
-    html += 'class="back">←</a><h2 style="margin:0;">📑 Документы</h2></div>';
+    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+    html += 'align-items:center;">' + getIconSvg('docs') + 'Документы</h2></div>';
     html += '<div class="tabs">';
     html += '<a href="/warehouse/documents?type=receipts" ';
     html += 'class="tab" id="tab-receipts">Приходы</a>';
@@ -2814,7 +2962,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse/documents" ';
-    html += 'class="back">←</a><h2 style="margin:0;">📄 Документ</h2></div>';
+    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+    html += 'align-items:center;">' + getIconSvg('docs') + 'Документ</h2></div>';
     html += '<div class="card" id="content">Загрузка...</div>';
     
     html += '<script>';
@@ -2981,7 +3130,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" ';
-    html += 'class="back">←</a><h2 style="margin:0;">📊 Отчёты</h2></div>';
+    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+    html += 'align-items:center;">' + getIconSvg('reports') + 'Отчёты</h2></div>';
     
     html += '<div class="filters">';
     html += '<div class="filter" id="f-today" ';
@@ -3083,7 +3233,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a>';
-    html += '<h2 style="margin:0;">👥 Флористы</h2></div><div id="list"></div>';
+    html += '<h2 style="margin:0; display:flex; align-items:center;">' + 
+            getIconSvg('staff') + 'Флористы</h2></div><div id="list"></div>';
     
     html += '<script>';
     html += 'fetch("/api/warehouse/staff?shop=kupidon")';
@@ -3213,7 +3364,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" ';
-    html += 'class="back">←</a><h2 style="margin:0;">⚙️ Настройки</h2></div>';
+    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
+    html += 'align-items:center;">' + getIconSvg('settings') + 'Настройки</h2></div>';
     
     html += '<div class="card"><h3 style="margin-top:0;">Уведомления</h3>';
     html += '<div id="notifs"></div></div>';
@@ -3280,8 +3432,7 @@ function setupWarehouse(app, bot) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-
-  // 40. API Истории
+// 40. API Истории
   app.get('/api/warehouse/history', async (req, res) => {
     try {
       const shopId = req.query.shop || 'kupidon';
@@ -3372,7 +3523,8 @@ function setupWarehouse(app, bot) {
     html += '</style></head><body>';
     
     html += '<div class="header"><a href="/warehouse-app" class="back">←</a>';
-    html += '<h2 style="margin:0;">📋 История</h2></div>';
+    html += '<h2 style="margin:0; display:flex; align-items:center;">' + 
+            getIconSvg('history') + 'История</h2></div>';
     html += '<div class="calendar" id="calendar"></div>';
     html += '<div id="list">Загрузка...</div>';
     
