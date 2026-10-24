@@ -33,13 +33,13 @@ async function initWarehouseDb() {
       id SERIAL PRIMARY KEY,
       shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
         ON DELETE CASCADE,
-      item_id INTEGER NOT NULL REFERENCES wh_items(id)
+)      item_id INTEGER NOT NULL REFERENCES wh_items(id)
         ON DELETE RESTRICT,
-      custom_name VARCHAR(200),
-      min_stock NUMERIC(10,3) DEFAULT 0,
-      avg_cost NUMERIC(10,2) DEFAULT 0,
+      custom DEFAULT_name VARCHAR(200),
+      min_stock NUMERIC(10,3)  DEFAULT 0,
+      avg_cost NUMERIC(10,20) DEFAULT 0,
       last_cost NUMERIC(10,2) DEFAULT 0,
-      current_stock NUMERIC(10,3) DEFAULT 0,
+      current_stock NUMERIC(10,3,
       retail_price NUMERIC(10,2) DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (shop_id, item_id)
@@ -238,6 +238,12 @@ async function initWarehouseDb() {
     'IF NOT EXISTS ref_id INTEGER'
   );
 
+  // ДОБАВЛЕНО: Поле для закрепления товара (огонек)
+  await pool.query(
+    'ALTER TABLE wh_shop_items ADD COLUMN ' +
+    'IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE'
+  );
+
   // Подготовка к интеграции с витриной
   await pool.query(
     'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS ' +
@@ -324,7 +330,7 @@ async function initWarehouseDb() {
   const defaultCats = [
     'Цветы', 'Упаковка', 'Декор', 'Игрушки', 'Канцелярия'
   ];
-
+  
   for (var i = 0; i < defaultCats.length; i++) {
     var catName = defaultCats[i];
     var checkRes = await pool.query(
@@ -338,7 +344,7 @@ async function initWarehouseDb() {
     }
   }
 
-  console.log('✅ Таблицы склада готовы (v5.0)');
+  console.log('✅ Таблицы склада готовы (v5.4)');
   console.log('✅ Базовые категории проверены');
 }
 
