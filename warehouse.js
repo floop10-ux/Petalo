@@ -20,7 +20,6 @@ async function initWarehouseDb() {
         ON DELETE SET NULL,
       name VARCHAR(200) NOT NULL,
       unit VARCHAR(10) NOT NULL DEFAULT 'шт'
-        CHECK (unit IN ('шт','г','м','уп')),
       photo_url TEXT,
       photo_url_backup TEXT,
       is_active BOOLEAN DEFAULT TRUE,
