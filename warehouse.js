@@ -19,7 +19,7 @@ async function initWarehouseDb() {
       category_id INTEGER REFERENCES wh_categories(id)
         ON DELETE SET NULL,
       name VARCHAR(200) NOT NULL,
-      unit VARCHAR(10) NOT NULL DEFAULT 'шт'
+      unit VARCHAR(10) NOT NULL DEFAULT 'шт',
       photo_url TEXT,
       photo_url_backup TEXT,
       is_active BOOLEAN DEFAULT TRUE,
@@ -324,7 +324,7 @@ async function initWarehouseDb() {
   const defaultCats = [
     'Цветы', 'Упаковка', 'Декор', 'Игрушки', 'Канцелярия'
   ];
-  
+
   for (var i = 0; i < defaultCats.length; i++) {
     var catName = defaultCats[i];
     var checkRes = await pool.query(
