@@ -33,13 +33,13 @@ async function initWarehouseDb() {
       id SERIAL PRIMARY KEY,
       shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
         ON DELETE CASCADE,
-)      item_id INTEGER NOT NULL REFERENCES wh_items(id)
+      item_id INTEGER NOT NULL REFERENCES wh_items(id)
         ON DELETE RESTRICT,
-      custom DEFAULT_name VARCHAR(200),
-      min_stock NUMERIC(10,3)  DEFAULT 0,
-      avg_cost NUMERIC(10,20) DEFAULT 0,
+      custom_name VARCHAR(200),
+      min_stock NUMERIC(10,3) DEFAULT 0,
+      avg_cost NUMERIC(10,2) DEFAULT 0,
       last_cost NUMERIC(10,2) DEFAULT 0,
-      current_stock NUMERIC(10,3,
+      current_stock NUMERIC(10,3) DEFAULT 0,
       retail_price NUMERIC(10,2) DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (shop_id, item_id)
