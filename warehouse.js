@@ -177,6 +177,18 @@ async function initWarehouseDb() {
     );
   `);
 
+  // 12. Рецепты букетов (Связка с витриной)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wh_bouquet_recipes (
+      id SERIAL PRIMARY KEY,
+      bouquet_id INTEGER NOT NULL REFERENCES bouquets(id)
+        ON DELETE CASCADE,
+      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
+        ON DELETE CASCADE,
+      qty NUMERIC(10,3) NOT NULL DEFAULT 1
+    );
+  `);
+
   // --- МИГРАЦИИ ---
   await pool.query(
     'ALTER TABLE wh_items ADD COLUMN ' +
@@ -225,6 +237,16 @@ async function initWarehouseDb() {
   await pool.query(
     'ALTER TABLE wh_audit_log ADD COLUMN ' +
     'IF NOT EXISTS ref_id INTEGER'
+  );
+
+  // Подготовка к интеграции с витриной
+  await pool.query(
+    'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS ' +
+    'wh_linked BOOLEAN DEFAULT FALSE'
+  );
+  await pool.query(
+    'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS ' +
+    'lifetime_type VARCHAR(20) DEFAULT \'auto_3_days\''
   );
 
   // Смена типов с INTEGER на NUMERIC(10,2)
