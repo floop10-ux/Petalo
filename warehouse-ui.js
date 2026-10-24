@@ -552,7 +552,7 @@ function setupWarehouse(app, bot) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-// 7. API Истории товара (с защитой ID)
+  // 7. API Истории товара (с защитой ID)
   app.get('/api/warehouse/item/history', async (req, res) => {
     try {
       const itemId = parseInt(req.query.id);
@@ -621,7 +621,7 @@ function setupWarehouse(app, bot) {
     }
   });
 
-  // 8. API Переименования (с капитализацией)
+  // 8. API Переименования
   app.post('/api/warehouse/item/rename', async (req, res) => {
     try {
       const itemId = req.body.id;
@@ -962,7 +962,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // 37. Экран Журнала (Редизайн с клиентскими иконками)
+  // 37. Экран Журнала (с фиксом загрузки)
   app.get('/warehouse/audit', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
@@ -1011,11 +1011,12 @@ function setupWarehouse(app, bot) {
     html += '  return "<svg class=\'svg-ico\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'><circle cx=\'12\' cy=\'12\' r=\'3\'/></svg>";';
     html += '}';
     
+    html += 'var listEl = document.getElementById("list");';
     html += 'fetch("/api/warehouse/audit?shop=kupidon")';
     html += '.then(function(r) { return r.json(); }).then(function(d) { ';
-    html += 'var b = document.getElementById("list"); b.innerHTML = ""; ';
+    html += 'listEl.innerHTML = ""; ';
     html += 'if (!d.ok || d.logs.length === 0) { ';
-    html += 'b.innerHTML = "Журнал пуст"; return; } ';
+    html += 'listEl.innerHTML = "Журнал пуст"; return; } ';
     
     html += 'd.logs.forEach(function(l) { ';
     html += 'var div = document.createElement("div"); ';
@@ -1053,8 +1054,8 @@ function setupWarehouse(app, bot) {
     html += '}';
     
     html += 'div.innerHTML = hc;';
-    html += 'b.appendChild(div); }); });';
-    html += '.catch(function(err) { b.innerHTML = "Ошибка загрузки журнала"; });';
+    html += 'listEl.appendChild(div); }); ';
+    html += '}).catch(function() { listEl.innerHTML = "Ошибка загрузки"; });';
     html += '<\/script></body></html>';
     res.send(html);
   });
@@ -1234,7 +1235,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // 14. Экран Продажи (Касса) - Компактный Numpad
+  // 14. Экран Продажи (Касса) - Компактный Numpad + Фикс кнопки
   app.get('/warehouse/sale', async (req, res) => {
     const cookie = req.headers.cookie || '';
     const match = cookie.match(/wh_auth=(\d+)/);
@@ -1354,7 +1355,7 @@ function setupWarehouse(app, bot) {
     html += 'border-radius: 5px; }';
     html += '.close-sheet { background: none; border: none; font-size: 24px; ';
     html += 'color: #888; cursor: pointer; padding: 0; line-height: 1; }';
-    html += '.sheet-content { padding: 0 15px 15px 15px; overflow-y: auto; ';
+    html += '.sheet-content { padding: 0 15px; overflow-y: auto; ';
     html += 'flex: 1; }';
     
     html += '.b-row { display: grid; grid-template-columns: 1fr 110px 30px; ';
@@ -1381,7 +1382,7 @@ function setupWarehouse(app, bot) {
     html += 'font-size: 16px; font-weight: bold; white-space: nowrap; ';
     html += 'flex-shrink: 0; }';
     
-    // Правка 2: Компактный калькулятор
+    // Компактный Numpad
     html += '.numpad { display: grid; grid-template-columns: 1fr 1fr 1fr; ';
     html += 'gap: 5px; margin-top: 5px; }';
     html += '.numpad button { padding: 12px; font-size: 18px; border: none; ';
@@ -1390,7 +1391,7 @@ function setupWarehouse(app, bot) {
     
     html += '.btn-submit { width: 100%; padding: 14px; font-size: 16px; ';
     html += 'font-weight: 800; color: #fff; background: #ccc; border: none; ';
-    html += 'border-radius: 14px; margin-top: 10px; }';
+    html += 'border-radius: 14px; margin-top: 0; }';
     html += '.btn-submit.ready { background: ' + successColor + '; }';
     html += '.total-inp { font-size:24px; font-weight:800; width:100%; ';
     html += 'border:none; background:#fff; padding:15px; border-radius:12px; ';
@@ -1472,7 +1473,7 @@ function setupWarehouse(app, bot) {
 
     html += '<div style="margin-top:15px;" id="payArea">';
     html += '<div class="pay-input-row">';
-    // Правка 3: Автоскролл при нажатии на поле суммы
+    // Автоскролл при нажатии на поле суммы
     html += '<input type="text" id="payAmount" placeholder="Сумма" ';
     html += 'inputmode="none" onclick="this.select(); scrollToPay();">';
     html += '<button onclick="addPayment()">Внести</button>';
@@ -1497,12 +1498,17 @@ function setupWarehouse(app, bot) {
     html += '<div class="pay-list" id="payList" ';
     html += 'style="font-size:14px; margin-top:10px;"></div>';
     html += '<div style="text-align:center; margin-top:10px; ';
-    html += 'font-size:16px; font-weight:800;" id="remainTxt"></div>';
-    
-    html += '<button class="btn-submit" id="btnSubmit" ';
+    html += 'font-size:16px; font-weight:800; padding-bottom: 10px;" ';
+    html += 'id="remainTxt"></div>';
+    html += '</div>'; // Закрываем sheet-content
+
+    // Кнопка "Принять оплату" - всегда внизу, вне скролла
+    html += '<div style="padding: 10px 15px 20px 15px; background: #fafaf8; border-top: 1px solid #eee;">';
+    html += '<button class="btn-submit" id="btnSubmit" style="margin-top:0;" ';
     html += 'onclick="saveSale()">Принять оплату</button>';
     html += '</div>';
-    html += '</div>';
+    
+    html += '</div>'; // Закрываем bottom-sheet
     
     html += '<div class="sidebar-overlay" id="overlay" ';
     html += 'onclick="toggleMenu()"></div>';
@@ -1577,10 +1583,11 @@ function setupWarehouse(app, bot) {
     html += '  if (c) { try { cart = JSON.parse(c); } catch(e) { cart = []; } }';
     html += '}';
 
+    // Правка: скролл контента панели
     html += 'function scrollToPay() {';
-    html += '  var btn = document.getElementById("btnSubmit");';
-    html += '  if (btn) {';
-    html += '    btn.scrollIntoView({ behavior: "smooth", block: "end" });';
+    html += '  var content = document.querySelector(".sheet-content");';
+    html += '  if (content) {';
+    html += '    content.scrollTo({ top: content.scrollHeight, behavior: "smooth" });';
     html += '  }';
     html += '}';
 
@@ -1770,7 +1777,7 @@ function setupWarehouse(app, bot) {
     html += '    b.appendChild(div);';
     html += '  });';
     html += '  document.getElementById("totalPrice").value = total;';
-    // Правка 1: Автосинхронизация суммы оплаты
+    // Правка: Автосинхронизация суммы оплаты
     html += '  if (payments.length === 0) { ';
     html += '    document.getElementById("payAmount").value = total; ';
     html += '  }';
@@ -1785,7 +1792,7 @@ function setupWarehouse(app, bot) {
     html += '  resetPayments();';
     html += '}';
 
-    // Правка 1: Автосинхронизация при ручном вводе
+    // Правка: Автосинхронизация при ручном вводе
     html += 'function onManualPriceChange() {';
     html += '  var total = parseFloat(document.getElementById("totalPrice").value) || 0;';
     html += '  if (payments.length === 0) {';
@@ -1826,12 +1833,13 @@ function setupWarehouse(app, bot) {
     html += '  var paid = 0;';
     html += '  var pl = document.getElementById("payList"); pl.innerHTML = "";';
     
+    // ФИКС КАВЫЧЕК ЗДЕСЬ
     html += '  payments.forEach(function(p) {';
     html += '    paid += p.amount;';
     html += '    var mn = p.method === "cash" ? "Нал" : ';
     html += '(p.method === "card" ? "Карта" : "QR");';
     html += '    var rowHtml = "<div style=\'display:flex; justify-content:space-between; ';
-    html += 'color:" + successColor + ";font-weight:bold;\'><span>" + mn + "</span>";';
+    html += 'color:' + successColor + ';font-weight:bold;\'><span>" + mn + "</span>";';
     html += '    rowHtml += "<span>" + p.amount + " ₽</span></div>";';
     html += '    pl.innerHTML += rowHtml;';
     html += '  });';
@@ -2315,6 +2323,7 @@ function setupWarehouse(app, bot) {
 
     html += 'function addToBasket() {';
     html += '  var name = document.getElementById("itemName").value;';
+    // Правка №4: защита от запятых в полях
     html += '  var qty = document.getElementById("itemQty").value.replace(",", ".");';
     html += '  var price = document.getElementById("itemPrice").value.replace(",", ".");';
     html += '  var retail = document.getElementById("itemRetail").value.replace(",", ".") || 0;';
@@ -2337,7 +2346,11 @@ function setupWarehouse(app, bot) {
     html += '    body: JSON.stringify({ receipt_id: receiptId, name: name, ';
     html += '    qty: qty, price: price, retail: retail, cat_id: catId, ';
     html += '    unit: unit, photo_url: url }) })';
-    html += '    .then(function(r) { return r.json(); }).then(function(d) {';
+    // Правка №5: Диагностика ошибок сервера
+    html += '    .then(function(r) { ';
+    html += '      if (!r.ok) throw new Error("Сбой сервера: " + r.status); ';
+    html += '      return r.json(); ';
+    html += '    }).then(function(d) {';
     html += '      btn.disabled = false; btn.innerText = "+ Добавить в накладную";';
     html += '      if (d.ok) { ';
     html += 'document.getElementById("itemName").value = ""; ';
@@ -2350,7 +2363,7 @@ function setupWarehouse(app, bot) {
     html += 'renderList(d.items); } else showAlert("Ошибка", d.error, false);';
     html += '    }).catch(function(err) { ';
     html += '      btn.disabled = false; btn.innerText = "+ Добавить в накладную"; ';
-    html += '      showAlert("Ошибка сети", "Сервер не отвечает или пропал интернет. Попробуйте нажать еще раз.", false); ';
+    html += '      showAlert("Ошибка", "Сбой: " + err.message, false); ';
     html += '    });';
     html += '  };';
 
@@ -2439,8 +2452,18 @@ function setupWarehouse(app, bot) {
   app.post('/api/warehouse/receipt/item/add', async (req, res) => {
     try {
       const { receipt_id, retail, cat_id, unit, photo_url } = req.body;
-      const name = capWords(String(req.body.name || '').trim());
       
+      if (!receipt_id) {
+        return res.json({ ok: false, error: 'Не передан ID накладной' });
+      }
+      const checkR = await pool.query(
+        'SELECT id FROM wh_receipts WHERE id = $1', [receipt_id]
+      );
+      if (checkR.rows.length === 0) {
+        return res.json({ ok: false, error: 'Накладная не найдена в базе' });
+      }
+
+      const name = capWords(String(req.body.name || '').trim());
       const numQty = parseFloat(String(req.body.qty).replace(',', '.'));
       const numPrice = parseFloat(String(req.body.price).replace(',', '.'));
       
@@ -3380,7 +3403,7 @@ function setupWarehouse(app, bot) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // 39. Экран Настроек (с порогом списаний)
+  // 39. Экран Настроек
   app.get('/warehouse/settings', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
