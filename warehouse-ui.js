@@ -67,6 +67,8 @@ function fmtNum(n) {
     num.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+// Фикс: кириллица тоже капитализируется
+
 function capWords(str) {
   if (!str) return '';
   return String(str).replace(
@@ -76,11 +78,10 @@ function capWords(str) {
     }
   );
 }
-
-function setupWarehouse(app, bot, s3ctx) {
+function setupWarehouse(app, bot, sup3ctx) {
+  // = ====== S3 КОНТ sЕКСТ ======
   s3ctx = s3ctx || {};
-  const s3 = s3ctx.s3 || null;
-  const s3backup = s3ctx.s3backup || null;
+  const s3 = s3ctx.s33 ||ctx.s3backup || null;
   const YC_BUCKET = s3ctx.YC_BUCKET || null;
   const BC_BUCKET = s3ctx.BC_BUCKET || null;
   const BC_ENDPOINT = s3ctx.BC_ENDPOINT || null;
@@ -215,6 +216,27 @@ function setupWarehouse(app, bot, s3ctx) {
       body { -webkit-user-select: none; user-select: none; }
       input, textarea {
         -webkit-user-select: text; user-select: text; }
+        
+      /* Правка 1: Подсветка активного поля */
+      .input-active {
+        border: 2px solid ${brandColor} !important;
+        box-shadow: 0 0 8px rgba(15,61,62,0.2) !important;
+        background: #fff !important;
+      }
+
+      /* Правка 11: Адаптация под планшет */
+      @media (min-width: 768px) {
+        .bottom-sheet {
+          width: 400px; left: auto; right: 0;
+          height: 100vh; bottom: 0;
+          border-radius: 24px 0 0 24px;
+          transform: translateX(100%);
+          transition: transform 0.3s ease;
+        }
+        .bottom-sheet.open { transform: translateX(0); }
+        .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important; }
+        .b-row { grid-template-columns: 1fr 140px 40px !important; font-size: 16px; }
+      }
     </style>
     <div class="custom-modal-overlay" id="uiModal">
       <div class="custom-modal">
@@ -575,7 +597,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 6. ОБЗОР СКЛАДА ======
+  // ====== 6. ОБЗОР СКЛАДА (ПЛИТКА/СТРОКИ + ПАГИНАЦИЯ) ======
   app.get('/warehouse/inventory', (req, res) => {
     let html = '<!DOCTYPE html><html><head>';
     html += '<meta charset="UTF-8">';
@@ -589,7 +611,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'padding: 15px; background: ' + bgGradient + '; ';
     html += 'color: ' + brandColor + '; }';
     html += '.header { display: flex; align-items: center; ';
-    html += 'margin-bottom: 15px; }';
+    html += 'margin-bottom: 15px; justify-content: space-between; }';
     html += '.back { font-size: 24px; text-decoration: none; ';
     html += 'color: ' + brandColor + '; margin-right: 15px; }';
     html += '.search { width: 100%; padding: 12px; border: none; ';
@@ -606,132 +628,168 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
     html += '.cat-btn.active { background: ' + brandColor + '; ';
     html += 'color: #fff; }';
-    html += '.grid { display: grid; grid-template-columns: 1fr 1fr; ';
-    html += 'gap: 10px; }';
-    html += '.card { background: #fff; padding: 10px; ';
-    html += 'border-radius: 16px; text-align: center; ';
-    html += 'text-decoration: none; color: ' + brandColor + '; ';
-    html += 'position: relative; ';
-    html += 'box-shadow: 0 4px 15px rgba(15,61,62,0.05); }';
-    html += '.card img { width: 100%; height: 80px; ';
-    html += 'object-fit: cover; border-radius: 12px; ';
-    html += 'margin-bottom: 5px; }';
-    html += '.card .ph { height: 80px; border-radius: 12px; ';
-    html += 'background: #F0F4F4; display: flex; ';
-    html += 'align-items: center; justify-content: center; ';
-    html += 'margin-bottom: 5px; }';
-    html += '.card .ph svg { width: 32px; height: 32px; }';
-    html += '.name { font-size: 13px; font-weight: 600; ';
-    html += 'margin-bottom: 4px; }';
+    
+    // Стили для настроек отображения
+    html += '.controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }';
+    html += '.view-toggles { display: flex; gap: 5px; background: #e0e0e0; padding: 4px; border-radius: 10px; }';
+    html += '.view-btn { border: none; background: none; padding: 6px 10px; border-radius: 8px; cursor: pointer; color: #666; display: flex; align-items: center; justify-content: center; }';
+    html += '.view-btn.active { background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); color: ' + brandColor + '; }';
+    html += '.view-btn svg { width: 20px; height: 20px; }';
+    html += '.limit-select { padding: 8px; border-radius: 10px; border: 1px solid #ddd; font-family: inherit; font-weight: 600; color: ' + brandColor + '; background: #fff; }';
+
+    // Стили для сетки (плитка)
+    html += '.grid-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }';
+    html += '.card-tile { background: #fff; padding: 10px; border-radius: 16px; text-align: center; text-decoration: none; color: ' + brandColor + '; position: relative; box-shadow: 0 4px 15px rgba(15,61,62,0.05); }';
+    html += '.card-tile img { width: 100%; height: 80px; object-fit: cover; border-radius: 12px; margin-bottom: 5px; }';
+    html += '.card-tile .ph { height: 80px; border-radius: 12px; background: #F0F4F4; display: flex; align-items: center; justify-content: center; margin-bottom: 5px; }';
+    html += '.card-tile .ph svg { width: 32px; height: 32px; }';
+    
+    // Стили для списка (строки)
+    html += '.grid-rows { display: flex; flex-direction: column; gap: 8px; }';
+    html += '.card-row { background: #fff; padding: 10px 15px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; text-decoration: none; color: ' + brandColor + '; box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
+    html += '.card-row .row-left { display: flex; align-items: center; gap: 12px; }';
+    html += '.card-row img, .card-row .ph { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }';
+    html += '.card-row .ph { background: #F0F4F4; display: flex; align-items: center; justify-content: center; }';
+    html += '.card-row .ph svg { width: 20px; height: 20px; }';
+    
+    html += '.name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }';
+    html += '.card-row .name { font-size: 15px; margin-bottom: 0; }';
     html += '.stock { font-size: 12px; font-weight: 800; }';
-    html += '.green { color: ' + successColor + '; } ';
-    html += '.red { color: ' + dangerColor + '; }';
-    html += '.pin-icon { position: absolute; top: 6px; right: 6px; ';
-    html += 'color: #E67E22; }';
+    html += '.green { color: ' + successColor + '; } .red { color: ' + dangerColor + '; }';
+    html += '.pin-icon { position: absolute; top: 6px; right: 6px; color: #E67E22; }';
+    html += '.card-row .pin-icon { position: static; margin-left: 5px; }';
     html += '</style></head><body>';
 
-    html += '<div class="header"><a href="/warehouse-app" ';
-    html += 'class="back">←</a><h2 style="margin:0; display:flex; ';
-    html += 'align-items:center;">';
-    html += getIconSvg('inventory') + 'Обзор</h2></div>';
-    html += '<input type="text" class="search" id="search" ';
-    html += 'placeholder="🔍 Поиск..." onkeyup="applyFilters()">';
+    html += '<div class="header">';
+    html += '<div style="display:flex; align-items:center;">';
+    html += '<a href="/warehouse-app" class="back">←</a>';
+    html += '<h2 style="margin:0; display:flex; align-items:center;">';
+    html += getIconSvg('inventory') + 'Обзор</h2></div></div>';
+    
+    html += '<input type="text" class="search" id="search" placeholder="🔍 Поиск..." onkeyup="applyFilters()">';
+    
+    html += '<div class="controls">';
+    html += '  <div class="view-toggles">';
+    html += '    <button class="view-btn active" id="btn-view-tile" onclick="setViewMode(\'tile\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></button>';
+    html += '    <button class="view-btn" id="btn-view-row" onclick="setViewMode(\'row\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>';
+    html += '  </div>';
+    html += '  <select class="limit-select" id="limitSelect" onchange="setLimit(this.value)">';
+    html += '    <option value="10">10 шт</option>';
+    html += '    <option value="30">30 шт</option>';
+    html += '    <option value="50">50 шт</option>';
+    html += '    <option value="100">100 шт</option>';
+    html += '  </select>';
+    html += '</div>';
+
     html += '<div class="h-scroll" id="catList">';
-    html += '<button class="cat-btn active" id="cat-0" ';
-    html += 'onclick="setCat(0)">Все</button></div>';
-    html += '<div class="grid" id="itemsGrid"></div>';
+    html += '<button class="cat-btn active" id="cat-0" onclick="setCat(0)">Все</button></div>';
+    
+    html += '<div id="itemsContainer"></div>';
+    html += '<div id="pagination" style="display:flex; justify-content:center; gap:10px; margin-top:20px;"></div>';
 
     html += '<script>';
     html += 'var allItems = []; var currentCat = 0;';
-    html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4">';
-    html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
-    html += 'L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3';
-    html += 'C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5';
-    html += 'C2,15.5 3.5,17.5 6.5,17.5C7.21,17.5 7.87,17.36 ';
-    html += '8.5,17.12C11.24,16.08 13.44,14.57 15,12.5';
-    html += 'C15,12.5 15.5,14.5 15.5,16.5C15.5,18.5 14.5,20 ';
-    html += '14.5,20C17,20 19.5,17.5 20.5,14.5C21.5,11.5 ';
-    html += '21.5,8 21.5,8C21.5,8 19.5,6 17,8Z"/></svg>\';';
+    html += 'var currentPage = 1; var pageLimit = 10; var viewMode = "tile";';
+    
+    html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.5,17.5 6.5,17.5C7.21,17.5 7.87,17.36 8.5,17.12C11.24,16.08 13.44,14.57 15,12.5C15,12.5 15.5,14.5 15.5,16.5C15.5,18.5 14.5,20 14.5,20C17,20 19.5,17.5 20.5,14.5C21.5,11.5 21.5,8 21.5,8C21.5,8 19.5,6 17,8Z"/></svg>\';';
     html += 'var pinSvg = \'<svg class="pin-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>\';';
 
-    html += 'function fmtNum(n) {';
-    html += '  var num = parseFloat(n);';
-    html += '  if (isNaN(num)) return "0";';
-    html += '  return num % 1 === 0 ? num.toString() : ';
-    html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "");';
+    html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) return "0"; return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
+
+    // Загрузка настроек из памяти
+    html += 'if (localStorage.getItem("wh_view_mode")) viewMode = localStorage.getItem("wh_view_mode");';
+    html += 'if (localStorage.getItem("wh_page_limit")) pageLimit = parseInt(localStorage.getItem("wh_page_limit"));';
+    html += 'document.getElementById("limitSelect").value = pageLimit;';
+    html += 'updateViewButtons();';
+
+    html += 'function setViewMode(mode) {';
+    html += '  viewMode = mode; localStorage.setItem("wh_view_mode", mode);';
+    html += '  updateViewButtons(); render();';
+    html += '}';
+    
+    html += 'function updateViewButtons() {';
+    html += '  document.getElementById("btn-view-tile").classList.remove("active");';
+    html += '  document.getElementById("btn-view-row").classList.remove("active");';
+    html += '  document.getElementById("btn-view-" + (viewMode === "tile" ? "tile" : "row")).classList.add("active");';
     html += '}';
 
-    html += 'fetch("/api/warehouse/categories")';
-    html += '.then(function(r) { return r.json(); })';
-    html += '.then(function(d) {';
-    html += '  if (d.ok) {';
-    html += '    var cl = document.getElementById("catList");';
-    html += '    d.categories.forEach(function(c) {';
-    html += '      var b = document.createElement("button");';
-    html += '      b.className = "cat-btn"; b.id = "cat-" + c.id;';
-    html += '      b.innerText = c.name;';
-    html += '      b.onclick = function() { setCat(c.id); };';
-    html += '      cl.appendChild(b);';
-    html += '    });';
-    html += '  }';
-    html += '});';
+    html += 'function setLimit(val) {';
+    html += '  pageLimit = parseInt(val); localStorage.setItem("wh_page_limit", pageLimit);';
+    html += '  currentPage = 1; render();';
+    html += '}';
 
-    html += 'fetch("/api/warehouse/items?shop=kupidon&t=" + Date.now())';
-    html += '.then(function(r) { return r.json(); })';
-    html += '.then(function(d) {';
+    html += 'fetch("/api/warehouse/categories").then(function(r){return r.json();}).then(function(d){';
+    html += '  if (d.ok) { var cl = document.getElementById("catList"); d.categories.forEach(function(c){ var b = document.createElement("button"); b.className = "cat-btn"; b.id = "cat-" + c.id; b.innerText = c.name; b.onclick = function(){setCat(c.id);}; cl.appendChild(b); }); }';
+    html += '}).catch(function(){});';
+
+    html += 'fetch("/api/warehouse/items?shop=kupidon&t=" + Date.now()).then(function(r){return r.json();}).then(function(d){';
     html += '  if (d.ok) { allItems = d.items; applyFilters(); }';
-    html += '});';
+    html += '}).catch(function(){});';
 
     html += 'function setCat(id) {';
-    html += '  currentCat = id;';
-    html += '  var els = document.querySelectorAll(".cat-btn");';
-    html += '  els.forEach(function(el) { el.classList.remove("active"); });';
-    html += '  document.getElementById("cat-" + id)';
-    html += '.classList.add("active");';
-    html += '  applyFilters();';
+    html += '  currentCat = id; currentPage = 1;';
+    html += '  var els = document.querySelectorAll(".cat-btn"); els.forEach(function(el){el.classList.remove("active");});';
+    html += '  document.getElementById("cat-" + id).classList.add("active"); applyFilters();';
     html += '}';
 
     html += 'function applyFilters() {';
-    html += '  var q = document.getElementById("search")';
-    html += '.value.toLowerCase();';
-    html += '  var filtered = allItems.filter(function(i) {';
+    html += '  var q = document.getElementById("search").value.toLowerCase();';
+    html += '  var filtered = allItems.filter(function(i){';
     html += '    var matchQ = i.name.toLowerCase().includes(q);';
-    html += '    var matchC = (currentCat === 0 || ';
-    html += 'i.category_id === currentCat);';
+    html += '    var matchC = (currentCat === 0 || i.category_id === currentCat);';
     html += '    return matchQ && matchC;';
     html += '  });';
-    html += '  render(filtered);';
+    html += '  currentPage = 1; render(filtered);';
     html += '}';
 
+    html += 'var filteredItems = [];';
+
     html += 'function render(items) {';
-    html += '  var g = document.getElementById("itemsGrid");';
-    html += '  g.innerHTML = "";';
-    html += '  items.forEach(function(i) {';
+    html += '  if (items) filteredItems = items;';
+    html += '  var totalPages = Math.ceil(filteredItems.length / pageLimit) || 1;';
+    html += '  if (currentPage > totalPages) currentPage = totalPages;';
+    html += '  var start = (currentPage - 1) * pageLimit;';
+    html += '  var end = start + pageLimit;';
+    html += '  var pageItems = filteredItems.slice(start, end);';
+    html += '  var container = document.getElementById("itemsContainer");';
+    html += '  container.className = viewMode === "tile" ? "grid-tiles" : "grid-rows";';
+    html += '  container.innerHTML = "";';
+    
+    html += '  if (pageItems.length === 0) {';
+    html += '    container.innerHTML = "<div style=\'text-align:center;padding:30px;color:#888;\'>Ничего не найдено</div>";';
+    html += '  }';
+    
+    html += '  pageItems.forEach(function(i) {';
     html += '    var a = document.createElement("a");';
-    html += '    a.className = "card";';
     html += '    a.href = "/warehouse/item?id=" + i.id;';
-    html += '    var img = i.photo_url ? ';
-    html += '\'<img src="\' + i.photo_url + \'">\' : ';
-    html += '\'<div class="ph">\' + svgPh + \'</div>\';';
-    html += '    var cl = parseFloat(i.current_stock) > 0 ? ';
-    html += '"green" : "red";';
+    html += '    var cl = parseFloat(i.current_stock) > 0 ? "green" : "red";';
     html += '    var unit = i.unit || "шт";';
-    html += '    var nm = document.createElement("div");';
-    html += '    nm.className = "name"; nm.textContent = i.name;';
-    html += '    var st = document.createElement("div");';
-    html += '    st.className = "stock " + cl;';
-    html += '    st.textContent = fmtNum(i.current_stock) + ';
-    html += '" " + unit;';
-    html += '    a.innerHTML = img;';
-    html += '    if (i.is_pinned) { a.innerHTML += pinSvg; }';
-    html += '    a.appendChild(nm); a.appendChild(st);';
-    html += '    g.appendChild(a);';
+    html += '    var imgHtml = i.photo_url ? \'<img src="\' + i.photo_url + \'">\' : \'<div class="ph">\' + svgPh + \'</div>\';';
+    html += '    var pinHtml = i.is_pinned ? pinSvg : "";';
+    
+    // Отрисовка в зависимости от режима
+    html += '    if (viewMode === "tile") {';
+    html += '      a.className = "card-tile";';
+    html += '      a.innerHTML = imgHtml + pinHtml + \'<div class="name">\' + i.name + \'</div><div class="stock \' + cl + \'">\' + fmtNum(i.current_stock) + \' \' + unit + \'</div>\';';
+    html += '    } else {';
+    html += '      a.className = "card-row";';
+    html += '      a.innerHTML = \'<div class="row-left">\' + imgHtml + \'<div><div class="name">\' + i.name + pinHtml + \'</div></div></div>\' + \'<div class="stock \' + cl + \'">\' + fmtNum(i.current_stock) + \' \' + unit + \'</div>\';';
+    html += '    }';
+    html += '    container.appendChild(a);';
     html += '  });';
+
+    // Отрисовка пагинации
+    html += '  var pag = document.getElementById("pagination"); pag.innerHTML = "";';
+    html += '  if (totalPages > 1) {';
+    html += '    var prevBtn = document.createElement("button"); prevBtn.className = "cat-btn"; prevBtn.innerText = "←"; prevBtn.disabled = currentPage === 1; prevBtn.onclick = function(){ currentPage--; render(); window.scrollTo(0,0); }; if(currentPage === 1) prevBtn.style.opacity = "0.3";';
+    html += '    var nextBtn = document.createElement("button"); nextBtn.className = "cat-btn"; nextBtn.innerText = "→"; nextBtn.disabled = currentPage === totalPages; nextBtn.onclick = function(){ currentPage++; render(); window.scrollTo(0,0); }; if(currentPage === totalPages) nextBtn.style.opacity = "0.3";';
+    html += '    var txt = document.createElement("span"); txt.style = "display:flex; align-items:center; font-weight:600; font-size:14px;"; txt.innerText = currentPage + " / " + totalPages;';
+    html += '    pag.appendChild(prevBtn); pag.appendChild(txt); pag.appendChild(nextBtn);';
+    html += '  }';
     html += '}';
     html += '<\/script></body></html>';
     res.send(html);
   });
-
   // ====== 7. API ИСТОРИИ ТОВАРА ======
   app.get('/api/warehouse/item/history', async (req, res) => {
     try {
@@ -863,7 +921,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 9. API ЗАКРЕПЛЕНИЯ (ОГОНЕК) ======
+  // ====== 9. API ЗАКРЕПЛЕНИЯ ======
   app.post('/api/warehouse/item/pin', async (req, res) => {
     try {
       const itemId = parseInt(req.body.id);
@@ -880,6 +938,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
   // ====== 10. API ОБЪЕДИНЕНИЯ ======
   app.post('/api/warehouse/item/merge', async (req, res) => {
     const client = await pool.connect();
@@ -1059,6 +1118,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '.btn-act { padding: 10px 15px; border-radius: 12px; ';
     html += 'border: none; font-weight: 600; color: #fff; font-size: 13px; ';
     html += 'font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 5px; }';
+    html += '.btn-act svg { width: 16px; height: 16px; }';
     html += '.btn-rename { background: #E67E22; }';
     html += '.btn-merge { background: ' + dangerColor + '; }';
     html += '.btn-photo { background: #3C7A89; }';
@@ -1078,10 +1138,10 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'margin-bottom:15px;"></div>';
 
     html += '<div class="actions" id="actions" style="display:none;">';
-    html += '<button class="btn-act btn-pin" id="btnPin" onclick="togglePin()">🔥 Закрепить</button>';
-    html += '<button class="btn-act btn-rename" onclick="renameItem()">✏️ Имя</button>';
-    html += '<button class="btn-act btn-merge" onclick="mergeItem()">🔗 Объединить</button>';
-    html += '<button class="btn-act btn-photo" onclick="document.getElementById(\'photoInput\').click()">📷 Фото</button>';
+    html += '<button class="btn-act btn-pin" id="btnPin" onclick="togglePin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Закрепить</button>';
+    html += '<button class="btn-act btn-rename" onclick="renameItem()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg> Имя</button>';
+    html += '<button class="btn-act btn-merge" onclick="mergeItem()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg> Объединить</button>';
+    html += '<button class="btn-act btn-photo" onclick="document.getElementById(\'photoInput\').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> Фото</button>';
     html += '</div>';
 
     html += '<div id="list">Загрузка...</div>';
@@ -1201,8 +1261,8 @@ function setupWarehouse(app, bot, s3ctx) {
     
     html += 'function updatePinBtn() {';
     html += '  var b = document.getElementById("btnPin");';
-    html += '  if (isPinned) { b.classList.add("active"); b.innerHTML = "🔥 Открепить"; }';
-    html += '  else { b.classList.remove("active"); b.innerHTML = "🔥 Закрепить"; }';
+    html += '  if (isPinned) { b.classList.add("active"); b.innerHTML = "<svg viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'><polygon points=\'12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2\'></polygon></svg> Открепить"; }';
+    html += '  else { b.classList.remove("active"); b.innerHTML = "<svg viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'><polygon points=\'12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2\'></polygon></svg> Закрепить"; }';
     html += '}';
 
     html += 'function renameItem() {';
@@ -1283,17 +1343,25 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '<\/script></body></html>';
     res.send(html);
   });
-  // ====== 13. API ЖУРНАЛА ======
+  // ====== 13. API ЖУРНАЛА (С ФИЛЬТРОМ ПО ВРЕМЕНИ) ======
   app.get('/api/warehouse/audit', async (req, res) => {
     try {
+      const shopId = req.query.shop || 'kupidon';
+      const period = req.query.period || 'today';
+      
+      let dateFilter = '';
+      if (period === 'today') dateFilter = 'AND DATE(l.date) = CURRENT_DATE';
+      else if (period === 'week') dateFilter = 'AND l.date >= NOW() - INTERVAL \'7 days\'';
+      else if (period === 'month') dateFilter = 'AND l.date >= NOW() - INTERVAL \'1 month\'';
+
       const r = await pool.query(
         'SELECT l.action, l.details, l.date, l.ref_id, ' +
         'a.name as person ' +
         'FROM wh_audit_log l ' +
         'LEFT JOIN admins a ON a.chat_id = l.chat_id ' +
-        'WHERE l.shop_id = $1 ' +
-        'ORDER BY l.date DESC LIMIT 50',
-        [req.query.shop || 'kupidon']
+        'WHERE l.shop_id = $1 ' + dateFilter + ' ' +
+        'ORDER BY l.date DESC LIMIT 100',
+        [shopId]
       );
       res.json({ ok: true, logs: r.rows });
     } catch (e) { res.status(500).json({ ok: false }); }
@@ -1316,6 +1384,13 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'margin-bottom: 15px; }';
     html += '.back { font-size: 24px; text-decoration: none; ';
     html += 'color: ' + brandColor + '; margin-right: 15px; }';
+    
+    html += '.filters { display: flex; gap: 8px; margin-bottom: 15px; }';
+    html += '.filter { flex: 1; padding: 10px; border: 1px solid #ddd; ';
+    html += 'border-radius: 12px; background: #fff; text-align: center; ';
+    html += 'cursor: pointer; font-size: 13px; font-weight: 600; }';
+    html += '.filter.active { background: ' + brandColor + '; color: #fff; }';
+
     html += '.log-card { background: #fff; border-radius: 16px; ';
     html += 'padding: 15px; margin-bottom: 10px; ';
     html += 'cursor: pointer; ';
@@ -1344,9 +1419,25 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '<a href="/warehouse-app" class="back">←</a>';
     html += '<h2 style="margin:0; display:flex; align-items:center;">';
     html += getIconSvg('audit') + 'Журнал</h2></div>';
+    
+    html += '<div class="filters">';
+    html += '<div class="filter active" id="f-today" onclick="setPeriod(\'today\')">Сегодня</div>';
+    html += '<div class="filter" id="f-week" onclick="setPeriod(\'week\')">Неделя</div>';
+    html += '<div class="filter" id="f-month" onclick="setPeriod(\'month\')">Месяц</div>';
+    html += '</div>';
+
     html += '<div id="list">Загрузка...</div>';
 
     html += '<script>';
+    html += 'var currentPeriod = "today";';
+    
+    html += 'function setPeriod(p) {';
+    html += '  currentPeriod = p;';
+    html += '  document.querySelectorAll(".filter").forEach(function(el){el.classList.remove("active");});';
+    html += '  document.getElementById("f-" + p).classList.add("active");';
+    html += '  loadData();';
+    html += '}';
+
     html += 'function getActionIcon(action) {';
     html += '  var c = "class=\'svg-ico\' viewBox=\'0 0 24 24\' ';
     html += 'fill=\'none\' stroke=\'currentColor\' ';
@@ -1370,77 +1461,78 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'r=\'3\'/></svg>";';
     html += '}';
 
-    html += 'var listEl = document.getElementById("list");';
-    html += 'fetch("/api/warehouse/audit?shop=kupidon")';
-    html += '.then(function(r) { return r.json(); })';
-    html += '.then(function(d) {';
-    html += '  listEl.innerHTML = "";';
-    html += '  if (!d.ok || d.logs.length === 0) {';
-    html += '    listEl.textContent = "Журнал пуст"; return; }';
+    html += 'function loadData() {';
+    html += '  var listEl = document.getElementById("list");';
+    html += '  listEl.innerHTML = "Загрузка...";';
+    html += '  fetch("/api/warehouse/audit?shop=kupidon&period=" + currentPeriod)';
+    html += '  .then(function(r) { return r.json(); })';
+    html += '  .then(function(d) {';
+    html += '    listEl.innerHTML = "";';
+    html += '    if (!d.ok || d.logs.length === 0) {';
+    html += '      listEl.textContent = "Журнал пуст"; return; }';
 
-    html += '  d.logs.forEach(function(l) {';
-    html += '    var div = document.createElement("div");';
-    html += '    var acts = ["sale","receipt","writeoff","shift"];';
-    html += '    var actClass = acts.indexOf(l.action) >= 0 ? ';
-    html += 'l.action : "";';
-    html += '    div.className = "log-card " + actClass;';
+    html += '    d.logs.forEach(function(l) {';
+    html += '      var div = document.createElement("div");';
+    html += '      var acts = ["sale","receipt","writeoff","shift"];';
+    html += '      var actClass = acts.indexOf(l.action) >= 0 ? l.action : "";';
+    html += '      div.className = "log-card " + actClass;';
 
-    html += '    var ds = new Date(l.date).toLocaleString("ru-RU", ';
-    html += '{ day: "2-digit", month: "2-digit", ';
-    html += 'hour: "2-digit", minute: "2-digit" });';
-    html += '    var p = l.person || "Система";';
+    html += '      var ds = new Date(l.date).toLocaleString("ru-RU", ';
+    html += '      { day: "2-digit", month: "2-digit", ';
+    html += '      hour: "2-digit", minute: "2-digit" });';
+    html += '      var p = l.person || "Система";';
 
-    html += '    var top = document.createElement("div");';
-    html += '    top.className = "log-top";';
-    html += '    var titleDiv = document.createElement("div");';
-    html += '    titleDiv.className = "log-title";';
-    html += '    titleDiv.innerHTML = getActionIcon(l.action);';
-    html += '    var nameSpan = document.createElement("span");';
-    html += '    nameSpan.textContent = p;';
-    html += '    titleDiv.appendChild(nameSpan);';
-    html += '    var dateDiv = document.createElement("div");';
-    html += '    dateDiv.className = "log-date";';
-    html += '    dateDiv.textContent = ds;';
-    html += '    top.appendChild(titleDiv);';
-    html += '    top.appendChild(dateDiv);';
-    html += '    div.appendChild(top);';
+    html += '      var top = document.createElement("div");';
+    html += '      top.className = "log-top";';
+    html += '      var titleDiv = document.createElement("div");';
+    html += '      titleDiv.className = "log-title";';
+    html += '      titleDiv.innerHTML = getActionIcon(l.action);';
+    html += '      var nameSpan = document.createElement("span");';
+    html += '      nameSpan.textContent = p;';
+    html += '      titleDiv.appendChild(nameSpan);';
+    html += '      var dateDiv = document.createElement("div");';
+    html += '      dateDiv.className = "log-date";';
+    html += '      dateDiv.textContent = ds;';
+    html += '      top.appendChild(titleDiv);';
+    html += '      top.appendChild(dateDiv);';
+    html += '      div.appendChild(top);';
 
-    html += '    var desc = document.createElement("div");';
-    html += '    desc.className = "log-desc";';
-    html += '    desc.textContent = l.details || "";';
-    html += '    div.appendChild(desc);';
+    html += '      var desc = document.createElement("div");';
+    html += '      desc.className = "log-desc";';
+    html += '      desc.textContent = l.details || "";';
+    html += '      div.appendChild(desc);';
 
-    html += '    if (l.ref_id) {';
-    html += '      var link = document.createElement("div");';
-    html += '      link.className = "log-link";';
-    html += '      if (l.action === "sale") {';
-    html += '        link.textContent = "Чек №" + l.ref_id + " →";';
-    html += '        div.onclick = function() { ';
+    html += '      if (l.ref_id) {';
+    html += '        var link = document.createElement("div");';
+    html += '        link.className = "log-link";';
+    html += '        if (l.action === "sale") {';
+    html += '          link.textContent = "Чек №" + l.ref_id + " →";';
+    html += '          div.onclick = function() { ';
     html += 'window.location.href = ';
     html += '"/warehouse/sale/details?id=" + l.ref_id; };';
-    html += '      } else if (l.action === "receipt") {';
-    html += '        link.textContent = "Накладная №" + ';
-    html += 'l.ref_id + " →";';
-    html += '        div.onclick = function() { ';
+    html += '        } else if (l.action === "receipt") {';
+    html += '          link.textContent = "Накладная №" + l.ref_id + " →";';
+    html += '          div.onclick = function() { ';
     html += 'window.location.href = ';
     html += '"/warehouse/documents/details?id=" + l.ref_id + ';
     html += '"&type=receipts"; };';
-    html += '      } else if (l.action === "writeoff") {';
-    html += '        link.textContent = "Акт списания №" + ';
-    html += 'l.ref_id + " →";';
-    html += '        div.onclick = function() { ';
+    html += '        } else if (l.action === "writeoff") {';
+    html += '          link.textContent = "Акт списания №" + l.ref_id + " →";';
+    html += '          div.onclick = function() { ';
     html += 'window.location.href = ';
     html += '"/warehouse/documents/details?id=" + l.ref_id + ';
     html += '"&type=writeoffs"; };';
+    html += '        }';
+    html += '        div.appendChild(link);';
     html += '      }';
-    html += '      div.appendChild(link);';
-    html += '    }';
-
-    html += '    listEl.appendChild(div);';
+    html += '      listEl.appendChild(div);';
+    html += '    });';
+    html += '  }).catch(function() {';
+    html += '    listEl.textContent = "Ошибка загрузки";';
     html += '  });';
-    html += '}).catch(function() {';
-    html += '  listEl.textContent = "Ошибка загрузки";';
-    html += '});';
+    html += '}';
+    
+    html += 'loadData();';
     html += '<\/script></body></html>';
     res.send(html);
   });
@@ -2013,10 +2105,36 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'background: #fafaf8; border-top: 1px solid #eee;">';
       html += '<button class="btn-submit" id="btnSubmit" ';
       html += 'style="margin-top:0;" ';
-      html += 'onclick="saveSale()">Принять оплату</button>';
+      html += 'onclick="openPrecheck()">Принять оплату</button>';
       html += '</div>';
 
       html += '</div>';
+
+      // МОДАЛЬНОЕ ОКНО ПРЕ-ЧЕК (ПРАВКА 7 и 8)
+      html += '<div class="sheet-overlay" id="precheckModal" ';
+      html += 'style="z-index:2000; align-items:center; ';
+      html += 'justify-content:center;">';
+      html += '<div style="background:#fff; padding:20px; ';
+      html += 'border-radius:24px; width:90%; max-width:400px; ';
+      html += 'max-height:80vh; display:flex; flex-direction:column;">';
+      html += '<h2 style="margin:0 0 15px 0; text-align:center;">Проверьте чек</h2>';
+      html += '<div id="precheckList" style="overflow-y:auto; flex:1; ';
+      html += 'margin-bottom:15px; border-top:1px solid #eee; ';
+      html += 'border-bottom:1px solid #eee; padding:10px 0;">';
+      html += '</div>';
+      html += '<div style="display:flex; justify-content:space-between; ';
+      html += 'font-weight:800; font-size:18px; margin-bottom:15px;">';
+      html += '<span>Итого:</span><span id="precheckTotal">0 ₽</span>';
+      html += '</div>';
+      html += '<div style="display:flex; gap:10px;">';
+      html += '<button onclick="closePrecheck()" style="flex:1; padding:15px; ';
+      html += 'border:none; border-radius:12px; font-weight:800; font-size:16px; ';
+      html += 'background:#eee; color:#333;">Вернуться</button>';
+      html += '<button onclick="saveSale()" style="flex:2; padding:15px; ';
+      html += 'border:none; border-radius:12px; font-weight:800; font-size:16px; ';
+      html += 'background:' + successColor + '; color:#fff;">Подтвердить</button>';
+      html += '</div>';
+      html += '</div></div>';
 
       html += '<div class="sidebar-overlay" id="overlay" ';
       html += 'onclick="toggleMenu()"></div>';
@@ -2075,7 +2193,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var changeMethod = "cash"; var currentCat = 0;';
       html += 'var bouquetsMode = false; var bouquetsList = [];';
       html += 'var activeInputId = "payAmount";';
-      html += 'function setActiveInput(id) { activeInputId = id; }';
+      
+      // Правка 1: подсветка активного поля
+      html += 'function setActiveInput(id) {';
+      html += '  activeInputId = id;';
+      html += '  var allInps = document.querySelectorAll(".total-inp, .qty-input, .pay-input-row input");';
+      html += '  allInps.forEach(function(el) { el.classList.remove("input-active"); });';
+      html += '  var el = document.getElementById(id);';
+      html += '  if (el) el.classList.add("input-active");';
+      html += '}';
       
       html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4">';
       html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
@@ -2137,7 +2263,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  }';
       html += '});';
 
-      // ЛОГИКА СВАЙПА ПЛАВАЮЩЕЙ КОРЗИНЫ (для открытия)
+      // ЛОГИКА СВАЙПА ПЛАВАЮЩЕЙ КОРЗИНЫ
       html += 'var fc = document.getElementById("floatingCart");';
       html += 'fc.addEventListener("touchstart", function(e) { startX = e.touches[0].clientX; });';
       html += 'fc.addEventListener("touchend", function(e) {';
@@ -2243,7 +2369,6 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += 'function render() { filterItems(); renderBasket(); }';
 
-      // ОТРИСОВКА КАРТОЧЕК С ДОЛГИМ НАЖАТИЕМ
       html += 'function filterItems() {';
       html += '  if (bouquetsMode) { renderBouquets(bouquetsList); return; }';
       html += '  var q = document.getElementById("search").value.toLowerCase();';
@@ -2271,10 +2396,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    st.textContent = "Ост: " + fmtNum(item.current_stock) + " " + (item.unit || "шт");';
       html += '    d.appendChild(st);';
       
-      // ОБЫЧНЫЙ КЛИК (В КОРЗИНУ)
       html += '    d.onclick = function() { addToCart(item); };';
 
-      // ДОЛГОЕ НАЖАТИЕ (ЗАКРЕПИТЬ)
       html += '    var pressTimer;';
       html += '    d.addEventListener("touchstart", function() {';
       html += '      pressTimer = setTimeout(function() { togglePin(item); }, 600);';
@@ -2286,7 +2409,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  });';
       html += '}';
 
-      // ФУНКЦИЯ ПЕРЕКЛЮЧЕНИЯ ЗАКРЕПЛЕНИЯ
       html += 'function togglePin(item) {';
       html += '  var newVal = !item.is_pinned;';
       html += '  fetch("/api/warehouse/item/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.id, val: newVal }) })';
@@ -2319,7 +2441,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  document.getElementById("bottomSheet").classList.remove("open");';
       html += '}';
 
-      // ОТРИСОВКА КОРЗИНЫ С БОЛЬШИМИ КНОПКАМИ
       html += 'function renderBasket() {';
       html += '  var b = document.getElementById("bList");';
       html += '  var fc = document.getElementById("floatingCart");';
@@ -2349,7 +2470,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    b.appendChild(div);';
       html += '  });';
       html += '  document.getElementById("totalPrice").value = total;';
-      html += '  if (payments.length === 0) { document.getElementById("payAmount").value = total; }';
+      
+      // Правка 9: Убрано авто-заполнение поля оплаты
       html += '  document.getElementById("fcCount").innerText = count + " товар(ов)";';
       html += '  document.getElementById("fcTotal").innerText = total + " ₽";';
       html += '  renderPayments();';
@@ -2367,7 +2489,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  document.getElementById("btn-" + method).classList.add("active");';
       html += '}';
 
-      // УМНЫЙ NUMPAD (ВВОД В ТО ПОЛЕ, КУДА НАЖАЛИ)
+      // Правка 5: Пересчет суммы при вводе с Numpad
       html += 'function num(v) {';
       html += '  var inp = document.getElementById(activeInputId);';
       html += '  if (!inp) return;';
@@ -2380,6 +2502,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var idx = parseInt(activeInputId.replace("qty_", ""));';
       html += '    var newQty = parseFloat(inp.value) || 0;';
       html += '    if (newQty > 0) { cart[idx].qty = newQty; saveCart(); }';
+      html += '    renderBasket();'; // Пересчет суммы чека
       html += '  }';
       html += '}';
 
@@ -2392,22 +2515,28 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
 
       html += 'function onManualPriceChange() {';
-      html += '  var total = parseFloat(document.getElementById("totalPrice").value) || 0;';
-      html += '  if (payments.length === 0) { document.getElementById("payAmount").value = total; }';
       html += '  renderPayments();';
       html += '}';
 
       html += 'function renderPayments() {';
       html += '  var total = parseFloat(document.getElementById("totalPrice").value) || 0;';
       html += '  var paid = 0; var pl = document.getElementById("payList"); pl.innerHTML = "";';
-      html += '  payments.forEach(function(p) {';
+      
+      html += '  payments.forEach(function(p, i) {';
       html += '    paid += p.amount;';
       html += '    var mn = p.method === "cash" ? "Нал" : (p.method === "card" ? "Карта" : "QR");';
       html += '    var row = document.createElement("div");';
-      html += '    row.style = "display:flex; justify-content:space-between; color:' + successColor + '; font-weight:bold;";';
-      html += '    row.innerHTML = "<span>" + mn + "</span><span>" + p.amount + " ₽</span>";';
-      html += '    pl.appendChild(row);';
+      html += '    row.style = "display:flex; justify-content:space-between; align-items:center; color:' + successColor + '; font-weight:bold; margin-bottom:5px;";';
+      html += '    var txt = document.createElement("span"); txt.textContent = mn + " " + p.amount + " ₽";';
+      
+      // Правка 6: Отмена ошибочной оплаты
+      html += '    var delBtn = document.createElement("span"); delBtn.textContent = " ✕";';
+      html += '    delBtn.style = "color:red; cursor:pointer; font-size:16px; margin-left:10px;";';
+      html += '    delBtn.onclick = function() { payments.splice(i, 1); renderPayments(); };';
+      
+      html += '    row.appendChild(txt); row.appendChild(delBtn); pl.appendChild(row);';
       html += '  });';
+      
       html += '  var typed = parseFloat(document.getElementById("payAmount").value) || 0;';
       html += '  var remain = total - (paid + typed);';
       html += '  var rTxt = document.getElementById("remainTxt"); var btn = document.getElementById("btnSubmit");';
@@ -2419,15 +2548,37 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += 'function setChangeMethod(m) { changeMethod = m; var els = document.querySelectorAll(".pay-btn"); els.forEach(function(el) { el.classList.remove("active"); }); document.getElementById("cm-" + m).classList.add("active"); }';
 
-      html += 'function saveSale() {';
+      // Правка 7: Пре-чек
+      html += 'function openPrecheck() {';
       html += '  var btn = document.getElementById("btnSubmit");';
       html += '  if (!btn.classList.contains("ready")) { showAlert("Внимание", "Оплата не завершена", false); return; }';
-      html += '  btn.disabled = true; btn.innerText = "Отправка...";';
+      
       html += '  var total = parseFloat(document.getElementById("totalPrice").value);';
       html += '  var typed = parseFloat(document.getElementById("payAmount").value) || 0;';
-      html += '  if (typed > 0) { payments.push({ method: payMethod, amount: typed }); document.getElementById("payAmount").value = ""; }';
+      html += '  if (typed > 0) { payments.push({ method: payMethod, amount: typed }); document.getElementById("payAmount").value = ""; renderPayments(); }';
+      
+      html += '  var list = document.getElementById("precheckList"); list.innerHTML = "";';
+      html += '  cart.forEach(function(item) {';
+      html += '    var row = document.createElement("div");';
+      html += '    row.style = "display:flex; justify-content:space-between; margin-bottom:5px; font-size:14px;";';
+      html += '    row.innerHTML = "<span>" + item.name + " x" + item.qty + "</span><span>" + (item.retail * item.qty) + " ₽</span>";';
+      html += '    list.appendChild(row);';
+      html += '  });';
+      html += '  document.getElementById("precheckTotal").innerText = total + " ₽";';
+      html += '  document.getElementById("precheckModal").style.display = "flex";';
+      html += '}';
+      
+      html += 'function closePrecheck() { document.getElementById("precheckModal").style.display = "none"; }';
+
+      // Сохранение (вызывается после Пре-чека)
+      html += 'function saveSale() {';
+      html += '  var btn = document.getElementById("btnSubmit");';
+      html += '  btn.disabled = true; btn.innerText = "Отправка...";';
+      html += '  var total = parseFloat(document.getElementById("totalPrice").value);';
+      
       html += '  var paid = 0; payments.forEach(function(p) { paid += p.amount; });';
       html += '  var change = paid - total; var finalPayments = JSON.parse(JSON.stringify(payments));';
+      
       html += '  if (change > 0) {';
       html += '    var found = false;';
       html += '    for (var i = 0; i < finalPayments.length; i++) {';
@@ -2438,6 +2589,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    }';
       html += '    if (!found) { btn.disabled = false; btn.innerText = "Принять оплату"; showAlert("Ошибка", "Вы не вносили оплату этим способом", false); return; }';
       html += '  }';
+      
       html += '  var payload = { shopId: "kupidon", real_price: total, payments: finalPayments, items: cart };';
       html += '  fetch("/api/warehouse/sale", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })';
       html += '  .then(function(r) { return r.json(); })';
@@ -2447,6 +2599,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var cBlock = document.getElementById("changeBlock");';
       html += '      if (change > 0) { document.getElementById("changeAmount").innerText = change + " ₽"; cBlock.style.display = "block"; }';
       html += '      else { cBlock.style.display = "none"; }';
+      html += '      document.getElementById("precheckModal").style.display = "none";';
       html += '      document.getElementById("successModal").style.display = "flex";';
       html += '    } else { btn.disabled = false; btn.innerText = "Принять оплату"; showAlert("Ошибка", d.error || "unknown", false); }';
       html += '  }).catch(function(err) { btn.disabled = false; btn.innerText = "Принять оплату"; showAlert("Ошибка сети", "Повторите", false); });';
@@ -3422,6 +3575,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
   // ====== 29. ЭКРАН СПИСАНИЯ ======
   app.get('/warehouse/writeoff', (req, res) => {
     let html = '<!DOCTYPE html><html><head>';
@@ -4123,12 +4277,17 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '  var b = document.getElementById("list"); b.innerHTML = ""; if (!d.ok || d.history.length === 0) { b.textContent = "За этот день операций нет"; return; }';
     html += '  d.history.forEach(function(h){ var div = document.createElement("div"); var ds = new Date(h.date).toLocaleString("ru-RU", { hour: "2-digit", minute: "2-digit" }); var seller = h.person || "Флорист";';
     html += '    if (h.type === "sale") { div.className = "item sale"; var saleId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/sale/details?id=" + saleId; }; div.innerHTML = "<div><b>💰 Продажа</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + "</div></div>";';
-    html += '      var btnR = "<button class=\'btn-cancel\' onclick=\'event.stopPropagation(); doCancel(" + saleId + ", \"return\")\'>Возврат</button>"; var btnL = "<button class=\'btn-cancel\' style=\'margin-left:5px;\' onclick=\'event.stopPropagation(); doCancel(" + saleId + ", \"loss\")\'>В потери</button>"; div.innerHTML += "<div><div class=\'amount\'>+" + parseFloat(h.amount).toLocaleString("ru-RU") + " ₽</div><div>" + btnR + btnL + "</div></div>";';
+    html += '      var btnR = document.createElement("button"); btnR.className = "btn-cancel"; btnR.innerText = "Возврат"; btnR.onclick = function(e){e.stopPropagation(); doCancel(saleId, "return");};';
+    html += '      var btnL = document.createElement("button"); btnL.className = "btn-cancel"; btnL.style.marginLeft = "5px"; btnL.innerText = "В потери"; btnL.onclick = function(e){e.stopPropagation(); doCancel(saleId, "loss");};';
+    html += '      var rightDiv = document.createElement("div"); rightDiv.innerHTML = "<div class=\'amount\'>+" + parseFloat(h.amount).toLocaleString("ru-RU") + " ₽</div>";';
+    html += '      var btnWrap = document.createElement("div"); btnWrap.appendChild(btnR); btnWrap.appendChild(btnL); rightDiv.appendChild(btnWrap); div.appendChild(rightDiv);';
     html += '    } else if (h.type === "receipt") { div.className = "item receipt"; var docId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/documents/details?id=" + docId + "&type=receipts"; }; div.innerHTML = "<div><b>📥 Приход</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + "</div></div>"; div.innerHTML += "<div class=\'amount\' style=\'color:" + successColor + ";\'>+" + parseFloat(h.amount).toLocaleString("ru-RU") + " ₽</div>";';
     html += '    } else { div.className = "item writeoff"; var docId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/documents/details?id=" + docId + "&type=writeoffs"; }; div.innerHTML = "<div><b>🗑 Списание</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + " (" + h.reason + ")</div></div>"; div.innerHTML += "<div class=\'amount\' style=\'color:" + accentColor + "\'>-" + parseFloat(h.amount) + " шт</div>"; }';
     html += '    b.appendChild(div); });';
     html += '}).catch(function(){ document.getElementById("list").textContent = "Ошибка загрузки"; });';
-    html += 'function doCancel(id, action) { var msg = action === "return" ? "Вернуть товары на склад?" : "Списать эти товары в потери?"; showConfirm("Отмена продажи", msg, function() { fetch("/api/warehouse/sale/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopId: "kupidon", saleId: id, action: action }) }).then(function(r){return r.json();}).then(function(d){ if(d.ok){ showAlert("Успех", "Продажа отменена", true); setTimeout(function(){location.reload();}, 1000); } else showAlert("Ошибка", d.error, false); }).catch(function(){}); }, true); }';
+    
+    html += 'function doCancel(id, action) { var msg = action === "return" ? "Вернуть товары на склад?" : "Списать эти товары в потери?";';
+    html += '  showConfirm("Отмена продажи", msg, function() { fetch("/api/warehouse/sale/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopId: "kupidon", saleId: id, action: action }) }).then(function(r){return r.json();}).then(function(d){ if(d.ok){ showAlert("Успех", "Продажа отменена", true); setTimeout(function(){location.reload();}, 1000); } else showAlert("Ошибка", d.error, false); }).catch(function(){}); }, true); }';
     html += '<\/script></body></html>';
     res.send(html);
   });
