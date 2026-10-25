@@ -73,7 +73,8 @@ async function initWarehouseDb() {
       comment TEXT,
       chat_id BIGINT,
       status VARCHAR(20) DEFAULT 'completed',
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
 
@@ -201,6 +202,13 @@ async function initWarehouseDb() {
     'ALTER TABLE wh_receipts ADD COLUMN ' +
     'IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\''
   );
+  
+  // Миграция для Правки №9 (Дата изменения накладной)
+  await pool.query(
+    'ALTER TABLE wh_receipts ADD COLUMN ' +
+    'IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()'
+  );
+
   await pool.query(
     'ALTER TABLE wh_writeoffs ADD COLUMN ' +
     'IF NOT EXISTS chat_id BIGINT'
@@ -238,7 +246,7 @@ async function initWarehouseDb() {
     'IF NOT EXISTS ref_id INTEGER'
   );
 
-  // ДОБАВЛЕНО: Поле для закрепления товара (огонек)
+  // Поле для закрепления товара (огонек)
   await pool.query(
     'ALTER TABLE wh_shop_items ADD COLUMN ' +
     'IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE'
@@ -325,6 +333,12 @@ async function initWarehouseDb() {
     'CREATE INDEX IF NOT EXISTS idx_wh_shifts ' +
     'ON wh_shifts(shop_id, status)'
   );
+  
+  // Индекс для быстрой работы Журнала и Отчетов (Правка №10)
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_wh_audit_log ' +
+    'ON wh_audit_log(shop_id, date DESC)'
+  );
 
   // --- ДОБАВЛЕНИЕ БАЗОВЫХ КАТЕГОРИЙ ---
   const defaultCats = [
@@ -344,7 +358,7 @@ async function initWarehouseDb() {
     }
   }
 
-  console.log('✅ Таблицы склада готовы (v5.4)');
+  console.log('✅ Таблицы склада готовы (v5.4 + batch 1)');
   console.log('✅ Базовые категории проверены');
 }
 
