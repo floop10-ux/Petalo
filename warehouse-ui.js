@@ -2493,7 +2493,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var cart = []; var payMethod = ""; var payments = []; ';
       html += 'var changeMethod = "cash";';
       html += 'var gridCols = 3;';
-      
+
+      html += 'var activeInputId = "payAmount"; var isFirstInput = true; ';
+html += 'var isPayAmountEdited = false;';
       html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4">';
       html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
       html += 'L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3';
