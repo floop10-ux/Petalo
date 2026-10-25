@@ -78,7 +78,7 @@ function capWords(str) {
     }
   );
 }
-function setupWarehouse(app, bot, sup3ctx) {
+function setupWarehouse(app, bot, s3ctx) {
   // = ====== S3 КОНТ sЕКСТ ======
   s3ctx = s3ctx || {};
   const s3 = s3ctx.s33 ||ctx.s3backup || null;
