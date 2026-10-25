@@ -67,8 +67,6 @@ function fmtNum(n) {
     num.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-// Фикс: кириллица тоже капитализируется
-
 function capWords(str) {
   if (!str) return '';
   return String(str).replace(
@@ -78,11 +76,22 @@ function capWords(str) {
     }
   );
 }
+
+function translateReason(r) {
+  var map = { 
+    spoilage: 'Порча', 
+    loss: 'Потеря', 
+    markdown: 'Уценка', 
+    sorting: 'Пересорт' 
+  };
+  return map[r] || r;
+}
+
 function setupWarehouse(app, bot, s3ctx) {
-  // = ====== S3 КОНТ sЕКСТ ======
   s3ctx = s3ctx || {};
   const s3 = s3ctx.s3 || null;
   const s3backup = s3ctx.s3backup || null;
+  const YC_BUCKET = s3ctx.YC_BUCKET || null;
   const BC_BUCKET = s3ctx.BC_BUCKET || null;
   const BC_ENDPOINT = s3ctx.BC_ENDPOINT || null;
 
@@ -217,14 +226,14 @@ function setupWarehouse(app, bot, s3ctx) {
       input, textarea {
         -webkit-user-select: text; user-select: text; }
         
-      /* Правка 1: Подсветка активного поля */
+      /* Подсветка активного поля */
       .input-active {
         border: 2px solid ${brandColor} !important;
         box-shadow: 0 0 8px rgba(15,61,62,0.2) !important;
         background: #fff !important;
       }
 
-      /* Правка 11: Адаптация под планшет */
+      /* Адаптация под планшет */
       @media (min-width: 768px) {
         .bottom-sheet {
           width: 400px; left: auto; right: 0;
@@ -449,8 +458,10 @@ function setupWarehouse(app, bot, s3ctx) {
       }
       html += '<a href="/warehouse/inventory" class="btn">';
       html += getIconSvg('inventory') + 'Обзор</a>';
+      
+      // ПРАВКА 7: Переименовали в "История смены"
       html += '<a href="/warehouse/history" class="btn full">';
-      html += getIconSvg('history') + 'История</a>';
+      html += getIconSvg('history') + 'История смены</a>';
       html += '</div>';
 
       if (isOwner) {
@@ -530,7 +541,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '      showAlert("Стоп", "Слишком много попыток. ';
     html += 'Подождите минуту.", false); ';
     html += '    else showAlert("Ошибка", "Неверный PIN", false);';
-    html += '  });';
+    html += '  }).catch(function() { showAlert("Ошибка сети", "Проверьте интернет или отключите VPN", false); });';
     html += '}';
     html += '<\/script></body></html>';
     res.send(html);
@@ -597,198 +608,231 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 6. ОБЗОР СКЛАДА (ПЛИТКА/СТРОКИ + ПАГИНАЦИЯ) ======
-  app.get('/warehouse/inventory', (req, res) => {
-    let html = '<!DOCTYPE html><html><head>';
-    html += '<meta charset="UTF-8">';
-    html += '<meta name="viewport" content="width=device-width, ';
-    html += 'initial-scale=1.0, maximum-scale=1.0, ';
-    html += 'user-scalable=no">';
-    html += fontLink;
-    html += uiScript;
-    html += '<style>';
-    html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-    html += 'padding: 15px; background: ' + bgGradient + '; ';
-    html += 'color: ' + brandColor + '; }';
-    html += '.header { display: flex; align-items: center; ';
-    html += 'margin-bottom: 15px; justify-content: space-between; }';
-    html += '.back { font-size: 24px; text-decoration: none; ';
-    html += 'color: ' + brandColor + '; margin-right: 15px; }';
-    html += '.search { width: 100%; padding: 12px; border: none; ';
-    html += 'border-radius: 12px; margin-bottom: 15px; ';
-    html += 'box-sizing: border-box; font-family: inherit; ';
-    html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
-    html += '.h-scroll { display: flex; overflow-x: auto; ';
-    html += 'gap: 8px; margin-bottom: 15px; padding-bottom: 5px; }';
-    html += '.cat-btn { padding: 8px 15px; border: none; ';
-    html += 'border-radius: 20px; background: #fff; cursor: pointer; ';
-    html += 'font-size: 14px; white-space: nowrap; ';
-    html += 'font-family: inherit; color: ' + brandColor + '; ';
-    html += 'font-weight: 600; ';
-    html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
-    html += '.cat-btn.active { background: ' + brandColor + '; ';
-    html += 'color: #fff; }';
-    
-    // Стили для настроек отображения
-    html += '.controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }';
-    html += '.view-toggles { display: flex; gap: 5px; background: #e0e0e0; padding: 4px; border-radius: 10px; }';
-    html += '.view-btn { border: none; background: none; padding: 6px 10px; border-radius: 8px; cursor: pointer; color: #666; display: flex; align-items: center; justify-content: center; }';
-    html += '.view-btn.active { background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); color: ' + brandColor + '; }';
-    html += '.view-btn svg { width: 20px; height: 20px; }';
-    html += '.limit-select { padding: 8px; border-radius: 10px; border: 1px solid #ddd; font-family: inherit; font-weight: 600; color: ' + brandColor + '; background: #fff; }';
+  // ====== 6. ОБЗОР СКЛАДА (ПЛИТКА/СТРОКИ + ПАГИНАЦИЯ + СТАТИСТИКА) ======
+  app.get('/warehouse/inventory', async (req, res) => {
+    try {
+      const shopId = 'kupidon';
+      
+      // Правка 8: Считаем статистику только по плюсовым остаткам
+      const statsRes = await pool.query(
+        'SELECT ' +
+        'COALESCE(SUM(current_stock), 0) as stems, ' +
+        'COALESCE(SUM(current_stock * avg_cost), 0) as cost, ' +
+        'COALESCE(SUM(current_stock * retail_price), 0) as retail ' +
+        'FROM wh_shop_items WHERE shop_id = $1 ' +
+        'AND current_stock > 0',
+        [shopId]
+      );
+      const stats = statsRes.rows[0];
 
-    // Стили для сетки (плитка)
-    html += '.grid-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }';
-    html += '.card-tile { background: #fff; padding: 10px; border-radius: 16px; text-align: center; text-decoration: none; color: ' + brandColor + '; position: relative; box-shadow: 0 4px 15px rgba(15,61,62,0.05); }';
-    html += '.card-tile img { width: 100%; height: 80px; object-fit: cover; border-radius: 12px; margin-bottom: 5px; }';
-    html += '.card-tile .ph { height: 80px; border-radius: 12px; background: #F0F4F4; display: flex; align-items: center; justify-content: center; margin-bottom: 5px; }';
-    html += '.card-tile .ph svg { width: 32px; height: 32px; }';
-    
-    // Стили для списка (строки)
-    html += '.grid-rows { display: flex; flex-direction: column; gap: 8px; }';
-    html += '.card-row { background: #fff; padding: 10px 15px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; text-decoration: none; color: ' + brandColor + '; box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
-    html += '.card-row .row-left { display: flex; align-items: center; gap: 12px; }';
-    html += '.card-row img, .card-row .ph { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }';
-    html += '.card-row .ph { background: #F0F4F4; display: flex; align-items: center; justify-content: center; }';
-    html += '.card-row .ph svg { width: 20px; height: 20px; }';
-    
-    html += '.name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }';
-    html += '.card-row .name { font-size: 15px; margin-bottom: 0; }';
-    html += '.stock { font-size: 12px; font-weight: 800; }';
-    html += '.green { color: ' + successColor + '; } .red { color: ' + dangerColor + '; }';
-    html += '.pin-icon { position: absolute; top: 6px; right: 6px; color: #E67E22; }';
-    html += '.card-row .pin-icon { position: static; margin-left: 5px; }';
-    html += '</style></head><body>';
+      let html = '<!DOCTYPE html><html><head>';
+      html += '<meta charset="UTF-8">';
+      html += '<meta name="viewport" content="width=device-width, ';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no">';
+      html += fontLink;
+      html += uiScript;
+      html += '<style>';
+      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
+      html += 'padding: 15px; background: ' + bgGradient + '; ';
+      html += 'color: ' + brandColor + '; }';
+      html += '.header { display: flex; align-items: center; ';
+      html += 'margin-bottom: 15px; justify-content: space-between; }';
+      html += '.back { font-size: 24px; text-decoration: none; ';
+      html += 'color: ' + brandColor + '; margin-right: 15px; }';
+      
+      // Стили статистики
+      html += '.stats-bar { display: flex; gap: 10px; margin-bottom: 15px; }';
+      html += '.stat-box { flex: 1; background: #fff; padding: 10px; ';
+      html += 'border-radius: 12px; text-align: center; ';
+      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
+      html += '.stat-val { font-size: 18px; font-weight: 800; color: ' + brandColor + '; }';
+      html += '.stat-lbl { font-size: 11px; color: #888; font-weight: 600; margin-top: 4px; }';
 
-    html += '<div class="header">';
-    html += '<div style="display:flex; align-items:center;">';
-    html += '<a href="/warehouse-app" class="back">←</a>';
-    html += '<h2 style="margin:0; display:flex; align-items:center;">';
-    html += getIconSvg('inventory') + 'Обзор</h2></div></div>';
-    
-    html += '<input type="text" class="search" id="search" placeholder="🔍 Поиск..." onkeyup="applyFilters()">';
-    
-    html += '<div class="controls">';
-    html += '  <div class="view-toggles">';
-    html += '    <button class="view-btn active" id="btn-view-tile" onclick="setViewMode(\'tile\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></button>';
-    html += '    <button class="view-btn" id="btn-view-row" onclick="setViewMode(\'row\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>';
-    html += '  </div>';
-    html += '  <select class="limit-select" id="limitSelect" onchange="setLimit(this.value)">';
-    html += '    <option value="10">10 шт</option>';
-    html += '    <option value="30">30 шт</option>';
-    html += '    <option value="50">50 шт</option>';
-    html += '    <option value="100">100 шт</option>';
-    html += '  </select>';
-    html += '</div>';
+      html += '.search { width: 100%; padding: 12px; border: none; ';
+      html += 'border-radius: 12px; margin-bottom: 15px; ';
+      html += 'box-sizing: border-box; font-family: inherit; ';
+      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
+      html += '.h-scroll { display: flex; overflow-x: auto; ';
+      html += 'gap: 8px; margin-bottom: 15px; padding-bottom: 5px; }';
+      html += '.cat-btn { padding: 8px 15px; border: none; ';
+      html += 'border-radius: 20px; background: #fff; cursor: pointer; ';
+      html += 'font-size: 14px; white-space: nowrap; ';
+      html += 'font-family: inherit; color: ' + brandColor + '; ';
+      html += 'font-weight: 600; ';
+      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
+      html += '.cat-btn.active { background: ' + brandColor + '; color: #fff; }';
+      
+      // Стили переключателей
+      html += '.controls { display: flex; justify-content: space-between; ';
+      html += 'align-items: center; margin-bottom: 15px; }';
+      html += '.view-toggles { display: flex; gap: 5px; ';
+      html += 'background: #e0e0e0; padding: 4px; border-radius: 10px; }';
+      html += '.view-btn { border: none; background: none; padding: 6px 10px; ';
+      html += 'border-radius: 8px; cursor: pointer; color: #666; display: flex; }';
+      html += '.view-btn.active { background: #fff; ';
+      html += 'box-shadow: 0 2px 5px rgba(0,0,0,0.1); color: ' + brandColor + '; }';
+      html += '.view-btn svg { width: 20px; height: 20px; }';
+      html += '.limit-select { padding: 8px; border-radius: 10px; ';
+      html += 'border: 1px solid #ddd; font-family: inherit; ';
+      html += 'font-weight: 600; color: ' + brandColor + '; background: #fff; }';
 
-    html += '<div class="h-scroll" id="catList">';
-    html += '<button class="cat-btn active" id="cat-0" onclick="setCat(0)">Все</button></div>';
-    
-    html += '<div id="itemsContainer"></div>';
-    html += '<div id="pagination" style="display:flex; justify-content:center; gap:10px; margin-top:20px;"></div>';
+      // Стили сетки
+      html += '.grid-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }';
+      html += '.card-tile { background: #fff; padding: 10px; border-radius: 16px; ';
+      html += 'text-align: center; text-decoration: none; color: ' + brandColor + '; ';
+      html += 'position: relative; box-shadow: 0 4px 15px rgba(15,61,62,0.05); }';
+      html += '.card-tile img { width: 100%; height: 80px; object-fit: cover; ';
+      html += 'border-radius: 12px; margin-bottom: 5px; }';
+      html += '.card-tile .ph { height: 80px; border-radius: 12px; ';
+      html += 'background: #F0F4F4; display: flex; align-items: center; ';
+      html += 'justify-content: center; margin-bottom: 5px; }';
+      html += '.card-tile .ph svg { width: 32px; height: 32px; }';
+      
+      // Стили списка
+      html += '.grid-rows { display: flex; flex-direction: column; gap: 8px; }';
+      html += '.card-row { background: #fff; padding: 10px 15px; border-radius: 12px; ';
+      html += 'display: flex; align-items: center; justify-content: space-between; ';
+      html += 'text-decoration: none; color: ' + brandColor + '; ';
+      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
+      html += '.card-row .row-left { display: flex; align-items: center; gap: 12px; }';
+      html += '.card-row img, .card-row .ph { width: 40px; height: 40px; ';
+      html += 'border-radius: 8px; object-fit: cover; }';
+      html += '.card-row .ph { background: #F0F4F4; display: flex; ';
+      html += 'align-items: center; justify-content: center; }';
+      html += '.card-row .ph svg { width: 20px; height: 20px; }';
+      
+      html += '.name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }';
+      html += '.card-row .name { font-size: 15px; margin-bottom: 0; }';
+      html += '.stock { font-size: 12px; font-weight: 800; }';
+      html += '.green { color: ' + successColor + '; } .red { color: ' + dangerColor + '; }';
+      html += '.pin-icon { position: absolute; top: 6px; right: 6px; color: #E67E22; }';
+      html += '.card-row .pin-icon { position: static; margin-left: 5px; }';
+      html += '</style></head><body>';
 
-    html += '<script>';
-    html += 'var allItems = []; var currentCat = 0;';
-    html += 'var currentPage = 1; var pageLimit = 10; var viewMode = "tile";';
-    
-    html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.5,17.5 6.5,17.5C7.21,17.5 7.87,17.36 8.5,17.12C11.24,16.08 13.44,14.57 15,12.5C15,12.5 15.5,14.5 15.5,16.5C15.5,18.5 14.5,20 14.5,20C17,20 19.5,17.5 20.5,14.5C21.5,11.5 21.5,8 21.5,8C21.5,8 19.5,6 17,8Z"/></svg>\';';
-    html += 'var pinSvg = \'<svg class="pin-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>\';';
+      html += '<div class="header">';
+      html += '<div style="display:flex; align-items:center;">';
+      html += '<a href="/warehouse-app" class="back">←</a>';
+      html += '<h2 style="margin:0; display:flex; align-items:center;">';
+      html += getIconSvg('inventory') + 'Обзор</h2></div></div>';
+      
+      // Блок статистики
+      html += '<div class="stats-bar">';
+      html += '<div class="stat-box"><div class="stat-val">' + fmtNum(stats.stems) + '</div><div class="stat-lbl">Стебли</div></div>';
+      html += '<div class="stat-box"><div class="stat-val">' + Math.round(stats.cost).toLocaleString('ru-RU') + ' ₽</div><div class="stat-lbl">Закупка</div></div>';
+      html += '<div class="stat-box"><div class="stat-val">' + Math.round(stats.retail).toLocaleString('ru-RU') + ' ₽</div><div class="stat-lbl">Розница</div></div>';
+      html += '</div>';
 
-    html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) return "0"; return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
+      html += '<input type="text" class="search" id="search" placeholder="🔍 Поиск..." onkeyup="applyFilters()">';
+      
+      html += '<div class="controls">';
+      html += '  <div class="view-toggles">';
+      html += '    <button class="view-btn active" id="btn-view-tile" onclick="setViewMode(\'tile\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></button>';
+      html += '    <button class="view-btn" id="btn-view-row" onclick="setViewMode(\'row\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>';
+      html += '  </div>';
+      html += '  <select class="limit-select" id="limitSelect" onchange="setLimit(this.value)">';
+      html += '    <option value="10">10 шт</option>';
+      html += '    <option value="30">30 шт</option>';
+      html += '    <option value="50">50 шт</option>';
+      html += '    <option value="100">100 шт</option>';
+      html += '  </select>';
+      html += '</div>';
 
-    // Загрузка настроек из памяти
-    html += 'if (localStorage.getItem("wh_view_mode")) viewMode = localStorage.getItem("wh_view_mode");';
-    html += 'if (localStorage.getItem("wh_page_limit")) pageLimit = parseInt(localStorage.getItem("wh_page_limit"));';
-    html += 'document.getElementById("limitSelect").value = pageLimit;';
-    html += 'updateViewButtons();';
+      html += '<div class="h-scroll" id="catList">';
+      html += '<button class="cat-btn active" id="cat-0" onclick="setCat(0)">Все</button></div>';
+      
+      html += '<div id="itemsContainer"></div>';
+      html += '<div id="pagination" style="display:flex; justify-content:center; gap:10px; margin-top:20px;"></div>';
 
-    html += 'function setViewMode(mode) {';
-    html += '  viewMode = mode; localStorage.setItem("wh_view_mode", mode);';
-    html += '  updateViewButtons(); render();';
-    html += '}';
-    
-    html += 'function updateViewButtons() {';
-    html += '  document.getElementById("btn-view-tile").classList.remove("active");';
-    html += '  document.getElementById("btn-view-row").classList.remove("active");';
-    html += '  document.getElementById("btn-view-" + (viewMode === "tile" ? "tile" : "row")).classList.add("active");';
-    html += '}';
+      html += '<script>';
+      html += 'var allItems = []; var currentCat = 0;';
+      html += 'var currentPage = 1; var pageLimit = 10; var viewMode = "tile";';
+      
+      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.5,17.5 6.5,17.5C7.21,17.5 7.87,17.36 8.5,17.12C11.24,16.08 13.44,14.57 15,12.5C15,12.5 15.5,14.5 15.5,16.5C15.5,18.5 14.5,20 14.5,20C17,20 19.5,17.5 20.5,14.5C21.5,11.5 21.5,8 21.5,8C21.5,8 19.5,6 17,8Z"/></svg>\';';
+      html += 'var pinSvg = \'<svg class="pin-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>\';';
 
-    html += 'function setLimit(val) {';
-    html += '  pageLimit = parseInt(val); localStorage.setItem("wh_page_limit", pageLimit);';
-    html += '  currentPage = 1; render();';
-    html += '}';
+      html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) return "0"; return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
 
-    html += 'fetch("/api/warehouse/categories").then(function(r){return r.json();}).then(function(d){';
-    html += '  if (d.ok) { var cl = document.getElementById("catList"); d.categories.forEach(function(c){ var b = document.createElement("button"); b.className = "cat-btn"; b.id = "cat-" + c.id; b.innerText = c.name; b.onclick = function(){setCat(c.id);}; cl.appendChild(b); }); }';
-    html += '}).catch(function(){});';
+      html += 'if (localStorage.getItem("wh_view_mode")) viewMode = localStorage.getItem("wh_view_mode");';
+      html += 'if (localStorage.getItem("wh_page_limit")) pageLimit = parseInt(localStorage.getItem("wh_page_limit"));';
+      html += 'document.getElementById("limitSelect").value = pageLimit;';
+      html += 'updateViewButtons();';
 
-    html += 'fetch("/api/warehouse/items?shop=kupidon&t=" + Date.now()).then(function(r){return r.json();}).then(function(d){';
-    html += '  if (d.ok) { allItems = d.items; applyFilters(); }';
-    html += '}).catch(function(){});';
+      html += 'function setViewMode(mode) { viewMode = mode; localStorage.setItem("wh_view_mode", mode); updateViewButtons(); render(); }';
+      html += 'function updateViewButtons() {';
+      html += '  document.getElementById("btn-view-tile").classList.remove("active");';
+      html += '  document.getElementById("btn-view-row").classList.remove("active");';
+      html += '  document.getElementById("btn-view-" + (viewMode === "tile" ? "tile" : "row")).classList.add("active");';
+      html += '}';
+      html += 'function setLimit(val) { pageLimit = parseInt(val); localStorage.setItem("wh_page_limit", pageLimit); currentPage = 1; render(); }';
 
-    html += 'function setCat(id) {';
-    html += '  currentCat = id; currentPage = 1;';
-    html += '  var els = document.querySelectorAll(".cat-btn"); els.forEach(function(el){el.classList.remove("active");});';
-    html += '  document.getElementById("cat-" + id).classList.add("active"); applyFilters();';
-    html += '}';
+      html += 'fetch("/api/warehouse/categories").then(function(r){return r.json();}).then(function(d){';
+      html += '  if (d.ok) { var cl = document.getElementById("catList"); d.categories.forEach(function(c){ var b = document.createElement("button"); b.className = "cat-btn"; b.id = "cat-" + c.id; b.innerText = c.name; b.onclick = function(){setCat(c.id);}; cl.appendChild(b); }); }';
+      html += '}).catch(function(){});';
 
-    html += 'function applyFilters() {';
-    html += '  var q = document.getElementById("search").value.toLowerCase();';
-    html += '  var filtered = allItems.filter(function(i){';
-    html += '    var matchQ = i.name.toLowerCase().includes(q);';
-    html += '    var matchC = (currentCat === 0 || i.category_id === currentCat);';
-    html += '    return matchQ && matchC;';
-    html += '  });';
-    html += '  currentPage = 1; render(filtered);';
-    html += '}';
+      html += 'fetch("/api/warehouse/items?shop=kupidon&t=" + Date.now()).then(function(r){return r.json();}).then(function(d){';
+      html += '  if (d.ok) { allItems = d.items; applyFilters(); }';
+      html += '}).catch(function(){});';
 
-    html += 'var filteredItems = [];';
+      html += 'function setCat(id) { currentCat = id; currentPage = 1; var els = document.querySelectorAll(".cat-btn"); els.forEach(function(el){el.classList.remove("active");}); document.getElementById("cat-" + id).classList.add("active"); applyFilters(); }';
 
-    html += 'function render(items) {';
-    html += '  if (items) filteredItems = items;';
-    html += '  var totalPages = Math.ceil(filteredItems.length / pageLimit) || 1;';
-    html += '  if (currentPage > totalPages) currentPage = totalPages;';
-    html += '  var start = (currentPage - 1) * pageLimit;';
-    html += '  var end = start + pageLimit;';
-    html += '  var pageItems = filteredItems.slice(start, end);';
-    html += '  var container = document.getElementById("itemsContainer");';
-    html += '  container.className = viewMode === "tile" ? "grid-tiles" : "grid-rows";';
-    html += '  container.innerHTML = "";';
-    
-    html += '  if (pageItems.length === 0) {';
-    html += '    container.innerHTML = "<div style=\'text-align:center;padding:30px;color:#888;\'>Ничего не найдено</div>";';
-    html += '  }';
-    
-    html += '  pageItems.forEach(function(i) {';
-    html += '    var a = document.createElement("a");';
-    html += '    a.href = "/warehouse/item?id=" + i.id;';
-    html += '    var cl = parseFloat(i.current_stock) > 0 ? "green" : "red";';
-    html += '    var unit = i.unit || "шт";';
-    html += '    var imgHtml = i.photo_url ? \'<img src="\' + i.photo_url + \'">\' : \'<div class="ph">\' + svgPh + \'</div>\';';
-    html += '    var pinHtml = i.is_pinned ? pinSvg : "";';
-    
-    // Отрисовка в зависимости от режима
-    html += '    if (viewMode === "tile") {';
-    html += '      a.className = "card-tile";';
-    html += '      a.innerHTML = imgHtml + pinHtml + \'<div class="name">\' + i.name + \'</div><div class="stock \' + cl + \'">\' + fmtNum(i.current_stock) + \' \' + unit + \'</div>\';';
-    html += '    } else {';
-    html += '      a.className = "card-row";';
-    html += '      a.innerHTML = \'<div class="row-left">\' + imgHtml + \'<div><div class="name">\' + i.name + pinHtml + \'</div></div></div>\' + \'<div class="stock \' + cl + \'">\' + fmtNum(i.current_stock) + \' \' + unit + \'</div>\';';
-    html += '    }';
-    html += '    container.appendChild(a);';
-    html += '  });';
+      html += 'function applyFilters() {';
+      html += '  var q = document.getElementById("search").value.toLowerCase();';
+      html += '  var filtered = allItems.filter(function(i){';
+      html += '    var matchQ = i.name.toLowerCase().includes(q);';
+      html += '    var matchC = (currentCat === 0 || i.category_id === currentCat);';
+      html += '    return matchQ && matchC;';
+      html += '  });';
+      html += '  currentPage = 1; render(filtered);';
+      html += '}';
 
-    // Отрисовка пагинации
-    html += '  var pag = document.getElementById("pagination"); pag.innerHTML = "";';
-    html += '  if (totalPages > 1) {';
-    html += '    var prevBtn = document.createElement("button"); prevBtn.className = "cat-btn"; prevBtn.innerText = "←"; prevBtn.disabled = currentPage === 1; prevBtn.onclick = function(){ currentPage--; render(); window.scrollTo(0,0); }; if(currentPage === 1) prevBtn.style.opacity = "0.3";';
-    html += '    var nextBtn = document.createElement("button"); nextBtn.className = "cat-btn"; nextBtn.innerText = "→"; nextBtn.disabled = currentPage === totalPages; nextBtn.onclick = function(){ currentPage++; render(); window.scrollTo(0,0); }; if(currentPage === totalPages) nextBtn.style.opacity = "0.3";';
-    html += '    var txt = document.createElement("span"); txt.style = "display:flex; align-items:center; font-weight:600; font-size:14px;"; txt.innerText = currentPage + " / " + totalPages;';
-    html += '    pag.appendChild(prevBtn); pag.appendChild(txt); pag.appendChild(nextBtn);';
-    html += '  }';
-    html += '}';
-    html += '<\/script></body></html>';
-    res.send(html);
+      html += 'var filteredItems = [];';
+
+      html += 'function render(items) {';
+      html += '  if (items) filteredItems = items;';
+      html += '  var totalPages = Math.ceil(filteredItems.length / pageLimit) || 1;';
+      html += '  if (currentPage > totalPages) currentPage = totalPages;';
+      html += '  var start = (currentPage - 1) * pageLimit;';
+      html += '  var end = start + pageLimit;';
+      html += '  var pageItems = filteredItems.slice(start, end);';
+      html += '  var container = document.getElementById("itemsContainer");';
+      html += '  container.className = viewMode === "tile" ? "grid-tiles" : "grid-rows";';
+      html += '  container.innerHTML = "";';
+      
+      html += '  if (pageItems.length === 0) { container.innerHTML = "<div style=\'text-align:center;padding:30px;color:#888;\'>Ничего не найдено</div>"; }';
+      
+      html += '  pageItems.forEach(function(i) {';
+      html += '    var a = document.createElement("a");';
+      html += '    a.href = "/warehouse/item?id=" + i.id;';
+      html += '    var cl = parseFloat(i.current_stock) > 0 ? "green" : "red";';
+      html += '    var unit = i.unit || "шт";';
+      html += '    var imgHtml = i.photo_url ? \'<img src="\' + i.photo_url + \'">\' : \'<div class="ph">\' + svgPh + \'</div>\';';
+      html += '    var pinHtml = i.is_pinned ? pinSvg : "";';
+      
+      html += '    if (viewMode === "tile") {';
+      html += '      a.className = "card-tile";';
+      html += '      a.innerHTML = imgHtml + pinHtml + \'<div class="name">\' + i.name + \'</div><div class="stock \' + cl + \'">\' + fmtNum(i.current_stock) + \' \' + unit + \'</div>\';';
+      html += '    } else {';
+      html += '      a.className = "card-row";';
+      html += '      a.innerHTML = \'<div class="row-left">\' + imgHtml + \'<div><div class="name">\' + i.name + pinHtml + \'</div></div></div>\' + \'<div class="stock \' + cl + \'">\' + fmtNum(i.current_stock) + \' \' + unit + \'</div>\';';
+      html += '    }';
+      html += '    container.appendChild(a);';
+      html += '  });';
+
+      html += '  var pag = document.getElementById("pagination"); pag.innerHTML = "";';
+      html += '  if (totalPages > 1) {';
+      html += '    var prevBtn = document.createElement("button"); prevBtn.className = "cat-btn"; prevBtn.innerText = "←"; prevBtn.disabled = currentPage === 1; prevBtn.onclick = function(){ currentPage--; render(); window.scrollTo(0,0); }; if(currentPage === 1) prevBtn.style.opacity = "0.3";';
+      html += '    var nextBtn = document.createElement("button"); nextBtn.className = "cat-btn"; nextBtn.innerText = "→"; nextBtn.disabled = currentPage === totalPages; nextBtn.onclick = function(){ currentPage++; render(); window.scrollTo(0,0); }; if(currentPage === totalPages) nextBtn.style.opacity = "0.3";';
+      html += '    var txt = document.createElement("span"); txt.style = "display:flex; align-items:center; font-weight:600; font-size:14px;"; txt.innerText = currentPage + " / " + totalPages;';
+      html += '    pag.appendChild(prevBtn); pag.appendChild(txt); pag.appendChild(nextBtn);';
+      html += '  }';
+      html += '}';
+      html += '<\/script></body></html>';
+      res.send(html);
+    } catch (e) {
+      console.error('Inventory error:', e.message);
+      res.status(500).send('Ошибка сервера');
+    }
   });
   // ====== 7. API ИСТОРИИ ТОВАРА ======
   app.get('/api/warehouse/item/history', async (req, res) => {
@@ -1158,11 +1202,6 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "");';
     html += '}';
 
-    html += 'function translateReason(r) {';
-    html += '  var map = { spoilage: "Порча", loss: "Потеря", markdown: "Уценка", sorting: "Пересорт" };';
-    html += '  return map[r] || r;';
-    html += '}';
-
     html += 'fetch("/api/warehouse/item/history?id=" + itemId)';
     html += '.then(function(r) { return r.json(); })';
     html += '.then(function(d) {';
@@ -1229,6 +1268,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '      a.className = "history-card writeoff";';
     html += '      a.href = "/warehouse/documents/details?id=" + h.id + "&type=writeoffs";';
     html += '      title.innerHTML = "<span class=\'h-badge badge-writeoff\'>Списание</span> №" + h.id;';
+    // Правка 1: Перевод причины
     html += '      meta.textContent += " · " + translateReason(h.reason);';
     html += '      amt.textContent = "-" + fmtNum(h.qty) + " " + itemUnit;';
     html += '      amt.style.color = "' + dangerColor + '";';
@@ -1248,6 +1288,11 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '}).catch(function() {';
     html += '  document.getElementById("list").textContent = "Ошибка загрузки";';
     html += '});';
+
+    html += 'function translateReason(r) {';
+    html += '  var map = { spoilage: "Порча", loss: "Потеря", markdown: "Уценка", sorting: "Пересорт" };';
+    html += '  return map[r] || r;';
+    html += '}';
 
     html += 'function togglePin() {';
     html += '  var newVal = !isPinned;';
@@ -1276,7 +1321,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'showAlert("Успех", "Переименовано", true); ';
     html += 'setTimeout(function() { location.reload(); }, 1000); ';
     html += '} else showAlert("Ошибка", d.error, false); })';
-    html += '  .catch(function() { showAlert("Ошибка сети", "Повторите", false); });';
+    html += '  .catch(function() { showAlert("Ошибка сети", "Проверьте интернет или отключите VPN", false); });';
     html += '}';
 
     html += 'function mergeItem() {';
@@ -1290,7 +1335,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '    .then(function(r) { return r.json(); })';
     html += '    .then(function(d) { if (d.ok) { window.location.href = "/warehouse/inventory"; } ';
     html += '    else showAlert("Ошибка", d.error, false); })';
-    html += '    .catch(function() { showAlert("Ошибка сети", "Повторите", false); });';
+    html += '    .catch(function() { showAlert("Ошибка сети", "Проверьте интернет или отключите VPN", false); });';
     html += '  }, true);';
     html += '}';
 
@@ -1326,7 +1371,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '  .then(function(d) {';
     html += '    if (d.ok) { savePhoto(d.url); }';
     html += '    else { showAlert("Ошибка", d.error || "Сервер не принял фото", false); }';
-    html += '  }).catch(function() { showAlert("Ошибка сети", "Не удалось загрузить фото", false); });';
+    html += '  }).catch(function() { showAlert("Ошибка сети", "Проверьте интернет или отключите VPN", false); });';
     html += '}';
 
     html += 'function savePhoto(url) {';
@@ -1654,7 +1699,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    else showAlert("Ошибка", d.error, false);';
       html += '  })';
       html += '  .catch(function() {';
-      html += '    showAlert("Ошибка сети", "Повторите", false);';
+      html += '    showAlert("Ошибка сети", "Проверьте интернет или отключите VPN", false);';
       html += '  });';
       html += '}';
 
@@ -1674,7 +1719,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    } else showAlert("Ошибка", d.error, false);';
       html += '  })';
       html += '  .catch(function() {';
-      html += '    showAlert("Ошибка сети", "Повторите", false);';
+      html += '    showAlert("Ошибка сети", "Проверьте интернет или отключите VPN", false);';
       html += '  });';
       html += '}';
       html += '<\/script></body></html>';
@@ -1912,21 +1957,31 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'background: rgba(0,0,0,0.5); display: none; ';
       html += 'z-index: 1000; }';
       html += '.sheet-overlay.open { display: block; }';
+      
+      // СПЛИТ-СКРИН (Правка 5)
       html += '.bottom-sheet { position: fixed; bottom: -100%; ';
-      html += 'left: 0; width: 100%; height: 85vh; background: #fafaf8; ';
+      html += 'left: 0; width: 100%; height: 92vh; background: #fafaf8; ';
       html += 'border-radius: 24px 24px 0 0; ';
       html += 'transition: bottom 0.3s ease; z-index: 1001; ';
       html += 'display: flex; flex-direction: column; }';
       html += '.bottom-sheet.open { bottom: 0; }';
       html += '.sheet-header { padding: 10px 15px; display: flex; ';
-      html += 'justify-content: space-between; align-items: center; }';
+      html += 'justify-content: space-between; align-items: center; ';
+      html += 'flex-shrink: 0; }';
       html += '.sheet-handle { width: 40px; height: 5px; ';
       html += 'background: #ccc; border-radius: 5px; margin: 0 auto; }';
       html += '.close-sheet { background: none; border: none; ';
       html += 'font-size: 24px; color: #888; cursor: pointer; ';
       html += 'padding: 0; line-height: 1; }';
+      
+      // Верхняя часть (скролл)
       html += '.sheet-content { padding: 0 15px; overflow-y: auto; ';
       html += 'flex: 1; }';
+      
+      // Нижняя часть (фикс)
+      html += '.calc-panel { padding: 10px 15px 20px 15px; ';
+      html += 'background: #fafaf8; border-top: 1px solid #eee; ';
+      html += 'flex-shrink: 0; }';
 
       html += '.b-row { display: grid; ';
       html += 'grid-template-columns: 1fr 140px 30px; gap: 5px; ';
@@ -1973,7 +2028,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.btn-submit { width: 100%; padding: 14px; ';
       html += 'font-size: 16px; font-weight: 800; color: #fff; ';
       html += 'background: #ccc; border: none; border-radius: 14px; ';
-      html += 'margin-top: 0; }';
+      html += 'margin-top: 15px; }';
       html += '.btn-submit.ready { background: ' + successColor + '; }';
       
       html += '.total-inp { font-size: 24px; font-weight: 800; ';
@@ -2043,22 +2098,24 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'onclick="closeSheet()">✕</button>';
       html += '</div>';
 
+      // СПЛИТ-СКРИН: Верхняя часть с товарами
       html += '<div class="sheet-content">';
-      
       html += '<div class="swipe-hint">← Смахните влево по корзине, чтобы очистить</div>';
-      
       html += '<div id="bList" class="swipeable-cart"></div>';
+      html += '</div>';
 
-      html += '<div style="margin-top:15px;">';
-      html += '<label style="font-size:12px; font-weight:600; ';
-      html += 'color:#666;">Сумма чека (можно менять)</label>';
+      // СПЛИТ-СКРИН: Нижняя часть с калькулятором
+      html += '<div class="calc-panel">';
       
+      html += '<div style="margin-bottom:15px;">';
+      html += '<label style="font-size:12px; font-weight:600; color:#666;">';
+      html += 'Сумма чека (можно менять)</label>';
       html += '<input type="text" id="totalPrice" class="total-inp" ';
       html += 'value="0" inputmode="none" readonly ';
       html += 'onclick="setActiveInput(\'totalPrice\')">';
       html += '</div>';
 
-      html += '<div style="display:flex; gap:5px; margin-top:15px;">';
+      html += '<div style="display:flex; gap:5px; margin-bottom:15px;">';
       html += '<div class="pay-btn active" id="btn-cash" ';
       html += 'onclick="setPay(\'cash\')">💵 Нал</div>';
       html += '<div class="pay-btn" id="btn-card" ';
@@ -2067,13 +2124,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'onclick="setPay(\'qr\')">📱 QR</div>';
       html += '</div>';
 
-      html += '<div style="margin-top:15px;" id="payArea">';
       html += '<div class="pay-input-row">';
-      
       html += '<input type="text" id="payAmount" placeholder="Сумма" ';
       html += 'inputmode="none" readonly ';
       html += 'onclick="setActiveInput(\'payAmount\')">';
-      
       html += '<button onclick="addPayment()">Внести</button>';
       html += '</div>';
 
@@ -2087,28 +2141,22 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<button onclick="num(\'7\')">7</button>';
       html += '<button onclick="num(\'8\')">8</button>';
       html += '<button onclick="num(\'9\')">9</button>';
-      html += '<button onclick="num(\'C\')" ';
-      html += 'style="color:red;">C</button>';
+      html += '<button onclick="num(\'C\')" style="color:red;">C</button>';
       html += '<button onclick="num(\'0\')">0</button>';
       html += '<button onclick="num(\'X\')">⌫</button>';
-      html += '</div>';
       html += '</div>';
 
       html += '<div class="pay-list" id="payList" ';
       html += 'style="font-size:14px; margin-top:10px;"></div>';
       html += '<div style="text-align:center; margin-top:10px; ';
-      html += 'font-size:16px; font-weight:800; padding-bottom: 10px;" ';
+      html += 'font-size:16px; font-weight:800;" ';
       html += 'id="remainTxt"></div>';
-      html += '</div>';
 
-      html += '<div style="padding: 10px 15px 20px 15px; ';
-      html += 'background: #fafaf8; border-top: 1px solid #eee;">';
       html += '<button class="btn-submit" id="btnSubmit" ';
-      html += 'style="margin-top:0;" ';
       html += 'onclick="openPrecheck()">Принять оплату</button>';
-      html += '</div>';
+      html += '</div>'; // конец calc-panel
 
-      html += '</div>';
+      html += '</div>'; // конец bottom-sheet
 
       // МОДАЛЬНОЕ ОКНО ПРЕ-ЧЕК (ПРАВКА 7 и 8)
       html += '<div class="sheet-overlay" id="precheckModal" ';
@@ -2147,7 +2195,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<a href="/warehouse/inventory" class="menu-item">';
       html += getIconSvg('inventory') + 'Обзор</a>';
       html += '<a href="/warehouse/history" class="menu-item">';
-      html += getIconSvg('history') + 'История</a>';
+      html += getIconSvg('history') + 'История смены</a>';
       html += '<a href="/warehouse/documents" class="menu-item">';
       html += getIconSvg('docs') + 'Документы</a>';
       html += '<a href="/warehouse/reports" class="menu-item">';
@@ -2156,6 +2204,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += getIconSvg('audit') + 'Журнал</a>';
       html += '</div>';
 
+      // МОДАЛЬНОЕ ОКНО УСПЕХА
       html += '<div class="sheet-overlay" id="successModal" ';
       html += 'style="z-index:2000; align-items:center; ';
       html += 'justify-content:center;">';
@@ -2192,10 +2241,11 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var payMethod = "cash"; var payments = []; ';
       html += 'var changeMethod = "cash"; var currentCat = 0;';
       html += 'var bouquetsMode = false; var bouquetsList = [];';
-      html += 'var activeInputId = "payAmount";';
+      html += 'var activeInputId = "payAmount"; var isFirstInput = true;';
       
-      // Правка 1: подсветка активного поля
+      // Правка 6: Умная подсветка и сброс флага первого ввода
       html += 'function setActiveInput(id) {';
+      html += '  if (activeInputId !== id) { isFirstInput = true; }';
       html += '  activeInputId = id;';
       html += '  var allInps = document.querySelectorAll(".total-inp, .qty-input, .pay-input-row input");';
       html += '  allInps.forEach(function(el) { el.classList.remove("input-active"); });';
@@ -2356,7 +2406,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      else { cart.push({ id: it.shop_item_id, name: it.name, qty: it.qty, retail: it.retail_price || 0 }); }';
       html += '    });';
       html += '    resetPayments(); openSheet();';
-      html += '  }).catch(function() { showAlert("Ошибка сети", "Повторите", false); });';
+      html += '  }).catch(function() { showAlert("Ошибка сети", "Проверьте интернет", false); });';
       html += '}';
 
       html += 'function setCat(id) {';
@@ -2469,9 +2519,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    div.appendChild(name); div.appendChild(ctrl); div.appendChild(del);';
       html += '    b.appendChild(div);';
       html += '  });';
+      
       html += '  document.getElementById("totalPrice").value = total;';
       
-      // Правка 9: Убрано авто-заполнение поля оплаты
+      // Правка 4: Умное автодублирование
+      html += '  var payInp = document.getElementById("payAmount");';
+      html += '  if (payments.length === 0 && payInp.value === "") { ';
+      html += '    payInp.value = total; ';
+      html += '  }';
+      
       html += '  document.getElementById("fcCount").innerText = count + " товар(ов)";';
       html += '  document.getElementById("fcTotal").innerText = total + " ₽";';
       html += '  renderPayments();';
@@ -2489,20 +2545,26 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  document.getElementById("btn-" + method).classList.add("active");';
       html += '}';
 
-      // Правка 5: Пересчет суммы при вводе с Numpad
+      // Правка 5 и 6: Умный Numpad (автоочистка при первом вводе)
       html += 'function num(v) {';
       html += '  var inp = document.getElementById(activeInputId);';
       html += '  if (!inp) return;';
-      html += '  if (v === "C") inp.value = "";';
-      html += '  else if (v === "X") inp.value = inp.value.slice(0, -1);';
-      html += '  else inp.value += v;';
+      
+      html += '  if (v === "C") { inp.value = ""; isFirstInput = false; }';
+      html += '  else if (v === "X") { inp.value = inp.value.slice(0, -1); isFirstInput = false; }';
+      html += '  else {';
+      html += '    if (isFirstInput) { inp.value = ""; isFirstInput = false; }';
+      html += '    inp.value += v;';
+      html += '  }';
+
       html += '  if (activeInputId === "payAmount") renderPayments();';
-      html += '  if (activeInputId === "totalPrice") onManualPriceChange();';
+      html += '  if (activeInputId === "totalPrice") renderPayments();';
+      
       html += '  if (activeInputId.startsWith("qty_")) {';
       html += '    var idx = parseInt(activeInputId.replace("qty_", ""));';
       html += '    var newQty = parseFloat(inp.value) || 0;';
       html += '    if (newQty > 0) { cart[idx].qty = newQty; saveCart(); }';
-      html += '    renderBasket();'; // Пересчет суммы чека
+      html += '    renderBasket();'; 
       html += '  }';
       html += '}';
 
@@ -2514,10 +2576,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  renderPayments();';
       html += '}';
 
-      html += 'function onManualPriceChange() {';
-      html += '  renderPayments();';
-      html += '}';
-
+      // Правка 4: Строгая логика "Оплачено полностью"
       html += 'function renderPayments() {';
       html += '  var total = parseFloat(document.getElementById("totalPrice").value) || 0;';
       html += '  var paid = 0; var pl = document.getElementById("payList"); pl.innerHTML = "";';
@@ -2529,7 +2588,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    row.style = "display:flex; justify-content:space-between; align-items:center; color:' + successColor + '; font-weight:bold; margin-bottom:5px;";';
       html += '    var txt = document.createElement("span"); txt.textContent = mn + " " + p.amount + " ₽";';
       
-      // Правка 6: Отмена ошибочной оплаты
       html += '    var delBtn = document.createElement("span"); delBtn.textContent = " ✕";';
       html += '    delBtn.style = "color:red; cursor:pointer; font-size:16px; margin-left:10px;";';
       html += '    delBtn.onclick = function() { payments.splice(i, 1); renderPayments(); };';
@@ -2538,17 +2596,21 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  });';
       
       html += '  var typed = parseFloat(document.getElementById("payAmount").value) || 0;';
-      html += '  var remain = total - (paid + typed);';
+      html += '  var remain = total - paid;';
       html += '  var rTxt = document.getElementById("remainTxt"); var btn = document.getElementById("btnSubmit");';
+      
       html += '  if (total <= 0) { rTxt.innerText = "Укажите сумму чека"; rTxt.style.color = "' + dangerColor + '"; btn.classList.remove("ready"); return; }';
+      
       html += '  if (remain > 0) { rTxt.innerText = "Осталось внести: " + remain + " ₽"; rTxt.style.color = "' + dangerColor + '"; btn.classList.remove("ready"); }';
-      html += '  else if (remain < 0) { rTxt.innerText = "Сдача: " + Math.abs(remain) + " ₽"; rTxt.style.color = "#3C7A89"; btn.classList.add("ready"); }';
-      html += '  else { rTxt.innerText = "Оплачено полностью"; rTxt.style.color = "' + successColor + '"; btn.classList.add("ready"); }';
+      html += '  else if (remain === 0) {';
+      html += '    if (payments.length === 0 && typed > 0) { rTxt.innerText = "Нажмите кнопку «Внести»"; rTxt.style.color = "' + accentColor + '"; btn.classList.remove("ready"); }';
+      html += '    else { rTxt.innerText = "Оплачено полностью"; rTxt.style.color = "' + successColor + '"; btn.classList.add("ready"); }';
+      html += '  }';
+      html += '  else { rTxt.innerText = "Сдача: " + Math.abs(remain) + " ₽"; rTxt.style.color = "#3C7A89"; btn.classList.add("ready"); }';
       html += '}';
 
       html += 'function setChangeMethod(m) { changeMethod = m; var els = document.querySelectorAll(".pay-btn"); els.forEach(function(el) { el.classList.remove("active"); }); document.getElementById("cm-" + m).classList.add("active"); }';
 
-      // Правка 7: Пре-чек
       html += 'function openPrecheck() {';
       html += '  var btn = document.getElementById("btnSubmit");';
       html += '  if (!btn.classList.contains("ready")) { showAlert("Внимание", "Оплата не завершена", false); return; }';
@@ -2570,7 +2632,6 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += 'function closePrecheck() { document.getElementById("precheckModal").style.display = "none"; }';
 
-      // Сохранение (вызывается после Пре-чека)
       html += 'function saveSale() {';
       html += '  var btn = document.getElementById("btnSubmit");';
       html += '  btn.disabled = true; btn.innerText = "Отправка...";';
@@ -2602,7 +2663,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      document.getElementById("precheckModal").style.display = "none";';
       html += '      document.getElementById("successModal").style.display = "flex";';
       html += '    } else { btn.disabled = false; btn.innerText = "Принять оплату"; showAlert("Ошибка", d.error || "unknown", false); }';
-      html += '  }).catch(function(err) { btn.disabled = false; btn.innerText = "Принять оплату"; showAlert("Ошибка сети", "Повторите", false); });';
+      html += '  }).catch(function(err) { btn.disabled = false; btn.innerText = "Принять оплату"; showAlert("Ошибка сети", "Проверьте интернет или отключите VPN", false); });';
       html += '}';
 
       html += 'function closeSuccess() { window.location.reload(); }';
@@ -2913,7 +2974,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '    .then(function(d) { if(d.ok) { location.reload(); } ';
     html += '    else showAlert("Ошибка", d.error, false); })';
     html += '    .catch(function() {';
-    html += '      showAlert("Ошибка сети", "Повторите", false); });';
+    html += '      showAlert("Ошибка сети", "Проверьте интернет", false); });';
     html += '  }, true);';
     html += '}';
     html += '<\/script></body></html>';
@@ -3095,6 +3156,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += 'var receiptId = ' + receiptId + ';';
     html += 'var currentLastCost = 0; var itemsCatalog = [];';
 
+    // Фикс: функция fmtNum внутри накладной
     html += 'function fmtNum(n) {';
     html += '  var num = parseFloat(n);';
     html += '  if (isNaN(num)) return "0";';
@@ -3315,7 +3377,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '  }).catch(function() {';
     html += '    btn.disabled = false; ';
     html += '    btn.innerText = "Провести накладную";';
-    html += '    showAlert("Ошибка сети", "Повторите", false);';
+    html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
     html += '  });';
     html += '}';
     html += '<\/script></body></html>';
@@ -3858,7 +3920,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '  }).catch(function() {';
     html += '    document.getElementById("btnSaveWriteoff")';
     html += '    .disabled = false;';
-    html += '    showAlert("Ошибка сети", "Повторите", false);';
+    html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
     html += '  });';
     html += '}';
     html += '<\/script></body></html>';
@@ -4047,9 +4109,11 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '  d.docs.forEach(function(doc){ var a = document.createElement("a"); a.className = "doc " + (currentType === "receipts" ? "receipt" : "writeoff"); a.href = "/warehouse/documents/details?id=" + doc.id + "&type=" + currentType;';
     html += '    var ds = new Date(doc.date).toLocaleString("ru-RU"); var author = doc.author || "Система"; var left = document.createElement("div"); var title = document.createElement("b"); var meta = document.createElement("div"); var amount = document.createElement("div"); meta.className = "meta"; amount.className = "amount";';
     html += '    if (currentType === "receipts") { title.textContent = "Накладная №" + doc.id; meta.textContent = ds + " · " + author; amount.textContent = parseFloat(doc.amount).toLocaleString("ru-RU") + " ₽"; amount.style.color = "#3C7A89"; }';
-    html += '    else { title.textContent = "Акт списания №" + doc.id; var itm = doc.item_name || ""; meta.textContent = ds + " · " + author + " (" + itm + " / " + doc.reason + ")"; amount.textContent = "-" + parseFloat(doc.amount) + " шт"; amount.style.color = "' + accentColor + '"; }';
+    html += '    else { title.textContent = "Акт списания №" + doc.id; var itm = doc.item_name || ""; var reason = translateReason(doc.reason); meta.textContent = ds + " · " + author + " (" + itm + " / " + reason + ")"; amount.textContent = "-" + fmtNum(doc.amount) + " шт"; amount.style.color = "' + accentColor + '"; }';
     html += '    left.appendChild(title); left.appendChild(meta); a.appendChild(left); a.appendChild(amount); b.appendChild(a); });';
     html += '}).catch(function(){ document.getElementById("list").textContent = "Ошибка загрузки"; });';
+    html += 'function translateReason(r) { var map = { spoilage: "Порча", loss: "Потеря", markdown: "Уценка", sorting: "Пересорт" }; return map[r] || r; }';
+    html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) return "0"; return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
     html += '<\/script></body></html>';
     res.send(html);
   });
@@ -4085,6 +4149,8 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '</style></head><body><div class="header"><a href="/warehouse/documents" class="back">←</a><h2 style="margin:0; display:flex; align-items:center;">' + getIconSvg('docs') + 'Документ</h2></div><div class="card" id="content">Загрузка...</div>';
 
     html += '<script>';
+    html += 'function translateReason(r) { var map = { spoilage: "Порча", loss: "Потеря", markdown: "Уценка", sorting: "Пересорт" }; return map[r] || r; }';
+    html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) return "0"; return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
     html += 'var urlParams = new URLSearchParams(window.location.search); var docId = parseInt(urlParams.get("id")) || 0; var docType = urlParams.get("type") || "receipts";';
     html += 'fetch("/api/warehouse/documents/details?id=" + docId + "&type=" + docType).then(function(r){return r.json();}).then(function(d){';
     html += '  var content = document.getElementById("content"); content.innerHTML = ""; if (!d.ok) { content.textContent = "Ошибка: " + d.error; return; }';
@@ -4093,12 +4159,13 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '  var meta = document.createElement("div"); meta.style = "font-size:13px; color:#666; margin-bottom:15px;"; meta.textContent = ds + " · Сделал: " + (h.author || "Неизвестно"); content.appendChild(meta);';
     html += '  d.items.forEach(function(i){ var a = document.createElement("a"); a.href = "/warehouse/item?id=" + (parseInt(i.shop_item_id) || 0); a.className = "item-row"; var left = document.createElement("div"); var nm = document.createElement("div"); nm.className = "item-name"; nm.textContent = i.name; left.appendChild(nm);';
     html += '    if (docType === "receipts") { var cost = document.createElement("div"); cost.style = "font-size:12px; color:#888;"; cost.textContent = parseFloat(i.unit_cost).toLocaleString("ru-RU") + " ₽/шт"; left.appendChild(cost); }';
-    html += '    else { var rsn = document.createElement("div"); rsn.style = "font-size:12px; color:#888;"; rsn.textContent = "Причина: " + h.reason; left.appendChild(rsn); }';
-    html += '    var right = document.createElement("div"); right.className = "item-qty"; right.textContent = parseFloat(i.qty) + " шт";';
+    html += '    else { var rsn = document.createElement("div"); rsn.style = "font-size:12px; color:#888;"; rsn.textContent = "Причина: " + translateReason(h.reason); left.appendChild(rsn); }';
+    html += '    var right = document.createElement("div"); right.className = "item-qty"; right.textContent = fmtNum(i.qty) + " шт";';
     html += '    if (docType === "receipts") { var sum = document.createElement("div"); sum.style = "font-size:12px; color:#888; font-weight:400;"; sum.textContent = parseFloat(i.sum).toLocaleString("ru-RU") + " ₽"; right.appendChild(sum); }';
     html += '    a.appendChild(left); a.appendChild(right); content.appendChild(a); });';
     html += '  var total = document.createElement("div"); total.className = "total-row";';
-    html += '  total.innerHTML = "<span>Итого:</span><span>" + (docType === "receipts" ? parseFloat(h.total_sum).toLocaleString("ru-RU") + " ₽" : h.total_sum + " шт") + "</span>"; content.appendChild(total);';
+    html += '  var totalTxt = docType === "receipts" ? parseFloat(h.total_sum).toLocaleString("ru-RU") + " ₽" : fmtNum(h.total_sum) + " шт";';
+    html += '  total.innerHTML = "<span>Итого:</span><span>" + totalTxt + "</span>"; content.appendChild(total);';
     html += '}).catch(function(){ document.getElementById("content").textContent = "Ошибка загрузки"; });';
     html += '<\/script></body></html>';
     res.send(html);
@@ -4238,20 +4305,38 @@ function setupWarehouse(app, bot, s3ctx) {
     res.send(html);
   });
 
-  // ====== 43. API ИСТОРИИ ======
+  // ====== 43. API ИСТОРИИ (БЕЗОПАСНЫЙ SQL) ======
   app.get('/api/warehouse/history', async (req, res) => {
     try {
       const shopId = req.query.shop || 'kupidon';
       const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
       
+      // Правка 10: Безопасный SQL без GROUP BY
       const sales = await pool.query(
-        'SELECT s.id, s.real_price as amount, s.date, \'sale\' as type, a.name as person, STRING_AGG(COALESCE(shi.custom_name, i.name) || \' x\' || si.qty::text, \', \') as items FROM wh_sales s LEFT JOIN admins a ON a.chat_id = s.chat_id LEFT JOIN wh_sale_items si ON si.sale_id = s.id LEFT JOIN wh_shop_items shi ON shi.id = si.shop_item_id LEFT JOIN wh_items i ON i.id = shi.item_id WHERE s.shop_id = $1 AND DATE(s.date) = $2 GROUP BY s.id, a.name ORDER BY s.date DESC', [shopId, targetDate]
+        'SELECT s.id, s.real_price as amount, s.date, \'sale\' as type, a.name as person, ' +
+        '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) || \' x\' || si.qty::text, \', \') ' +
+        'FROM wh_sale_items si JOIN wh_shop_items shi ON shi.id = si.shop_item_id ' +
+        'JOIN wh_items i ON i.id = shi.item_id WHERE si.sale_id = s.id) as items ' +
+        'FROM wh_sales s LEFT JOIN admins a ON a.chat_id = s.chat_id ' +
+        'WHERE s.shop_id = $1 AND DATE(s.date) = $2 ORDER BY s.date DESC', [shopId, targetDate]
       );
+      
       const writeoffs = await pool.query(
-        'SELECT w.id, w.qty as amount, w.date, \'writeoff\' as type, a.name as person, COALESCE(shi.custom_name, i.name) as items, w.reason FROM wh_writeoffs w LEFT JOIN admins a ON a.chat_id = w.chat_id LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id LEFT JOIN wh_items i ON i.id = shi.item_id WHERE w.shop_id = $1 AND DATE(w.date) = $2 ORDER BY w.date DESC', [shopId, targetDate]
+        'SELECT w.id, w.qty as amount, w.date, \'writeoff\' as type, a.name as person, ' +
+        'COALESCE(shi.custom_name, i.name) as items, w.reason ' +
+        'FROM wh_writeoffs w LEFT JOIN admins a ON a.chat_id = w.chat_id ' +
+        'LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id ' +
+        'LEFT JOIN wh_items i ON i.id = shi.item_id ' +
+        'WHERE w.shop_id = $1 AND DATE(w.date) = $2 ORDER BY w.date DESC', [shopId, targetDate]
       );
+      
       const receipts = await pool.query(
-        'SELECT r.id, r.total_sum as amount, r.date, \'receipt\' as type, a.name as person, STRING_AGG(COALESCE(shi.custom_name, i.name) || \' x\' || ri.qty::text, \', \') as items FROM wh_receipts r LEFT JOIN admins a ON a.chat_id = r.chat_id LEFT JOIN wh_receipt_items ri ON ri.receipt_id = r.id LEFT JOIN wh_shop_items shi ON shi.id = ri.shop_item_id LEFT JOIN wh_items i ON i.id = shi.item_id WHERE r.shop_id = $1 AND DATE(r.date) = $2 AND r.status = \'completed\' GROUP BY r.id, a.name ORDER BY r.date DESC', [shopId, targetDate]
+        'SELECT r.id, r.total_sum as amount, r.date, \'receipt\' as type, a.name as person, ' +
+        '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) || \' x\' || ri.qty::text, \', \') ' +
+        'FROM wh_receipt_items ri JOIN wh_shop_items shi ON shi.id = ri.shop_item_id ' +
+        'JOIN wh_items i ON i.id = shi.item_id WHERE ri.receipt_id = r.id) as items ' +
+        'FROM wh_receipts r LEFT JOIN admins a ON a.chat_id = r.chat_id ' +
+        'WHERE r.shop_id = $1 AND DATE(r.date) = $2 AND r.status = \'completed\' ORDER BY r.date DESC', [shopId, targetDate]
       );
       
       let list = [...sales.rows, ...writeoffs.rows, ...receipts.rows];
@@ -4267,22 +4352,28 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '.header { display: flex; align-items: center; margin-bottom: 15px; } .back { font-size: 24px; text-decoration: none; color: ' + brandColor + '; margin-right: 15px; } .calendar { display: flex; overflow-x: auto; gap: 10px; margin-bottom: 15px; } .day-btn { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 10px; text-align: center; min-width: 60px; text-decoration: none; color: ' + brandColor + '; font-weight: 600; }';
     html += '.day-btn.active { background: ' + brandColor + '; color: #fff; } .item { background: #fff; border-radius: 12px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; cursor: pointer; box-shadow: 0 4px 15px rgba(15,61,62,0.05); } .item.sale { border-left: 4px solid #3C7A89; } .item.writeoff { border-left: 4px solid ' + accentColor + '; } .item.receipt { border-left: 4px solid ' + successColor + '; }';
     html += '.date { font-size: 11px; color: #888; margin-top: 5px; } .amount { font-weight: 800; font-size: 16px; text-align: right; } .items-list { font-size: 13px; color: #555; margin-top: 4px; font-style: italic; } .btn-cancel { background: #fff; border: 1px solid ' + dangerColor + '; color: ' + dangerColor + '; border-radius: 6px; padding: 5px 10px; font-size: 12px; margin-top: 5px; font-weight: 600; }';
-    html += '</style></head><body><div class="header"><a href="/warehouse-app" class="back">←</a><h2 style="margin:0; display:flex; align-items:center;">' + getIconSvg('history') + 'История</h2></div><div class="calendar" id="calendar"></div><div id="list">Загрузка...</div>';
+    html += '</style></head><body><div class="header"><a href="/warehouse-app" class="back">←</a><h2 style="margin:0; display:flex; align-items:center;">' + getIconSvg('history') + 'История смены</h2></div><div class="calendar" id="calendar"></div><div id="list">Загрузка...</div>';
 
     html += '<script>';
+    html += 'function translateReason(r) { var map = { spoilage: "Порча", loss: "Потеря", markdown: "Уценка", sorting: "Пересорт" }; return map[r] || r; }';
+    html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) return "0"; return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
     html += 'var selectedDate = new URLSearchParams(window.location.search).get("date") || new Date().toISOString().slice(0, 10);';
     html += 'function renderCalendar() { var cal = document.getElementById("calendar"); var today = new Date(); var daysRu = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]; for (var i = 0; i < 7; i++) { var d = new Date(today); d.setDate(today.getDate() - i); var dStr = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); var a = document.createElement("a"); a.href = "/warehouse/history?date=" + dStr; a.className = "day-btn"; if (dStr === selectedDate) a.classList.add("active"); var label = i === 0 ? "Сегодня" : daysRu[d.getDay()]; a.innerHTML = "<div style=\'font-size:10px;\'>" + label + "</div><div style=\'font-size:18px;font-weight:800;\'>" + d.getDate() + "</div>"; cal.appendChild(a); } }';
     html += 'renderCalendar();';
+    
+    // Правка 10: Отрисовка без innerHTML для кнопок (защита от ошибок)
     html += 'fetch("/api/warehouse/history?shop=kupidon&date=" + selectedDate).then(function(r){return r.json();}).then(function(d){';
     html += '  var b = document.getElementById("list"); b.innerHTML = ""; if (!d.ok || d.history.length === 0) { b.textContent = "За этот день операций нет"; return; }';
     html += '  d.history.forEach(function(h){ var div = document.createElement("div"); var ds = new Date(h.date).toLocaleString("ru-RU", { hour: "2-digit", minute: "2-digit" }); var seller = h.person || "Флорист";';
-    html += '    if (h.type === "sale") { div.className = "item sale"; var saleId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/sale/details?id=" + saleId; }; div.innerHTML = "<div><b>💰 Продажа</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + "</div></div>";';
+    html += '    if (h.type === "sale") { div.className = "item sale"; var saleId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/sale/details?id=" + saleId; };';
+    html += '      var left = document.createElement("div"); left.innerHTML = "<b>💰 Продажа</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + "</div>";';
+    html += '      var right = document.createElement("div"); right.innerHTML = "<div class=\'amount\'>+" + parseFloat(h.amount).toLocaleString("ru-RU") + " ₽</div>";';
     html += '      var btnR = document.createElement("button"); btnR.className = "btn-cancel"; btnR.innerText = "Возврат"; btnR.onclick = function(e){e.stopPropagation(); doCancel(saleId, "return");};';
     html += '      var btnL = document.createElement("button"); btnL.className = "btn-cancel"; btnL.style.marginLeft = "5px"; btnL.innerText = "В потери"; btnL.onclick = function(e){e.stopPropagation(); doCancel(saleId, "loss");};';
-    html += '      var rightDiv = document.createElement("div"); rightDiv.innerHTML = "<div class=\'amount\'>+" + parseFloat(h.amount).toLocaleString("ru-RU") + " ₽</div>";';
-    html += '      var btnWrap = document.createElement("div"); btnWrap.appendChild(btnR); btnWrap.appendChild(btnL); rightDiv.appendChild(btnWrap); div.appendChild(rightDiv);';
+    html += '      var btnWrap = document.createElement("div"); btnWrap.appendChild(btnR); btnWrap.appendChild(btnL); right.appendChild(btnWrap);';
+    html += '      div.appendChild(left); div.appendChild(right);';
     html += '    } else if (h.type === "receipt") { div.className = "item receipt"; var docId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/documents/details?id=" + docId + "&type=receipts"; }; div.innerHTML = "<div><b>📥 Приход</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + "</div></div>"; div.innerHTML += "<div class=\'amount\' style=\'color:" + successColor + ";\'>+" + parseFloat(h.amount).toLocaleString("ru-RU") + " ₽</div>";';
-    html += '    } else { div.className = "item writeoff"; var docId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/documents/details?id=" + docId + "&type=writeoffs"; }; div.innerHTML = "<div><b>🗑 Списание</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + " (" + h.reason + ")</div></div>"; div.innerHTML += "<div class=\'amount\' style=\'color:" + accentColor + "\'>-" + parseFloat(h.amount) + " шт</div>"; }';
+    html += '    } else { div.className = "item writeoff"; var docId = parseInt(h.id) || 0; div.onclick = function() { window.location.href = "/warehouse/documents/details?id=" + docId + "&type=writeoffs"; }; div.innerHTML = "<div><b>🗑 Списание</b> (" + seller + ")<div class=\'date\'>" + ds + "</div><div class=\'items-list\'>" + (h.items || "") + " (" + translateReason(h.reason) + ")</div></div>"; div.innerHTML += "<div class=\'amount\' style=\'color:" + accentColor + "\'>-" + fmtNum(h.amount) + " шт</div>"; }';
     html += '    b.appendChild(div); });';
     html += '}).catch(function(){ document.getElementById("list").textContent = "Ошибка загрузки"; });';
     
@@ -4326,22 +4417,33 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 47. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
+  // ====== 47. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ (С КНОПКОЙ ОТМЕНЫ) ======
   app.get('/warehouse/sale/details', (req, res) => {
     let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
     html += fontLink + uiScript + '<style>body { font-family: "Manrope", sans-serif; margin: 0; padding: 15px; background: ' + bgGradient + '; color: ' + brandColor + '; }';
     html += '.header { display: flex; align-items: center; margin-bottom: 15px; } .back { font-size: 24px; text-decoration: none; color: ' + brandColor + '; margin-right: 15px; } .card { background: #fff; border-radius: 16px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(15,61,62,0.05); }';
-    html += '.total { font-size: 28px; font-weight: 800; color: ' + successColor + '; margin-bottom: 10px; } .meta { font-size: 13px; color: #666; margin-bottom: 20px; } .item-row { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; text-decoration: none; color: ' + brandColor + '; } .item-row:last-child { border-bottom: none; } .item-name { font-weight: 600; font-size: 16px; } .item-qty { color: ' + dangerColor + '; font-weight: 800; }</style></head><body>';
-    html += '<div class="header"><a href="/warehouse/history" class="back">←</a><h2 style="margin:0;">🧾 Чек</h2></div><div class="card" id="content">Загрузка...</div>';
+    html += '.total { font-size: 28px; font-weight: 800; color: ' + successColor + '; margin-bottom: 10px; } .meta { font-size: 13px; color: #666; margin-bottom: 20px; } .item-row { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; text-decoration: none; color: ' + brandColor + '; } .item-row:last-child { border-bottom: none; } .item-name { font-weight: 600; font-size: 16px; } .item-qty { color: ' + dangerColor + '; font-weight: 800; }';
+    html += '.btn-cancel-sale { width: 100%; padding: 15px; background: #fff; border: 2px solid ' + dangerColor + '; color: ' + dangerColor + '; border-radius: 12px; font-weight: 800; font-size: 16px; margin-top: 20px; cursor: pointer; }';
+    html += '</style></head><body><div class="header"><a href="/warehouse/history" class="back">←</a><h2 style="margin:0;">🧾 Чек</h2></div><div class="card" id="content">Загрузка...</div>';
 
     html += '<script>';
+    html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) return "0"; return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
     html += 'var saleId = parseInt(new URLSearchParams(window.location.search).get("id")) || 0;';
     html += 'fetch("/api/warehouse/sale/details?id=" + saleId).then(function(r){return r.json();}).then(function(d){';
     html += '  var content = document.getElementById("content"); content.innerHTML = ""; if (!d.ok) { content.textContent = "Ошибка"; return; }';
     html += '  var s = d.sale; var ds = new Date(s.date).toLocaleString("ru-RU");';
     html += '  var tot = document.createElement("div"); tot.className = "total"; tot.textContent = parseFloat(s.real_price).toLocaleString("ru-RU") + " ₽"; content.appendChild(tot);';
     html += '  var meta = document.createElement("div"); meta.className = "meta"; meta.textContent = "Продал: " + (s.seller || "Неизвестно") + " · Дата: " + ds; content.appendChild(meta);';
-    html += '  d.items.forEach(function(i){ var a = document.createElement("a"); a.href = "/warehouse/item?id=" + (parseInt(i.shop_item_id)||0); a.className = "item-row"; var left = document.createElement("div"); var n = document.createElement("div"); n.className = "item-name"; n.textContent = i.name; var c = document.createElement("div"); c.style = "font-size:12px;color:#888;"; c.textContent = "Себестоимость: " + parseFloat(i.cost_at_sale) + " ₽/шт"; left.appendChild(n); left.appendChild(c); var right = document.createElement("div"); right.className = "item-qty"; right.textContent = "x" + i.qty; a.appendChild(left); a.appendChild(right); content.appendChild(a); });';
+    html += '  d.items.forEach(function(i){ var a = document.createElement("a"); a.href = "/warehouse/item?id=" + (parseInt(i.shop_item_id)||0); a.className = "item-row"; var left = document.createElement("div"); var n = document.createElement("div"); n.className = "item-name"; n.textContent = i.name; var c = document.createElement("div"); c.style = "font-size:12px;color:#888;"; c.textContent = "Себестоимость: " + parseFloat(i.cost_at_sale) + " ₽/шт"; left.appendChild(n); left.appendChild(c); var right = document.createElement("div"); right.className = "item-qty"; right.textContent = "x" + fmtNum(i.qty); a.appendChild(left); a.appendChild(right); content.appendChild(a); });';
+    
+    // Правка 11: Кнопка отмены продажи
+    html += '  var cancelBtn = document.createElement("button"); cancelBtn.className = "btn-cancel-sale"; cancelBtn.innerText = "Отменить продажу (Возврат)";';
+    html += '  cancelBtn.onclick = function() { showConfirm("Отмена продажи", "Вы уверены? Товары вернутся на склад.", function() {';
+    html += '    fetch("/api/warehouse/sale/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopId: "kupidon", saleId: saleId, action: "return" }) })';
+    html += '    .then(function(r){return r.json();}).then(function(res){ if(res.ok){ showAlert("Успех", "Возврат оформлен", true); setTimeout(function(){window.location.href="/warehouse/history";}, 1000); } else showAlert("Ошибка", res.error, false); }).catch(function(){});';
+    html += '  }, true); };';
+    html += '  content.appendChild(cancelBtn);';
+    
     html += '}).catch(function(){ document.getElementById("content").textContent = "Ошибка загрузки"; });';
     html += '<\/script></body></html>';
     res.send(html);
