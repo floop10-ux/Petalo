@@ -81,8 +81,8 @@ function capWords(str) {
 function setupWarehouse(app, bot, s3ctx) {
   // = ====== S3 КОНТ sЕКСТ ======
   s3ctx = s3ctx || {};
-  const s3 = s3ctx.s33 ||ctx.s3backup || null;
-  const YC_BUCKET = s3ctx.YC_BUCKET || null;
+  const s3 = s3ctx.s3 || null;
+  const s3backup = s3ctx.s3backup || null;
   const BC_BUCKET = s3ctx.BC_BUCKET || null;
   const BC_ENDPOINT = s3ctx.BC_ENDPOINT || null;
 
