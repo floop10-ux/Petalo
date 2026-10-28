@@ -126,6 +126,7 @@ async function initWarehouseDb() {
       pay_cash NUMERIC(10,2) DEFAULT 0,
       pay_card NUMERIC(10,2) DEFAULT 0,
       pay_qr NUMERIC(10,2) DEFAULT 0,
+      idempotency_key VARCHAR(100),
       date TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -252,6 +253,12 @@ async function initWarehouseDb() {
     'IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE'
   );
 
+  // Поле для архивации товаров
+  await pool.query(
+    'ALTER TABLE wh_shop_items ADD COLUMN ' +
+    'IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE'
+  );
+
   // Подготовка к интеграции с витриной
   await pool.query(
     'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS ' +
@@ -260,6 +267,12 @@ async function initWarehouseDb() {
   await pool.query(
     'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS ' +
     'lifetime_type VARCHAR(20) DEFAULT \'auto_3_days\''
+  );
+
+  // Миграция для Правки №7 (Защита от двойного тапа)
+  await pool.query(
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS idempotency_key VARCHAR(100)'
   );
 
   // Смена типов с INTEGER на NUMERIC(10,2)
@@ -334,10 +347,16 @@ async function initWarehouseDb() {
     'ON wh_shifts(shop_id, status)'
   );
   
-  // Индекс для быстрой работы Журнала и Отчетов (Правка №10)
+  // Индекс для быстрой работы Журнала и Отчетов
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_wh_audit_log ' +
     'ON wh_audit_log(shop_id, date DESC)'
+  );
+
+  // Уникальный индекс для пломбы (Защита от двойного тапа)
+  await pool.query(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_wh_sales_idem ' +
+    'ON wh_sales(idempotency_key) WHERE idempotency_key IS NOT NULL'
   );
 
   // --- ДОБАВЛЕНИЕ БАЗОВЫХ КАТЕГОРИЙ ---
@@ -358,7 +377,7 @@ async function initWarehouseDb() {
     }
   }
 
-  console.log('✅ Таблицы склада готовы (v5.4 + batch 1)');
+  console.log('✅ Таблицы склада готовы (v5.5 + batch 2)');
   console.log('✅ Базовые категории проверены');
 }
 
