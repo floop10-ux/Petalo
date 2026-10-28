@@ -228,7 +228,7 @@ function setupWarehouse(app, bot, s3ctx) {
     return '';
   }
 
-  // ====== ЕДИНОЕ МЕНЮ (ПРАВКА №1) ======
+  // ====== ЕДИНОЕ МЕНЮ ======
   function getUnifiedMenu(active) {
     const items = [
       { id: 'home', url: '/warehouse-app', text: 'Главная', icon: 'home' },
@@ -304,7 +304,6 @@ function setupWarehouse(app, bot, s3ctx) {
         animation: blinkCaret 1s step-end infinite !important;
       }
 
-      /* Правка №2: Увеличено поле ввода количества */
       .qty-input { 
         width: 70px !important; height: 32px; 
         text-align: center; font-size: 15px; 
@@ -379,7 +378,6 @@ function setupWarehouse(app, bot, s3ctx) {
         border-color: ${brandColor};
         color: ${brandColor}; font-weight: 800; }
 
-      /* Универсальное меню */
       .sidebar { position: fixed; top: 0; right: -280px; 
         width: 260px; height: 100%; background: #fff; 
         box-shadow: -5px 0 15px rgba(0,0,0,0.1); 
@@ -501,7 +499,8 @@ function setupWarehouse(app, bot, s3ctx) {
       }
     </script>
   `;
-  // ====== CSRF ЗАЩИТА (ДЛЯ API СКЛАДА) ======
+
+  // ====== CSRF ЗАЩИТА ======
   app.use('/api/warehouse', function(req, res, next) {
     if (req.method === 'POST') {
       const origin = req.headers.origin;
@@ -513,9 +512,7 @@ function setupWarehouse(app, bot, s3ctx) {
       if (!origin && !referer) allowed = true;
       
       if (!allowed) {
-        return res.status(403).json({ 
-          ok: false, error: 'CSRF detected' 
-        });
+        return res.status(403).json({ ok: false, error: 'CSRF detected' });
       }
     }
     next();
@@ -557,7 +554,204 @@ function setupWarehouse(app, bot, s3ctx) {
     return verifyAuth(match[1]);
   }
 
-  // ====== 1. ГЛАВНЫЙ ЭКРАН ======
+  // ====== 1. ВХОД ======
+  app.get('/warehouse-login', (req, res) => {
+    const shopId = req.query.shop || 'kupidon';
+    let html = '<!DOCTYPE html><html><head>';
+    html += '<meta charset="UTF-8">';
+    html += '<meta name="viewport" content="width=device-width, ';
+    html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+    html += fontLink;
+    html += uiScript;
+    html += '<style>';
+    html += 'body { font-family: "Manrope", sans-serif; ';
+    html += 'text-align: center; padding: 50px 20px; ';
+    html += 'background: ' + bgGradient + '; }';
+    html += '.card { background: #fff; border-radius: 20px; ';
+    html += 'padding: 30px; max-width: 400px; margin: 0 auto; ';
+    html += 'box-shadow: 0 4px 15px rgba(15,61,62,0.1); }';
+    html += 'input { font-size: 20px; padding: 15px; width: 100%; ';
+    html += 'text-align: center; margin: 0 auto 10px; }';
+    html += 'button { background: ' + brandColor + '; color: white; ';
+    html += 'border: none; padding: 15px 40px; font-size: 18px; ';
+    html += 'border-radius: 30px; font-weight: 600; margin-top: 10px; ';
+    html += 'font-family: inherit; width: 100%; }';
+    html += '.link-owner { display: block; margin-top: 20px; ';
+    html += 'color: #888; font-size: 13px; cursor: pointer; }';
+    html += '.login-block { display: none; }';
+    html += '</style></head><body>';
+    
+    // Правка №1: Логотип вместо ящика
+    html += '<div class="card">';
+    html += '<div style="display:flex; align-items:center; ';
+    html += 'justify-content:center; margin-bottom:15px;">';
+    html += '<svg viewBox="0 0 100 100" ';
+    html += 'style="width: 40px; height: 40px; margin-right: 10px;">';
+    html += '<rect x="10" y="10" width="80" height="80" rx="20" ';
+    html += 'fill="' + brandColor + '"/>';
+    html += '<path d="M25 30 L70 30 Q75 30 75 35 L75 60 Q75 65 70 65 ';
+    html += 'L55 65 L45 75 L45 65 L30 65 Q25 65 25 60 L25 35 Q25 30 30 30 Z" ';
+    html += 'fill="none" stroke="#fff" stroke-width="5"/>';
+    html += '<path d="M40 45 Q55 35 60 50 Q45 60 40 45 Z" ';
+    html += 'fill="' + accentColor + '"/>';
+    html += '<path d="M55 45 Q70 35 75 50 Q60 60 55 45 Z" fill="#fff"/>';
+    html += '</svg>';
+    html += '<h1 style="margin:0;">Flowind</h1>';
+    html += '</div>';
+
+    // Правка №7: Два режима входа
+    html += '<div id="pinBlock">';
+    html += '<p>Введите PIN-код флориста</p>';
+    html += '<input type="password" id="pin" maxlength="4" ';
+    html += 'inputmode="numeric" placeholder="****">';
+    html += '<button onclick="loginPin()">Войти</button>';
+    html += '<span class="link-owner" onclick="showOwnerLogin()">';
+    html += 'Вход для владельца (Логин/Пароль)</span>';
+    html += '</div>';
+
+    html += '<div id="ownerBlock" class="login-block">';
+    html += '<p>Вход для владельца</p>';
+    html += '<input type="text" id="login" placeholder="Логин" ';
+    html += 'autocomplete="username">';
+    html += '<input type="password" id="password" placeholder="Пароль" ';
+    html += 'autocomplete="current-password">';
+    html += '<button onclick="loginOwner()">Войти</button>';
+    html += '<span class="link-owner" onclick="showPinLogin()">';
+    html += 'Вход для флориста (PIN)</span>';
+    html += '</div>';
+
+    html += '</div>';
+
+    html += '<script>';
+    html += 'function showOwnerLogin() {';
+    html += '  document.getElementById("pinBlock").style.display = "none";';
+    html += '  document.getElementById("ownerBlock").style.display = "block";';
+    html += '}';
+    html += 'function showPinLogin() {';
+    html += '  document.getElementById("ownerBlock").style.display = "none";';
+    html += '  document.getElementById("pinBlock").style.display = "block";';
+    html += '}';
+
+    html += 'function loginPin() {';
+    html += '  var pin = document.getElementById("pin").value;';
+    html += '  var btn = document.querySelector("#pinBlock button");';
+    html += '  btn.disabled = true; btn.innerText = "Вход...";';
+    html += '  fetch("/api/warehouse/auth", { method: "POST", ';
+    html += '  headers: { "Content-Type": "application/json" }, ';
+    html += '  body: JSON.stringify({ shopId: "' + shopId + '", pin: pin }) })';
+    html += '  .then(function(r) { return r.json(); })';
+    html += '  .then(function(data) {';
+    html += '    if (data.ok) window.location.href = "/warehouse-app"; ';
+    html += '    else { btn.disabled = false; btn.innerText = "Войти";';
+    html += '      if (data.rate_limited) showAlert("Стоп", ';
+    html += '      "Аккаунт заблокирован на 15 минут.", false); ';
+    html += '      else showAlert("Ошибка", "Неверный PIN", false); }';
+    html += '  }).catch(function() { btn.disabled = false; ';
+    html += '  btn.innerText = "Войти"; showAlert("Ошибка сети", ';
+    html += '  "Проверьте интернет", false); });';
+    html += '}';
+
+    html += 'function loginOwner() {';
+    html += '  var lg = document.getElementById("login").value;';
+    html += '  var pw = document.getElementById("password").value;';
+    html += '  var btn = document.querySelector("#ownerBlock button");';
+    html += '  btn.disabled = true; btn.innerText = "Вход...";';
+    html += '  fetch("/api/warehouse/auth-owner", { method: "POST", ';
+    html += '  headers: { "Content-Type": "application/json" }, ';
+    html += '  body: JSON.stringify({ login: lg, password: pw }) })';
+    html += '  .then(function(r) { return r.json(); })';
+    html += '  .then(function(data) {';
+    html += '    if (data.ok) window.location.href = "/warehouse-app"; ';
+    html += '    else { btn.disabled = false; btn.innerText = "Войти";';
+    html += '      if (data.rate_limited) showAlert("Стоп", ';
+    html += '      "Аккаунт заблокирован на 15 минут.", false); ';
+    html += '      else showAlert("Ошибка", "Неверный логин или пароль", false); }';
+    html += '  }).catch(function() { btn.disabled = false; ';
+    html += '  btn.innerText = "Войти"; showAlert("Ошибка сети", ';
+    html += '  "Проверьте интернет", false); });';
+    html += '}';
+    html += '<\/script></body></html>';
+    res.send(html);
+  });
+
+  // ====== 2. API АВТОРИЗАЦИИ (PIN) ======
+  app.post('/api/warehouse/auth', async (req, res) => {
+    try {
+      const ip = (req.headers['x-forwarded-for'] || '')
+        .split(',')[0].trim() || req.ip || 'unknown';
+        
+      if (!checkAuthLimit(ip)) {
+        return res.json({ ok: false, rate_limited: true });
+      }
+
+      const shopId = req.body.shopId;
+      const pin = String(req.body.pin);
+
+      const r = await pool.query(
+        'SELECT chat_id, role FROM admins WHERE shop_id = $1 ' +
+        'AND warehouse_pin = $2', [shopId, pin]
+      );
+
+      if (r.rows.length === 0) return res.json({ ok: false });
+      
+      const chatId = r.rows[0].chat_id;
+      if (!checkPinLimit(chatId)) {
+        return res.json({ ok: false, rate_limited: true });
+      }
+
+      const authString = signAuth(chatId, shopId);
+      
+      res.setHeader('Set-Cookie', 'wh_auth=' + authString +
+        '; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax');
+      res.json({ ok: true, role: r.rows[0].role });
+    } catch (e) { 
+      console.error('Auth error:', e.message);
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
+  // ====== 3. API АВТОРИЗАЦИИ (ВЛАДЕЛЕЦ) ======
+  app.post('/api/warehouse/auth-owner', async (req, res) => {
+    try {
+      const ip = (req.headers['x-forwarded-for'] || '')
+        .split(',')[0].trim() || req.ip || 'unknown';
+        
+      if (!checkAuthLimit(ip)) {
+        return res.json({ ok: false, rate_limited: true });
+      }
+
+      const login = String(req.body.login || '').trim();
+      const password = String(req.body.password || '');
+      const hash = crypto.createHash('sha256').update(password).digest('hex');
+
+      // Ищем владельца по логину и хешу пароля
+      const r = await pool.query(
+        'SELECT chat_id, shop_id FROM admins WHERE ' +
+        '(login = $1 OR chat_id::text = $1) AND password_hash = $2 ' +
+        'AND role = \'owner\' LIMIT 1', 
+        [login, hash]
+      );
+
+      if (r.rows.length === 0) return res.json({ ok: false });
+      
+      const chatId = r.rows[0].chat_id;
+      const shopId = r.rows[0].shop_id;
+      
+      if (!checkPinLimit(chatId)) {
+        return res.json({ ok: false, rate_limited: true });
+      }
+
+      const authString = signAuth(chatId, shopId);
+      
+      res.setHeader('Set-Cookie', 'wh_auth=' + authString +
+        '; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax');
+      res.json({ ok: true, role: 'owner' });
+    } catch (e) { 
+      console.error('Auth owner error:', e.message);
+      res.status(500).json({ ok: false }); 
+    }
+  });
+  // ====== 4. ГЛАВНЫЙ ЭКРАН ======
   app.get('/warehouse-app', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -746,97 +940,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 2. ВХОД ======
-  app.get('/warehouse-login', (req, res) => {
-    const shopId = req.query.shop || 'kupidon';
-    let html = '<!DOCTYPE html><html><head>';
-    html += '<meta charset="UTF-8">';
-    html += '<meta name="viewport" content="width=device-width, ';
-    html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-    html += fontLink;
-    html += uiScript;
-    html += '<style>';
-    html += 'body { font-family: "Manrope", sans-serif; ';
-    html += 'text-align: center; padding: 50px 20px; ';
-    html += 'background: ' + bgGradient + '; }';
-    html += '.card { background: #fff; border-radius: 20px; ';
-    html += 'padding: 30px; max-width: 400px; margin: 0 auto; ';
-    html += 'box-shadow: 0 4px 15px rgba(15,61,62,0.1); }';
-    html += 'input { font-size: 24px; padding: 10px; width: 120px; ';
-    html += 'text-align: center; letter-spacing: 5px; margin: 0 auto; }';
-    html += 'button { background: ' + brandColor + '; color: white; ';
-    html += 'border: none; padding: 15px 40px; font-size: 18px; ';
-    html += 'border-radius: 30px; font-weight: 600; margin-top: 20px; ';
-    html += 'font-family: inherit; width: 100%; }';
-    html += '</style></head><body>';
-    html += '<div class="card"><h1>📦 Flowind</h1>';
-    html += '<p>Введите PIN-код</p>';
-    html += '<input type="password" id="pin" maxlength="4" ';
-    html += 'inputmode="numeric" placeholder="****">';
-    html += '<button onclick="login()">Войти</button></div>';
-    html += '<script>';
-    html += 'function login() {';
-    html += '  var pin = document.getElementById("pin").value;';
-    html += '  var btn = document.querySelector("button");';
-    html += '  btn.disabled = true; btn.innerText = "Вход...";';
-    html += '  fetch("/api/warehouse/auth", { method: "POST", ';
-    html += 'headers: { "Content-Type": "application/json" }, ';
-    html += 'body: JSON.stringify({ shopId: "' + shopId + '", ';
-    html += 'pin: pin }) })';
-    html += '  .then(function(r) { return r.json(); })';
-    html += '  .then(function(data) {';
-    html += '    if (data.ok) window.location.href = "/warehouse-app"; ';
-    html += '    else { btn.disabled = false; btn.innerText = "Войти";';
-    html += '      if (data.rate_limited) ';
-    html += '        showAlert("Стоп", "Аккаунт заблокирован на 15 минут.", false); ';
-    html += '      else showAlert("Ошибка", "Неверный PIN", false); }';
-    html += '  }).catch(function() { btn.disabled = false; ';
-    html += '  btn.innerText = "Войти"; showAlert("Ошибка сети", ';
-    html += '  "Проверьте интернет", false); });';
-    html += '}';
-    html += '<\/script></body></html>';
-    res.send(html);
-  });
-
-  // ====== 3. API АВТОРИЗАЦИИ ======
-  app.post('/api/warehouse/auth', async (req, res) => {
-    try {
-      const ip = (req.headers['x-forwarded-for'] || '')
-        .split(',')[0].trim() || req.ip || 'unknown';
-        
-      if (!checkAuthLimit(ip)) {
-        return res.json({ ok: false, rate_limited: true });
-      }
-
-      const shopId = req.body.shopId;
-      const pin = String(req.body.pin);
-
-      const r = await pool.query(
-        'SELECT chat_id, role FROM admins WHERE shop_id = $1 ' +
-        'AND warehouse_pin = $2', [shopId, pin]
-      );
-
-      if (r.rows.length === 0) {
-        return res.json({ ok: false });
-      }
-
-      const chatId = r.rows[0].chat_id;
-
-      if (!checkPinLimit(chatId)) {
-        return res.json({ ok: false, rate_limited: true });
-      }
-
-      const authString = signAuth(chatId, shopId);
-      
-      res.setHeader('Set-Cookie', 'wh_auth=' + authString +
-        '; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax');
-      res.json({ ok: true, role: r.rows[0].role });
-    } catch (e) { 
-      console.error('Auth error:', e.message);
-      res.status(500).json({ ok: false }); 
-    }
-  });
-  // ====== 4. API КАТЕГОРИЙ ======
+  // ====== 5. API КАТЕГОРИЙ ======
   app.get('/api/warehouse/categories', async (req, res) => {
     try {
       const r = await pool.query(
@@ -848,7 +952,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 5. API ТОВАРОВ ======
+  // ====== 6. API ТОВАРОВ ======
   app.get('/api/warehouse/items', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -883,13 +987,12 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 6. ОБЗОР СКЛАДА ======
+  // ====== 7. ОБЗОР СКЛАДА ======
   app.get('/warehouse/inventory', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) {
-        return res.redirect('/warehouse-login?shop=kupidon');
-      }
+      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      
       const shopId = auth.shopId;
 
       const statsRes = await pool.query(
@@ -914,6 +1017,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'color: ' + brandColor + '; }';
       html += '.header { display: flex; align-items: center; ';
       html += 'margin-bottom: 15px; justify-content: space-between; }';
+      html += '.header-left { display: flex; align-items: center; }';
       html += '.back { font-size: 24px; text-decoration: none; ';
       html += 'color: ' + brandColor + '; margin-right: 15px; }';
       
@@ -1011,7 +1115,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '</style></head><body>';
 
       html += '<div class="header">';
-      html += '<div style="display:flex; align-items:center;">';
+      html += '<div class="header-left">';
       html += '<a href="/warehouse-app" class="back">←</a>';
       html += '<h2 style="margin:0; display:flex; align-items:center;">';
       html += getIconSvg('inventory') + 'Обзор склада</h2></div>';
@@ -1294,7 +1398,8 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '        if (costStr) { ';
       html += '          var cDiv = document.createElement("div"); ';
-      html += '          cDiv.className = "cost-info"; cDiv.textContent = costStr;';
+      html += '          cDiv.className = "cost-info"; ';
+      html += '          cDiv.textContent = costStr; ';
       html += '          a.appendChild(cDiv); }';
       
       html += '        if (!hasPrice && !isArchived) { ';
@@ -1304,8 +1409,8 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '        if (isArchived) {';
       html += '          var ab = document.createElement("div");';
-      html += '          ab.className = "archived-badge"; ab.textContent = "Архив";';
-      html += '          a.appendChild(ab); }';
+      html += '          ab.className = "archived-badge"; ';
+      html += '          ab.textContent = "Архив"; a.appendChild(ab); }';
       
       html += '      } else {';
       html += '        a.className = "card-row";';
@@ -1333,8 +1438,8 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '        if (isArchived) {';
       html += '          var ab = document.createElement("div");';
-      html += '          ab.className = "archived-badge"; ab.textContent = "Архив";';
-      html += '          nmWrap.appendChild(ab); }';
+      html += '          ab.className = "archived-badge"; ';
+      html += '          ab.textContent = "Архив"; nmWrap.appendChild(ab); }';
       
       html += '        if (i.is_pinned) { ';
       html += '          var pin = document.createElement("span"); ';
@@ -1351,7 +1456,8 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '        if (costStr) { ';
       html += '          var cDiv = document.createElement("div"); ';
-      html += '          cDiv.className = "cost-info"; cDiv.textContent = costStr;';
+      html += '          cDiv.className = "cost-info"; ';
+      html += '          cDiv.textContent = costStr; ';
       html += '          right.appendChild(cDiv); }';
       
       html += '        a.appendChild(right);';
@@ -1402,7 +1508,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 7. API ИСТОРИИ ТОВАРА ======
+  // ====== 8. API ИСТОРИИ ТОВАРА ======
   app.get('/api/warehouse/item/history', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1495,7 +1601,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 8. API УСТАНОВКИ ЦЕНЫ ======
+  // ====== 9. API УСТАНОВКИ ЦЕНЫ ======
   app.post('/api/warehouse/item/set-price', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1529,7 +1635,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 9. API ПЕРЕИМЕНОВАНИЯ ======
+  // ====== 10. API ПЕРЕИМЕНОВАНИЯ ======
   app.post('/api/warehouse/item/rename', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1576,7 +1682,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 10. API ЗАКРЕПЛЕНИЯ ======
+  // ====== 11. API ЗАКРЕПЛЕНИЯ ======
   app.post('/api/warehouse/item/pin', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1596,7 +1702,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 11. API ОБЪЕДИНЕНИЯ ======
+  // ====== 12. API ОБЪЕДИНЕНИЯ ======
   app.post('/api/warehouse/item/merge', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1629,7 +1735,8 @@ function setupWarehouse(app, bot, s3ctx) {
         'FROM wh_shop_items i JOIN wh_items w ON w.id = i.item_id ' +
         'WHERE i.id = $1 AND i.shop_id = $2', [sourceId, auth.shopId]
       );
-      const sourceName = srcRes.rows.length > 0 ? srcRes.rows[0].name : 'ID ' + sourceId;
+      const sourceName = srcRes.rows.length > 0 ? 
+        srcRes.rows[0].name : 'ID ' + sourceId;
 
       const targetRes = await client.query(
         'SELECT i.id FROM wh_shop_items i ' +
@@ -1676,7 +1783,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 12. API УСТАНОВКИ ФОТО ======
+  // ====== 13. API УСТАНОВКИ ФОТО ======
   app.post('/api/warehouse/item/set-photo', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1704,7 +1811,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 13. API УДАЛЕНИЯ ТОВАРА ======
+  // ====== 14. API УДАЛЕНИЯ ТОВАРА ======
   app.post('/api/warehouse/item/delete', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1752,7 +1859,8 @@ function setupWarehouse(app, bot, s3ctx) {
       client.release(); res.status(500).json({ ok: false, error: e.message });
     }
   });
-  // ====== 14. КАРТОЧКА ТОВАРА (ВЫПИСКА) ======
+
+  // ====== 15. КАРТОЧКА ТОВАРА (ВЫПИСКА) ======
   app.get('/warehouse/item', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1781,8 +1889,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'border-left: 5px solid transparent; transition: 0.2s; }';
       html += '.history-card:active { transform: scale(0.98); }';
       html += '.history-card.sale { border-left-color: #3C7A89; }';
-      html += '.history-card.receipt { border-left-color: ' + successColor + '; }';
-      html += '.history-card.writeoff { border-left-color: ' + dangerColor + '; }';
+      html += '.history-card.receipt { border-left-color: ' + 
+              successColor + '; }';
+      html += '.history-card.writeoff { border-left-color: ' + 
+              dangerColor + '; }';
       html += '.h-left { display: flex; flex-direction: column; gap: 4px; }';
       html += '.h-title { font-weight: 700; font-size: 15px; display: flex; ';
       html += 'align-items: center; gap: 6px; }';
@@ -1790,8 +1900,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.h-badge { font-size: 11px; padding: 2px 8px; ';
       html += 'border-radius: 10px; font-weight: 700; display: inline-block; }';
       html += '.badge-sale { background: #E3F2FD; color: #3C7A89; }';
-      html += '.badge-receipt { background: #E8F5E9; color: ' + successColor + '; }';
-      html += '.badge-writeoff { background: #FFEBEE; color: ' + dangerColor + '; }';
+      html += '.badge-receipt { background: #E8F5E9; color: ' + 
+              successColor + '; }';
+      html += '.badge-writeoff { background: #FFEBEE; color: ' + 
+              dangerColor + '; }';
       html += '.h-right { text-align: right; display: flex; ';
       html += 'flex-direction: column; align-items: flex-end; gap: 4px; }';
       html += '.h-amount { font-weight: 800; font-size: 16px; }';
@@ -1819,7 +1931,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); ';
       html += 'width: 85px; text-align: center; margin: 0; }';
       html += '.pag-btn { background: #fff; border: none; padding: 8px 15px; ';
-      html += 'border-radius: 10px; font-weight: 600; color: ' + brandColor + '; ';
+      html += 'border-radius: 10px; font-weight: 600; color: ' + 
+              brandColor + '; ';
       html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
       html += '</style></head><body>';
 
@@ -2021,7 +2134,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
 
       html += 'loadHistory();';
-
       html += 'function deleteItem() {';
       html += '  showConfirm("Удаление", "Вы уверены, что хотите удалить " + ';
       html += '  itemName + "? Если есть история, он будет скрыт.", ';
@@ -2176,449 +2288,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-  // ====== 15. API ЖУРНАЛА ======
-  app.get('/api/warehouse/audit', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      
-      const shopId = auth.shopId;
-      const period = req.query.period || 'today';
-      const targetDate = req.query.date;
-      
-      let dateFilter = '';
-      let params = [shopId];
 
-      if (targetDate) {
-        dateFilter = 'AND l.date >= $2::date AND l.date < ($2::date + 1)';
-        params.push(targetDate);
-      } else if (period === 'today') {
-        dateFilter = 'AND l.date >= CURRENT_DATE AND l.date < CURRENT_DATE + 1';
-      } else if (period === 'week') {
-        dateFilter = 'AND l.date >= NOW() - INTERVAL \'7 days\'';
-      } else if (period === 'month') {
-        dateFilter = 'AND l.date >= NOW() - INTERVAL \'1 month\'';
-      }
-
-      const r = await pool.query(
-        'SELECT l.action, l.details, l.date, l.ref_id, ' +
-        'a.name as person ' +
-        'FROM wh_audit_log l ' +
-        'LEFT JOIN admins a ON a.chat_id = l.chat_id ' +
-        'WHERE l.shop_id = $1 ' + dateFilter + ' ' +
-        'ORDER BY l.date DESC LIMIT 100',
-        params
-      );
-      res.json({ ok: true, logs: r.rows });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
-  });
-
-  // ====== 16. ЭКРАН ЖУРНАЛА ======
-  app.get('/warehouse/audit', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
-      
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
-      html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
-      html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      
-      html += '.filters { display: flex; gap: 8px; margin-bottom: 15px; }';
-      html += '.filter { flex: 1; padding: 10px; border: 1px solid #ddd; ';
-      html += 'border-radius: 12px; background: #fff; text-align: center; ';
-      html += 'cursor: pointer; font-size: 13px; font-weight: 600; }';
-      html += '.filter.active { background: ' + brandColor + '; color: #fff; }';
-      
-      html += '.date-label { font-size: 13px; font-weight: 600; ';
-      html += 'color: #666; margin-bottom: 5px; }';
-      html += '.date-row { display: flex; margin-bottom: 15px; }';
-      html += '.date-row input { width: 100%; padding: 10px; margin: 0; ';
-      html += 'border: 2px solid transparent; transition: border 0.2s; }';
-      html += '.date-row input.active-date { border-color: ' + accentColor + '; }';
-      
-      html += '.log-card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 15px; margin-bottom: 10px; cursor: pointer; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
-      html += 'border-left: 4px solid #ddd; }';
-      html += '.log-card.sale { border-left-color: #3C7A89; }';
-      html += '.log-card.receipt { border-left-color: ' + successColor + '; }';
-      html += '.log-card.writeoff { border-left-color: ' + dangerColor + '; }';
-      html += '.log-card.shift { border-left-color: #E67E22; }';
-      html += '.log-top { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; margin-bottom: 8px; }';
-      html += '.log-title { font-weight: 800; font-size: 15px; ';
-      html += 'display: flex; align-items: center; }';
-      html += '.log-title svg { width: 18px; height: 18px; margin-right: 6px; }';
-      html += '.log-date { font-size: 11px; color: #888; }';
-      html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
-      html += '.log-link { font-size: 12px; color: #3C7A89; ';
-      html += 'margin-top: 8px; font-weight: 600; }';
-      html += '</style></head><body>';
-
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('audit') + 'Журнал</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
-      html += '</div>';
-
-      html += '<div class="filters">';
-      html += '<div class="filter active" id="f-today" ';
-      html += 'onclick="setPeriod(\'today\')">Сегодня</div>';
-      html += '<div class="filter" id="f-week" ';
-      html += 'onclick="setPeriod(\'week\')">Неделя</div>';
-      html += '<div class="filter" id="f-month" ';
-      html += 'onclick="setPeriod(\'month\')">Месяц</div>';
-      html += '</div>';
-      
-      html += '<div class="date-label">Или выберите конкретную дату:</div>';
-      html += '<div class="date-row">';
-      html += '<input type="date" id="auditDate" ';
-      html += 'onchange="setCustomDate(this.value)">';
-      html += '</div>';
-      html += '<div id="list">Загрузка...</div>';
-      
-      html += getUnifiedMenu('audit');
-
-      html += '<script>';
-      html += 'var currentPeriod = "today"; var currentDate = "";';
-      html += 'function setPeriod(p) {';
-      html += '  currentPeriod = p; currentDate = "";';
-      html += '  var dInp = document.getElementById("auditDate");';
-      html += '  dInp.value = ""; dInp.classList.remove("active-date");';
-      html += '  document.querySelectorAll(".filter").forEach(function(el){';
-      html += '    el.classList.remove("active");});';
-      html += '  document.getElementById("f-" + p).classList.add("active");';
-      html += '  loadData();';
-      html += '}';
-      html += 'function setCustomDate(val) {';
-      html += '  currentDate = val;';
-      html += '  var dInp = document.getElementById("auditDate");';
-      html += '  if (val) {';
-      html += '    dInp.classList.add("active-date");';
-      html += '    document.querySelectorAll(".filter").forEach(function(el){';
-      html += '      el.classList.remove("active");});';
-      html += '  } else { setPeriod("today"); }';
-      html += '  loadData();';
-      html += '}';
-      html += 'function getActionIcon(action) {';
-      html += '  var c = "class=\'svg-ico\' viewBox=\'0 0 24 24\' ';
-      html += 'fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'";';
-      html += '  if (action === "sale") return "<svg " + c + ';
-      html += '"><rect x=\'2\' y=\'5\' width=\'20\' height=\'14\' ';
-      html += 'rx=\'2\'/><line x1=\'2\' y1=\'10\' x2=\'22\' y2=\'10\'/></svg>";';
-      html += '  if (action === "receipt") return "<svg " + c + ';
-      html += '"><path d=\'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 ';
-      html += '0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 ';
-      html += '2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\'/></svg>";';
-      html += '  if (action === "writeoff" || action === "cancel") ';
-      html += 'return "<svg " + c + "><polyline points=\'3 6 5 6 21 ';
-      html += '6\'/><path d=\'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2';
-      html += 'V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\'/></svg>";';
-      html += '  if (action === "shift") return "<svg " + c + ';
-      html += '"><circle cx=\'12\' cy=\'12\' r=\'10\'/><polyline ';
-      html += 'points=\'12 6 12 12 16 14\'/></svg>";';
-      html += '  return "<svg " + c + "><circle cx=\'12\' cy=\'12\' ';
-      html += 'r=\'3\'/></svg>";';
-      html += '}';
-      html += 'function loadData() {';
-      html += '  var listEl = document.getElementById("list");';
-      html += '  listEl.textContent = "Загрузка...";';
-      html += '  var url = "/api/warehouse/audit";';
-      html += '  if (currentDate) { url += "?date=" + currentDate; }';
-      html += '  else { url += "?period=" + currentPeriod; }';
-      html += '  fetch(url)';
-      html += '  .then(function(r) { return r.json(); })';
-      html += '  .then(function(d) {';
-      html += '    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);';
-      html += '    if (!d.ok || d.logs.length === 0) {';
-      html += '      listEl.textContent = "Журнал пуст"; return; }';
-      html += '    d.logs.forEach(function(l) {';
-      html += '      var div = document.createElement("div");';
-      html += '      var acts = ["sale","receipt","writeoff","shift"];';
-      html += '      var actClass = acts.indexOf(l.action) >= 0 ? l.action : "";';
-      html += '      div.className = "log-card " + actClass;';
-      html += '      var ds = new Date(l.date).toLocaleString("ru-RU", ';
-      html += '      { day: "2-digit", month: "2-digit", ';
-      html += '      hour: "2-digit", minute: "2-digit" });';
-      html += '      var p = l.person || "Система";';
-      html += '      var top = document.createElement("div");';
-      html += '      top.className = "log-top";';
-      html += '      var titleDiv = document.createElement("div");';
-      html += '      titleDiv.className = "log-title";';
-      html += '      titleDiv.innerHTML = getActionIcon(l.action);';
-      html += '      var nameSpan = document.createElement("span");';
-      html += '      nameSpan.textContent = p;';
-      html += '      titleDiv.appendChild(nameSpan);';
-      html += '      var dateDiv = document.createElement("div");';
-      html += '      dateDiv.className = "log-date";';
-      html += '      dateDiv.textContent = ds;';
-      html += '      top.appendChild(titleDiv); top.appendChild(dateDiv);';
-      html += '      div.appendChild(top);';
-      html += '      var desc = document.createElement("div");';
-      html += '      desc.className = "log-desc";';
-      html += '      desc.textContent = l.details || "";';
-      html += '      div.appendChild(desc);';
-      html += '      if (l.ref_id) {';
-      html += '        var link = document.createElement("div");';
-      html += '        link.className = "log-link";';
-      html += '        if (l.action === "sale") {';
-      html += '          link.textContent = "Чек №" + l.ref_id + " →";';
-      html += '          div.onclick = function() { window.location.href = ';
-      html += '          "/warehouse/sale/details?id=" + l.ref_id; };';
-      html += '        } else if (l.action === "receipt") {';
-      html += '          link.textContent = "Накладная №" + l.ref_id + " →";';
-      html += '          div.onclick = function() { window.location.href = ';
-      html += '          "/warehouse/documents/details?id=" + l.ref_id + ';
-      html += '          "&type=receipts"; };';
-      html += '        } else if (l.action === "writeoff") {';
-      html += '          link.textContent = "Акт списания №" + l.ref_id + " →";';
-      html += '          div.onclick = function() { window.location.href = ';
-      html += '          "/warehouse/documents/details?id=" + l.ref_id + ';
-      html += '          "&type=writeoffs"; };';
-      html += '        }';
-      html += '        div.appendChild(link);';
-      html += '      }';
-      html += '      listEl.appendChild(div);';
-      html += '    });';
-      html += '  }).catch(function() { listEl.textContent = "Ошибка загрузки"; });';
-      html += '}';
-      html += 'loadData();';
-      html += '<\/script></body></html>';
-      res.send(html);
-    } catch(e) {
-      res.status(500).send('Ошибка сервера');
-    }
-  });
-
-  // ====== 17. ЭКРАН СМЕНЫ ======
-  app.get('/warehouse/shift', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
-      
-      const shopId = auth.shopId;
-      const chatId = auth.chatId;
-
-      const shiftRes = await pool.query(
-        'SELECT * FROM wh_shifts WHERE shop_id = $1 ' +
-        'AND chat_id = $2 AND status = \'open\' LIMIT 1',
-        [shopId, chatId]
-      );
-
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
-      html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
-      html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.card { background: #fff; border-radius: 20px; padding: 20px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.btn { width: 100%; padding: 15px; color: #fff; ';
-      html += 'border: none; border-radius: 12px; font-size: 16px; ';
-      html += 'font-weight: 800; margin-top: 15px; font-family: inherit; }';
-      html += '.btn-green { background: ' + successColor + '; }';
-      html += '.btn-red { background: ' + dangerColor + '; }';
-      html += 'input { width: 100%; padding: 15px; font-size: 20px; ';
-      html += 'border: none; border-radius: 12px; margin-top: 5px; ';
-      html += 'box-sizing: border-box; font-family: inherit; }';
-      html += 'label { display: block; margin-top: 15px; ';
-      html += 'font-weight: 600; font-size: 14px; }';
-      html += '.stats { margin-top: 15px; font-size: 14px; }';
-      html += '.stats div { display: flex; justify-content: space-between; ';
-      html += 'margin-bottom: 8px; }';
-      html += '.total-rev { font-size: 18px; font-weight: 800; ';
-      html += 'margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }';
-      html += '</style></head><body>';
-
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('shift') + 'Смена</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
-      html += '</div>';
-
-      if (shiftRes.rows.length === 0) {
-        html += '<div class="card">';
-        html += '<h3 style="margin-top:0;">Открытие смены</h3>';
-        html += '<p style="color:#666; font-size:14px;">';
-        html += 'Укажите сумму наличных в кассе на начало дня.</p>';
-        html += '<label>Наличные в кассе (₽)</label>';
-        html += '<input type="number" id="startCash" placeholder="0">';
-        html += '<button class="btn btn-green" ';
-        html += 'onclick="openShift()">Открыть смену</button></div>';
-      } else {
-        const shift = shiftRes.rows[0];
-        const salesRes = await pool.query(
-          'SELECT SUM(pay_cash) as c, SUM(pay_card) as k, ' +
-          'SUM(pay_qr) as q, SUM(real_price) as t ' +
-          'FROM wh_sales WHERE shop_id = $1 AND date >= $2',
-          [shopId, shift.open_time]
-        );
-        const st = salesRes.rows[0];
-        const cash = parseFloat(st.c || 0);
-        const card = parseFloat(st.k || 0);
-        const qr = parseFloat(st.q || 0);
-        const total = parseFloat(st.t || 0);
-        const start = parseFloat(shift.start_cash);
-
-        html += '<div class="card">';
-        html += '<h3 style="margin-top:0;">Смена открыта</h3>';
-        html += '<div class="stats">';
-        html += '<div><span>Наличные:</span> <b>' + cash + ' ₽</b></div>';
-        html += '<div><span>Карта:</span> <b>' + card + ' ₽</b></div>';
-        html += '<div><span>QR:</span> <b>' + qr + ' ₽</b></div>';
-        html += '<div class="total-rev"><span>Выручка:</span> ';
-        html += '<span>' + total + ' ₽</span></div>';
-        html += '</div>';
-        html += '<label>Фактически наличных в кассе (₽)</label>';
-        html += '<input type="number" id="endCash" ';
-        html += 'placeholder="' + (start + cash) + '">';
-        html += '<p style="font-size:12px; color:#888;">';
-        html += 'Ожидается: ' + (start + cash) + ' ₽ (Остаток + Нал)</p>';
-        html += '<button class="btn btn-red" ';
-        html += 'onclick="closeShift()">Закрыть смену</button></div>';
-      }
-
-      html += getUnifiedMenu('shift');
-
-      html += '<script>';
-      html += 'function openShift() {';
-      html += '  var v = document.getElementById("startCash").value || 0;';
-      html += '  fetch("/api/warehouse/shift", { method: "POST", ';
-      html += 'headers: { "Content-Type": "application/json" }, ';
-      html += 'body: JSON.stringify({ action: "open", val: v }) })';
-      html += '  .then(function(r) { return r.json(); })';
-      html += '  .then(function(d) {';
-      html += '    if (d.ok) window.location.href = "/warehouse/sale";';
-      html += '    else showAlert("Ошибка", d.error, false);';
-      html += '  })';
-      html += '  .catch(function() {';
-      html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
-      html += '  });';
-      html += '}';
-
-      html += 'function closeShift() {';
-      html += '  var v = document.getElementById("endCash").value;';
-      html += '  if (!v) { showAlert("Внимание", "Введите сумму", false); return; }';
-      html += '  fetch("/api/warehouse/shift", { method: "POST", ';
-      html += 'headers: { "Content-Type": "application/json" }, ';
-      html += 'body: JSON.stringify({ action: "close", val: v }) })';
-      html += '  .then(function(r) { return r.json(); })';
-      html += '  .then(function(d) {';
-      html += '    if (d.ok) { ';
-      html += 'showAlert("Готово", "Смена закрыта", true); ';
-      html += '      setTimeout(function() { ';
-      html += 'window.location.href = "/warehouse-app"; }, 1500); ';
-      html += '    } else showAlert("Ошибка", d.error, false);';
-      html += '  })';
-      html += '  .catch(function() {';
-      html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
-      html += '  });';
-      html += '}';
-      html += '<\/script></body></html>';
-      res.send(html);
-    } catch (e) { 
-      res.status(500).send('Ошибка сервера'); 
-    }
-  });
-
-  // ====== 18. API СМЕНЫ ======
-  app.post('/api/warehouse/shift', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      
-      const shopId = auth.shopId;
-      const chatId = auth.chatId;
-
-      if (req.body.action === 'open') {
-        const existing = await pool.query(
-          'SELECT id FROM wh_shifts WHERE shop_id = $1 ' +
-          'AND chat_id = $2 AND status = \'open\' LIMIT 1',
-          [shopId, chatId]
-        );
-        if (existing.rows.length > 0) {
-          return res.json({ ok: false, error: 'Смена уже открыта' });
-        }
-        const startCash = parseFloat(req.body.val) || 0;
-        if (startCash < 0) {
-          return res.json({ ok: false, error: 'Некорректная сумма' });
-        }
-        await pool.query(
-          'INSERT INTO wh_shifts (shop_id, chat_id, start_cash) ' +
-          'VALUES ($1, $2, $3)',
-          [shopId, chatId, startCash]
-        );
-      } else {
-        const shiftRes = await pool.query(
-          'SELECT id, start_cash, open_time FROM wh_shifts ' +
-          'WHERE shop_id = $1 AND chat_id = $2 ' +
-          'AND status = \'open\' ORDER BY open_time DESC LIMIT 1',
-          [shopId, chatId]
-        );
-        if (shiftRes.rows.length === 0) {
-          return res.json({ ok: false, error: 'Смена не найдена' });
-        }
-        const shift = shiftRes.rows[0];
-        const salesRes = await pool.query(
-          'SELECT SUM(pay_cash) as c, SUM(pay_card) as k, ' +
-          'SUM(pay_qr) as q, SUM(real_price) as t ' +
-          'FROM wh_sales WHERE shop_id = $1 AND date >= $2',
-          [shopId, shift.open_time]
-        );
-        const st = salesRes.rows[0];
-        const cash = parseFloat(st.c || 0);
-        const total = parseFloat(st.t || 0);
-        const expected = parseFloat(shift.start_cash) + cash;
-        const actual = parseFloat(req.body.val);
-        if (isNaN(actual)) {
-          return res.json({ ok: false, error: 'Некорректная сумма' });
-        }
-        const discrepancy = actual - expected;
-
-        await pool.query(
-          'UPDATE wh_shifts SET close_time = NOW(), ' +
-          'end_cash_fact = $1, total_sales = $2, cash_sales = $3, ' +
-          'card_sales = $4, qr_sales = $5, discrepancy = $6, ' +
-          'status = \'closed\' WHERE id = $7',
-          [actual, total, cash, parseFloat(st.k || 0), 
-           parseFloat(st.q || 0), discrepancy, shift.id]
-        );
-        await logAction(shopId, chatId, 'shift',
-          'Закрыта смена. Расхождение: ' + discrepancy);
-      }
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e.message });
-    }
-  });
-  // ====== 19. ЭКРАН ПРОДАЖИ (КАССА) ======
+  // ====== 16. ЭКРАН ПРОДАЖИ (КАССА) ======
   app.get('/warehouse/sale', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -2639,6 +2310,7 @@ function setupWarehouse(app, bot, s3ctx) {
         errHtml += '<meta name="viewport" content="width=device-width, ';
         errHtml += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
         errHtml += fontLink;
+        errHtml += uiScript;
         errHtml += '<style>';
         errHtml += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
         errHtml += 'padding: 15px; background: ' + bgGradient + '; ';
@@ -3713,7 +3385,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-  // ====== 20. API ПРОДАЖИ (С ЗАЩИТОЙ ОТ ДВОЙНОГО ТАПА) ======
+  // ====== 17. API ПРОДАЖИ (С ЗАЩИТОЙ ОТ ДВОЙНОГО ТАПА) ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -3777,7 +3449,6 @@ function setupWarehouse(app, bot, s3ctx) {
       for (var i = 0; i < items.length; i++) {
         var item = items[i];
         
-        // ВАЖНО: Минусовой остаток разрешен, не блокируем
         await client.query(
           'UPDATE wh_shop_items SET current_stock = ' +
           'current_stock - $1 WHERE id = $2 AND shop_id = $3',
@@ -3819,7 +3490,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 21. API БУКЕТОВ ДЛЯ КАССЫ ======
+  // ====== 18. API БУКЕТОВ ДЛЯ КАССЫ ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3860,7 +3531,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 22. API РАСКРЫТИЯ БУКЕТА ======
+  // ====== 19. API РАСКРЫТИЯ БУКЕТА ======
   app.post('/api/warehouse/bouquet/expand', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3909,7 +3580,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 23. ЭКРАН СПИСКА НАКЛАДНЫХ ======
+  // ====== 20. ЭКРАН СПИСКА НАКЛАДНЫХ ======
   app.get('/warehouse/receipts', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4043,7 +3714,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 24. API СПИСКА НАКЛАДНЫХ ======
+  // ====== 21. API СПИСКА НАКЛАДНЫХ ======
   app.get('/api/warehouse/receipts', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4061,7 +3732,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-  // ====== 25. API УДАЛЕНИЯ ЧЕРНОВИКА ======
+
+  // ====== 22. API УДАЛЕНИЯ ЧЕРНОВИКА ======
   app.post('/api/warehouse/receipt/delete', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4094,8 +3766,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-
-  // ====== 26. СОЗДАНИЕ ЧЕРНОВИКА ======
+  // ====== 23. СОЗДАНИЕ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/new', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4112,7 +3783,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 27. ЭКРАН РЕДАКТИРОВАНИЯ ЧЕРНОВИКА ======
+  // ====== 24. ЭКРАН РЕДАКТИРОВАНИЯ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/edit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4343,7 +4014,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  hint.innerText = "";';
       html += '  var priceStr = document.getElementById("itemPrice").value;';
       html += '  if (!priceStr) return;';
-      html += '  var currentPrice = parseFloat(priceStr);';
+      html += '  var currentPrice = parseFloat(priceStr.replace(",", "."));';
       html += '  if (currentLastCost > 0 && currentPrice > 0) {';
       html += '    var diff = currentPrice - currentLastCost;';
       html += '    var sign = diff > 0 ? "+" : "";';
@@ -4366,6 +4037,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  };';
       html += '  rd.readAsDataURL(f);';
       html += '}';
+
       html += 'fetch("/api/warehouse/categories")';
       html += '.then(function(r) { return r.json(); })';
       html += '.then(function(d) { if (d.ok) {';
@@ -4505,7 +4177,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    ctrl.className = "b-controls";';
       
       html += '    var c1 = document.createElement("div");';
-      html += '    c1.innerHTML = "<label>Кол-во</label>";';
+      html += '    c1.innerHTML = "<label>Количество</label>";';
       html += '    var inpQ = document.createElement("input"); ';
       html += '    inpQ.type = "number"; inpQ.value = item.qty; ';
       html += '    inpQ.step = "0.1"; inpQ.inputMode = "decimal";';
@@ -4589,12 +4261,12 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
       html += '<\/script></body></html>';
       res.send(html);
-    } catch (e) {
+    } catch(e) {
       res.status(500).send('Ошибка сервера');
     }
   });
 
-  // ====== 28. API ПОЛУЧЕНИЯ ПОЗИЦИЙ НАКЛАДНОЙ ======
+  // ====== 25. API ПОЛУЧЕНИЯ ПОЗИЦИЙ НАКЛАДНОЙ ======
   app.get('/api/warehouse/receipt/items', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4618,8 +4290,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-
-  // ====== 29. API ДОБАВЛЕНИЯ ПОЗИЦИИ ======
+  // ====== 26. API ДОБАВЛЕНИЯ ПОЗИЦИИ В НАКЛАДНУЮ ======
   app.post('/api/warehouse/receipt/item/add', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4749,7 +4420,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
-  // ====== 30. API СОХРАНЕНИЯ И ПРОВЕДЕНИЯ ======
+
+  // ====== 27. API СОХРАНЕНИЯ И ПРОВЕДЕНИЯ НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/save-all', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -4863,7 +4535,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 31. ЭКРАН СПИСАНИЯ ======
+  // ====== 28. ЭКРАН СПИСАНИЯ ======
   app.get('/warehouse/writeoff', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5262,7 +4934,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 32. API СПИСАНИЯ ======
+  // ====== 29. API СПИСАНИЯ ======
   app.post('/api/warehouse/writeoff', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -5335,7 +5007,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-  // ====== 33. API ЗАГРУЗКИ ФОТО (S3 С ФИКСОМ) ======
+// ====== 30. API ЗАГРУЗКИ ФОТО (S3) ======
   app.post('/api/warehouse/upload', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5392,7 +5064,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 34. API ДОКУМЕНТОВ ======
+  // ====== 31. API ДОКУМЕНТОВ ======
   app.get('/api/warehouse/documents', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5427,7 +5099,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 35. ЭКРАН ДОКУМЕНТОВ ======
+  // ====== 32. ЭКРАН ДОКУМЕНТОВ ======
   app.get('/warehouse/documents', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5536,7 +5208,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 36. API ДЕТАЛЕЙ ДОКУМЕНТА ======
+  // ====== 33. API ДЕТАЛЕЙ ДОКУМЕНТА ======
   app.get('/api/warehouse/documents/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5600,7 +5272,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 37. ЭКРАН ДЕТАЛЕЙ ДОКУМЕНТА ======
+  // ====== 34. ЭКРАН ДЕТАЛЕЙ ДОКУМЕНТА ======
   app.get('/warehouse/documents/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5728,8 +5400,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        .then(function(res){ ';
       html += '        if(res.ok){ showAlert("Готово", ';
       html += '        "Накладная отменена", true); ';
+      // Правка №9: Редирект сразу в черновик для редактирования
       html += '        setTimeout(function(){window.location.href=';
-      html += '        "/warehouse/receipts";}, 1000); } ';
+      html += '        "/warehouse/receipt/edit?id=" + docId;}, 1000); } ';
       html += '        else showAlert("Ошибка", res.error, false); })';
       html += '        .catch(function(){});';
       html += '      }, true); };';
@@ -5745,7 +5418,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 38. API ОТМЕНЫ ПРОВЕДЕНИЯ ======
+  // ====== 35. API ОТМЕНЫ ПРОВЕДЕНИЯ НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -5809,7 +5482,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-  // ====== 39. API ОТЧЁТОВ ======
+  // ====== 36. API ОТЧЁТОВ ======
   app.get('/api/warehouse/reports', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5932,7 +5605,11 @@ function setupWarehouse(app, bot, s3ctx) {
           qr: parseFloat(rev.rows[0].qr) || 0,
           count: parseInt(rev.rows[0].count) || 0
         },
-        losses: { total: losses, percent: lossPercent, reasons: lossReasons },
+        losses: { 
+          total: losses, 
+          percent: lossPercent, 
+          reasons: lossReasons 
+        },
         top: top.rows,
         movement: {
           receipts: parseFloat(receiptSum.rows[0].total) || 0,
@@ -5946,7 +5623,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 40. ЭКРАН ОТЧЁТОВ ======
+  // ====== 37. ЭКРАН ОТЧЁТОВ ======
   app.get('/warehouse/reports', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6303,7 +5980,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 41. API СМЕН ДЛЯ ОТЧЕТА ======
+  // ====== 38. API СМЕН ДЛЯ ОТЧЕТА ======
   app.get('/api/warehouse/shifts/report', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6338,14 +6015,15 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-  // ====== 42. API ФЛОРИСТОВ ======
+  // ====== 39. API ФЛОРИСТОВ И ВЛАДЕЛЬЦА ======
   app.get('/api/warehouse/staff', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
       const ownerCheck = await pool.query(
-        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
+        'SELECT role, login FROM admins ' +
+        'WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
         [auth.chatId, auth.shopId]
       );
       
@@ -6353,22 +6031,33 @@ function setupWarehouse(app, bot, s3ctx) {
         return res.status(403).json({ ok: false, error: 'Только владелец' });
       }
       
+      const shopInfo = await pool.query(
+        'SELECT invite_code FROM shops WHERE shop_id = $1', 
+        [auth.shopId]
+      );
+      
       const r = await pool.query(
         'SELECT a.name, a.warehouse_pin, a.can_receipt, a.can_sale, ' +
-        'a.can_writeoff, a.chat_id, COALESCE(SUM(s.real_price), 0) ' +
+        'a.can_writeoff, a.chat_id, a.role, COALESCE(SUM(s.real_price), 0) ' +
         'as total_sales FROM admins a ' +
         'LEFT JOIN wh_sales s ON a.chat_id = s.chat_id ' +
         'WHERE a.shop_id = $1 AND a.role = \'florist\' ' +
         'GROUP BY a.chat_id, a.name, a.warehouse_pin, a.can_receipt, ' +
-        'a.can_sale, a.can_writeoff', [auth.shopId]
+        'a.can_sale, a.can_writeoff, a.role', [auth.shopId]
       );
-      res.json({ ok: true, staff: r.rows });
+      
+      res.json({ 
+        ok: true, 
+        staff: r.rows,
+        inviteCode: shopInfo.rows.length > 0 ? shopInfo.rows[0].invite_code : '',
+        ownerLogin: ownerCheck.rows[0].login || ''
+      });
     } catch (e) { 
       res.status(500).json({ ok: false }); 
     }
   });
 
-  // ====== 43. ЭКРАН ФЛОРИСТОВ ======
+  // ====== 40. ЭКРАН ФЛОРИСТОВ ======
   app.get('/warehouse/staff', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6386,13 +6075,17 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.header-left { display: flex; align-items: center; }';
       html += '.back { font-size: 24px; text-decoration: none; ';
       html += 'color: ' + brandColor + '; margin-right: 15px; } ';
+      html += '.btn-invite { width: 100%; background: ' + successColor + '; ';
+      html += 'color: #fff; border: none; padding: 15px; ';
+      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
+      html += 'margin-bottom: 15px; display: flex; align-items: center; ';
+      html += 'justify-content: center; gap: 8px; }';
       html += '.card { background: #fff; border-radius: 16px; ';
       html += 'padding: 15px; margin-bottom: 15px; ';
       html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); } ';
       html += '.name { font-size: 18px; font-weight: 800; } ';
       html += '.sales { font-size: 16px; color: ' + successColor + '; ';
       html += 'margin-top: 5px; font-weight: 600; }';
-      
       html += '.row { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-top: 10px; ';
       html += 'border-top: 1px solid #eee; padding-top: 10px; } ';
@@ -6402,6 +6095,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.btn-pin { margin-top:10px; padding:8px 15px; ';
       html += 'border-radius:10px; border:none; background:' + brandColor + '; ';
       html += 'color:#fff; font-weight:600; font-family:inherit; } ';
+      html += '.btn-del { margin-top:10px; padding:8px 15px; ';
+      html += 'border-radius:10px; border:none; background:' + dangerColor + '; ';
+      html += 'color:#fff; font-weight:600; font-family:inherit; ';
+      html += 'margin-left: 10px; } ';
       html += '</style></head><body>';
       
       html += '<div class="header"><div class="header-left">';
@@ -6411,17 +6108,31 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<button class="burger" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
+      html += '<button class="btn-invite" id="btnInvite" ';
+      html += 'onclick="copyInvite()" style="display:none;">';
+      html += '🔗 Скопировать ссылку-приглашение</button>';
+      
       html += '<div id="list"></div>';
 
       html += getUnifiedMenu('staff');
 
       html += '<script>';
+      html += 'var globalInvite = "";';
       html += 'fetch("/api/warehouse/staff")';
       html += '.then(function(r){return r.json();}).then(function(d){ ';
       html += '  var b = document.getElementById("list"); ';
       html += '  if (!d.ok) { b.textContent = "Доступ запрещен"; return; } ';
+      
+      html += '  if (d.inviteCode) { ';
+      html += '    globalInvite = "https://t.me/flowind_rus_bot?start=inv_" + ';
+      html += '    d.inviteCode; ';
+      html += '    document.getElementById("btnInvite").style.display = "flex"; ';
+      html += '  }';
+
       html += '  if (d.staff.length === 0) { ';
-      html += '  b.textContent = "Нет флористов"; return; }';
+      html += '  b.innerHTML = "<div style=\'text-align:center;color:#888;\'>"';
+      html += '  + "Нет флористов</div>"; return; }';
+      
       html += '  d.staff.forEach(function(f){ ';
       html += '    var c = document.createElement("div"); c.className = "card"; ';
       html += '    var name = f.name || "Флорист"; ';
@@ -6436,10 +6147,19 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    pDiv.style = "font-size:12px;color:#888;"; ';
       html += '    pDiv.textContent = "PIN: " + (f.warehouse_pin || "нет"); ';
       html += '    c.appendChild(pDiv);';
+      
+      html += '    var btnWrap = document.createElement("div");';
       html += '    var btn = document.createElement("button"); ';
       html += '    btn.innerText = "Задать PIN"; btn.className = "btn-pin"; ';
       html += '    btn.onclick = function(){setPin(f.chat_id);}; ';
-      html += '    c.appendChild(btn);';
+      html += '    btnWrap.appendChild(btn);';
+
+      html += '    var delBtn = document.createElement("button"); ';
+      html += '    delBtn.innerText = "Удалить"; delBtn.className = "btn-del"; ';
+      html += '    delBtn.onclick = function(){delStaff(f.chat_id);}; ';
+      html += '    btnWrap.appendChild(delBtn);';
+      html += '    c.appendChild(btnWrap);';
+
       html += '    c.appendChild(makeCheck("Приход", "receipt", ';
       html += '    f.can_receipt, f.chat_id)); ';
       html += '    c.appendChild(makeCheck("Продажа", "sale", ';
@@ -6447,6 +6167,23 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    c.appendChild(makeCheck("Списание", "writeoff", ';
       html += '    f.can_writeoff, f.chat_id)); b.appendChild(c); }); ';
       html += '}).catch(function(){});';
+
+      html += 'function copyInvite() {';
+      html += '  if (!globalInvite) return;';
+      html += '  if (navigator.share) {';
+      html += '    navigator.share({ url: globalInvite, ';
+      html += '    title: "Приглашение в Flowind", ';
+      html += '    text: "Привет! Присоединяйся к складу: " })';
+      html += '    .catch(function(){});';
+      html += '  } else {';
+      html += '    navigator.clipboard.writeText(globalInvite).then(function(){';
+      html += '      showAlert("Готово", "Ссылка скопирована", true);';
+      html += '    }).catch(function(){';
+      html += '      showPrompt("Ссылка", "Скопируйте вручную", ';
+      html += '      globalInvite, function(){});';
+      html += '    });';
+      html += '  }';
+      html += '}';
       
       html += 'function makeCheck(label, field, checked, chatId) { ';
       html += 'var r = document.createElement("div"); r.className = "row"; ';
@@ -6468,6 +6205,17 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    else if (p) showAlert("Ошибка", "Нужно 4 цифры", false); ';
       html += '  }); ';
       html += '}';
+
+      html += 'function delStaff(id) { ';
+      html += '  showConfirm("Удаление", "Уволить флориста? Он потеряет доступ.", ';
+      html += '  function() {';
+      html += '    fetch("/api/warehouse/florist/delete", { method: "POST", ';
+      html += '    headers: { "Content-Type": "application/json" }, ';
+      html += '    body: JSON.stringify({ chatId: id }) })';
+      html += '    .then(function(){location.reload();})';
+      html += '    .catch(function(){});';
+      html += '  }, true);';
+      html += '}';
       
       html += 'function setRights(id, field, val) { ';
       html += 'fetch("/api/warehouse/florist/rights", { method: "POST", ';
@@ -6481,7 +6229,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 44. API ПРАВ ФЛОРИСТОВ ======
+  // ====== 41. API ПРАВ И УДАЛЕНИЯ ФЛОРИСТОВ ======
   app.post('/api/warehouse/florist/pin', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6501,9 +6249,7 @@ function setupWarehouse(app, bot, s3ctx) {
         [req.body.pin, auth.shopId, req.body.chatId]
       );
       res.json({ ok: true });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/florist/rights', async (req, res) => {
@@ -6519,16 +6265,10 @@ function setupWarehouse(app, bot, s3ctx) {
         return res.status(403).json({ ok: false });
       }
       
-      var allowedCols = ['can_receipt', 'can_sale', 'can_writeoff'];
       var col = req.body.field;
-      
       if (col === 'receipt') col = 'can_receipt';
       if (col === 'sale') col = 'can_sale';
       if (col === 'writeoff') col = 'can_writeoff';
-      
-      if (allowedCols.indexOf(col) === -1) {
-        return res.status(400).json({ ok: false, error: 'Неверное поле' });
-      }
       
       await pool.query(
         'UPDATE admins SET ' + col + ' = $1 ' +
@@ -6536,26 +6276,53 @@ function setupWarehouse(app, bot, s3ctx) {
         [req.body.val, auth.shopId, req.body.chatId]
       );
       res.json({ ok: true });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 45. API НАСТРОЕК ======
+  app.post('/api/warehouse/florist/delete', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const ownerCheck = await pool.query(
+        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
+        [auth.chatId, auth.shopId]
+      );
+      if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
+        return res.status(403).json({ ok: false });
+      }
+      
+      await pool.query(
+        'DELETE FROM admins WHERE shop_id = $1 AND chat_id = $2 ' +
+        'AND role = \'florist\'', 
+        [auth.shopId, req.body.chatId]
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false }); }
+  });
+
+  // ====== 42. API НАСТРОЕК ======
   app.get('/api/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
       const r = await pool.query(
-        'SELECT settings FROM shops WHERE shop_id = $1', 
-        [auth.shopId]
+        'SELECT settings FROM shops WHERE shop_id = $1', [auth.shopId]
       );
-      if (r.rows.length === 0) return res.json({ ok: true, settings: {} });
-      res.json({ ok: true, settings: r.rows[0].settings || {} });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+      
+      const adm = await pool.query(
+        'SELECT login FROM admins WHERE chat_id = $1 LIMIT 1', 
+        [auth.chatId]
+      );
+      const currentLogin = adm.rows.length > 0 ? adm.rows[0].login : '';
+
+      res.json({ 
+        ok: true, 
+        settings: r.rows.length > 0 ? (r.rows[0].settings || {}) : {},
+        currentLogin: currentLogin || ''
+      });
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/settings', async (req, res) => {
@@ -6570,12 +6337,46 @@ function setupWarehouse(app, bot, s3ctx) {
         [JSON.stringify(obj), auth.shopId]
       );
       res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/warehouse/owner/set-password', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const ownerCheck = await pool.query(
+        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
+        [auth.chatId, auth.shopId]
+      );
+      if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
+        return res.status(403).json({ ok: false });
+      }
+
+      const login = String(req.body.login || '').trim();
+      const password = String(req.body.password || '');
+      
+      if (!login || login.length < 3) {
+        return res.json({ ok: false, error: 'Логин от 3 символов' });
+      }
+      if (!password || password.length < 4) {
+        return res.json({ ok: false, error: 'Пароль от 4 символов' });
+      }
+
+      const hash = crypto.createHash('sha256').update(password).digest('hex');
+      await pool.query(
+        'UPDATE admins SET login = $1, password_hash = $2 ' +
+        'WHERE chat_id = $3 AND shop_id = $4',
+        [login, hash, auth.chatId, auth.shopId]
+      );
+      res.json({ ok: true });
     } catch (e) { 
-      res.status(500).json({ ok: false, error: e.message }); 
+      console.error(e);
+      res.status(500).json({ ok: false, error: 'Ошибка сохранения' }); 
     }
   });
 
-  // ====== 46. ЭКРАН НАСТРОЕК ======
+  // ====== 43. ЭКРАН НАСТРОЕК ======
   app.get('/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6616,6 +6417,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<button class="burger" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
+      html += '<div class="card"><h3 style="margin-top:0;">Безопасность (Владелец)</h3>';
+      html += '<p style="font-size:12px;color:#666;">Задайте логин и пароль, чтобы входить в склад с компьютера или планшета.</p>';
+      html += '<label>Логин</label>';
+      html += '<input type="text" id="ownerLogin" placeholder="Например: admin" style="margin-bottom:10px;">';
+      html += '<label>Новый пароль</label>';
+      html += '<input type="password" id="ownerPassword" placeholder="Минимум 4 символа" style="margin-bottom:10px;">';
+      html += '<button class="btn-save" onclick="saveOwnerPassword()">Сохранить пароль</button>';
+      html += '</div>';
+
       html += '<div class="card"><h3 style="margin-top:0;">Уведомления';
       html += '</h3><div id="notifs"></div></div>';
       html += '<div class="card"><h3 style="margin-top:0;">Отображение';
@@ -6638,6 +6448,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'fetch("/api/warehouse/settings")';
       html += '.then(function(r){return r.json();}).then(function(d){ ';
       html += '  if (!d.ok) return; var s = d.settings; shopSettings = s;';
+      html += '  document.getElementById("ownerLogin").value = d.currentLogin;';
+      
       html += '  var nOpts = [{k:"notif_discount",t:"Уведомлять о скидках"},';
       html += '  {k:"notif_cancel",t:"Уведомлять об отмене"},';
       html += '  {k:"notif_writeoff",t:"Уведомлять о списаниях"}]; ';
@@ -6667,6 +6479,21 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  document.getElementById("writeoffThreshold").value = ';
       html += '  s.writeoff_threshold || "";';
       html += '}).catch(function(){});';
+      
+      html += 'function saveOwnerPassword() {';
+      html += '  var l = document.getElementById("ownerLogin").value;';
+      html += '  var p = document.getElementById("ownerPassword").value;';
+      html += '  if (!l || !p) { showAlert("Ошибка", "Заполните поля", false); return; }';
+      html += '  fetch("/api/warehouse/owner/set-password", { method: "POST", ';
+      html += '  headers: { "Content-Type": "application/json" }, ';
+      html += '  body: JSON.stringify({ login: l, password: p }) })';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if (d.ok) { showAlert("Готово", "Пароль сохранен", true); ';
+      html += '    document.getElementById("ownerPassword").value = ""; } ';
+      html += '    else showAlert("Ошибка", d.error, false);';
+      html += '  }).catch(function(){ showAlert("Ошибка", "Сеть", false); });';
+      html += '}';
+
       html += 'function saveSet(k, v) { ';
       html += 'fetch("/api/warehouse/settings", { method: "POST", ';
       html += 'headers: { "Content-Type": "application/json" }, ';
@@ -6683,15 +6510,14 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 47. API ИСТОРИИ ======
+  // ====== 44. API ИСТОРИИ ======
   app.get('/api/warehouse/history', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
       const shopId = auth.shopId;
-      const targetDate = req.query.date || 
-        new Date().toISOString().slice(0, 10);
+      const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
       const filterChatId = req.query.chat_id;
       
       let chatFilterSales = '';
@@ -6772,7 +6598,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
-  // ====== 48. ЭКРАН ИСТОРИИ ======
+  // ====== 45. ЭКРАН ИСТОРИИ ======
   app.get('/warehouse/history', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6942,8 +6768,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var listEl = document.getElementById("list");';
       html += '  listEl.textContent = "Загрузка...";';
       html += '  var filter = document.getElementById("staffFilter").value;';
-      html += '  var url = "/api/warehouse/history?date=" + ';
-      html += '  selectedDate;';
+      html += '  var url = "/api/warehouse/history?date=" + selectedDate;';
       html += '  if (filter) url += "&chat_id=" + filter;';
       
       html += '  fetch(url).then(function(r){return r.json();}).then(function(d){';
@@ -7080,7 +6905,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 49. API ДЕТАЛЕЙ ПРОДАЖИ ======
+  // ====== 46. API ДЕТАЛЕЙ ПРОДАЖИ ======
   app.get('/api/warehouse/sale/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7116,7 +6941,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 50. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
+  // ====== 47. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
   app.get('/warehouse/sale/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7230,7 +7055,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 51. API ОТМЕНЫ ПРОДАЖИ ======
+  // ====== 48. API ОТМЕНЫ ПРОДАЖИ ======
   app.post('/api/warehouse/sale/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -7304,7 +7129,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 52. API ВСЕХ БУКЕТОВ ======
+  // ====== 49. API ВСЕХ БУКЕТОВ ======
   app.get('/api/warehouse/bouquets/all', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7345,7 +7170,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 53. ЭКРАН УПРАВЛЕНИЯ БУКЕТАМИ ======
+  // ====== 50. ЭКРАН УПРАВЛЕНИЯ БУКЕТАМИ ======
   app.get('/warehouse/bouquets', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7433,6 +7258,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'border: none; padding: 8px 12px; border-radius: 8px; ';
       html += 'font-weight: 600; font-family: inherit; ';
       html += 'font-size: 12px; width: 100%; margin-top: auto; }';
+      html += '.btn-add { width: 100%; background: ' + brandColor + '; ';
+      html += 'color: #fff; border: none; padding: 15px; ';
+      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
+      html += 'margin-bottom: 15px; }';
       html += '</style></head><body>';
       
       html += '<div class="header"><div class="header-left">';
@@ -7441,6 +7270,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += getIconSvg('bouquets') + 'Букеты</h2></div>';
       html += '<button class="burger" onclick="toggleMenu()">☰</button>';
       html += '</div>';
+
+      html += '<button class="btn-add" onclick="window.location.href=';
+      html += '\'/warehouse/bouquet/edit\'">+ Создать новый букет</button>';
 
       html += '<div class="controls">';
       html += '  <div class="view-toggles">';
@@ -7579,14 +7411,35 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    sl.className = "slider"; sw.appendChild(sl); ';
       html += '    info.appendChild(sw);';
       
-      html += '    var btn = document.createElement("button"); ';
-      html += '    btn.className = "btn-setup"; ';
-      html += '    btn.textContent = "Настроить состав"; ';
-      html += '    btn.onclick = function() { ';
+      html += '    var btnRow = document.createElement("div"); ';
+      html += '    btnRow.style = "display:flex; gap:5px; margin-top:auto;";';
+      
+      html += '    var btnEdit = document.createElement("button"); ';
+      html += '    btnEdit.className = "btn-setup"; ';
+      html += '    btnEdit.style = "flex:1;";';
+      html += '    btnEdit.innerHTML = "✏️"; ';
+      html += '    btnEdit.onclick = function() { ';
+      html += '      window.location.href = "/warehouse/bouquet/edit?id=" ';
+      html += '      + bq.id; }; ';
+      html += '    btnRow.appendChild(btnEdit);';
+      
+      html += '    var btnSetup = document.createElement("button"); ';
+      html += '    btnSetup.className = "btn-setup"; ';
+      html += '    btnSetup.style = "flex:3;";';
+      html += '    btnSetup.textContent = "Состав"; ';
+      html += '    btnSetup.onclick = function() { ';
       html += '      window.location.href = "/warehouse/bouquets/recipe?id=" ';
       html += '      + bq.id; }; ';
-      html += '    info.appendChild(btn);';
+      html += '    btnRow.appendChild(btnSetup);';
       
+      html += '    var btnDel = document.createElement("button"); ';
+      html += '    btnDel.className = "btn-setup"; ';
+      html += '    btnDel.style = "flex:1; color:red;";';
+      html += '    btnDel.innerHTML = "🗑"; ';
+      html += '    btnDel.onclick = function() { delBouquet(bq.id); }; ';
+      html += '    btnRow.appendChild(btnDel);';
+      
+      html += '    info.appendChild(btnRow);';
       html += '    card.appendChild(info); container.appendChild(card);';
       html += '  });';
       html += '}';
@@ -7609,6 +7462,18 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  showAlert("Ошибка сети", "Проверьте интернет", false); ';
       html += '  render();';
       html += '}); }';
+
+      html += 'function delBouquet(id) {';
+      html += '  showConfirm("Удаление", "Удалить букет с витрины?", function() {';
+      html += '    fetch("/api/warehouse/bouquet/delete", { method: "POST", ';
+      html += '    headers: { "Content-Type": "application/json" }, ';
+      html += '    body: JSON.stringify({ id: id }) })';
+      html += '    .then(function(r){return r.json();}).then(function(d){';
+      html += '      if (d.ok) window.location.reload();';
+      html += '      else showAlert("Ошибка", d.error, false);';
+      html += '    }).catch(function(){});';
+      html += '  }, true);';
+      html += '}';
       html += '<\/script></body></html>';
       res.send(html);
     } catch(e) {
@@ -7616,7 +7481,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 54. API ПЕРЕКЛЮЧЕНИЯ СВЯЗИ ======
+  // ====== 51. API ПЕРЕКЛЮЧЕНИЯ СВЯЗИ БУКЕТА ======
   app.post('/api/warehouse/bouquet/toggle', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7628,27 +7493,214 @@ function setupWarehouse(app, bot, s3ctx) {
         [req.body.val, req.body.id, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 55. API ДАННЫХ БУКЕТА ======
+  // ====== 52. API УДАЛЕНИЯ БУКЕТА ======
+  app.post('/api/warehouse/bouquet/delete', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      await pool.query(
+        'UPDATE bouquets SET deleted = TRUE WHERE id = $1 AND shop_id = $2',
+        [req.body.id, auth.shopId]
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ====== 53. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
+  app.get('/warehouse/bouquet/edit', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      
+      const bId = req.query.id ? parseInt(req.query.id) : 0;
+      
+      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
+      html += '<meta name="viewport" content="width=device-width, ';
+      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += fontLink + uiScript + '<style>';
+      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
+      html += 'padding: 15px; background: ' + bgGradient + '; ';
+      html += 'color: ' + brandColor + '; }';
+      html += '.header { display: flex; align-items: center; ';
+      html += 'margin-bottom: 15px; justify-content: space-between; } ';
+      html += '.header-left { display: flex; align-items: center; }';
+      html += '.back { font-size: 24px; text-decoration: none; ';
+      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
+      html += '.card { background: #fff; border-radius: 16px; ';
+      html += 'padding: 20px; margin-bottom: 15px; ';
+      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += '.btn-save { width: 100%; background: ' + successColor + '; ';
+      html += 'color: #fff; border: none; padding: 16px; ';
+      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
+      html += 'margin-top: 15px; }';
+      html += '.img-preview { width: 100px; height: 100px; border-radius: 12px; ';
+      html += 'object-fit: cover; display: none; margin-bottom: 10px; }';
+      html += '</style></head><body>';
+
+      html += '<div class="header"><div class="header-left">';
+      html += '<a href="/warehouse/bouquets" class="back">←</a>';
+      html += '<h2 style="margin:0; display:flex; align-items:center;" ';
+      html += 'id="pageTitle">Новый букет</h2></div>';
+      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '</div>';
+
+      html += '<div class="card">';
+      html += '<label>Название</label>';
+      html += '<input type="text" id="bqName" placeholder="Розы 51" ';
+      html += 'style="margin-bottom:10px;">';
+      html += '<label>Цена (₽)</label>';
+      html += '<input type="number" id="bqPrice" placeholder="3500" ';
+      html += 'style="margin-bottom:10px;">';
+      html += '<label>Фото</label>';
+      html += '<input type="file" id="bqPhoto" accept="image/*" ';
+      html += 'onchange="uploadPhoto(this)" style="margin-bottom:10px;">';
+      html += '<img id="bqPreview" class="img-preview">';
+      html += '<input type="hidden" id="bqPhotoUrl" value="">';
+      html += '<button class="btn-save" id="btnSave" onclick="saveBouquet()">';
+      html += 'Сохранить</button>';
+      html += '</div>';
+
+      html += getUnifiedMenu('bouquets');
+
+      html += '<script>';
+      html += 'var bId = ' + bId + ';';
+      html += 'if (bId > 0) { ';
+      html += '  document.getElementById("pageTitle").textContent = "Редактирование";';
+      html += '  fetch("/api/warehouse/bouquets/info?id=" + bId)';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if (d.ok) {';
+      html += '      document.getElementById("bqName").value = d.bouquet.name;';
+      html += '      document.getElementById("bqPrice").value = d.bouquet.price;';
+      html += '      if (d.bouquet.photos && d.bouquet.photos.length > 0) {';
+      html += '        var p = d.bouquet.photos[0];';
+      html += '        var url = (typeof p === "string") ? p : (p.s3 || p.s3b);';
+      html += '        if (url) {';
+      html += '          document.getElementById("bqPhotoUrl").value = url;';
+      html += '          var img = document.getElementById("bqPreview");';
+      html += '          img.src = url; img.style.display = "block";';
+      html += '        }';
+      html += '      }';
+      html += '    }';
+      html += '  }).catch(function(){});';
+      html += '}';
+
+      html += 'function uploadPhoto(input) {';
+      html += '  var f = input.files[0]; if (!f) return;';
+      html += '  var rd = new FileReader();';
+      html += '  rd.onload = function(e) {';
+      html += '    var img = new Image();';
+      html += '    img.onload = function() {';
+      html += '      var canvas = document.createElement("canvas");';
+      html += '      var MAX = 800; var w = img.width, h = img.height;';
+      html += '      if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }';
+      html += '      else { if (h > MAX) { w *= MAX / h; h = MAX; } }';
+      html += '      canvas.width = w; canvas.height = h;';
+      html += '      var ctx = canvas.getContext("2d");';
+      html += '      ctx.drawImage(img, 0, 0, w, h);';
+      html += '      var dataUrl = canvas.toDataURL("image/jpeg", 0.7);';
+      html += '      showAlert("Загрузка", "Отправляем фото...", true);';
+      html += '      fetch("/api/warehouse/upload", { method: "POST",';
+      html += '      headers: { "Content-Type": "application/json" },';
+      html += '      body: JSON.stringify({ image: dataUrl }) })';
+      html += '      .then(function(r){return r.json();}).then(function(d){';
+      html += '        if (d.ok) {';
+      html += '          document.getElementById("bqPhotoUrl").value = d.url;';
+      html += '          var prev = document.getElementById("bqPreview");';
+      html += '          prev.src = d.url; prev.style.display = "block";';
+      html += '        } else showAlert("Ошибка", "Фото не принято", false);';
+      html += '      }).catch(function(){ showAlert("Ошибка", "Сеть", false); });';
+      html += '    }; img.src = e.target.result;';
+      html += '  }; rd.readAsDataURL(f);';
+      html += '}';
+
+      html += 'function saveBouquet() {';
+      html += '  var name = document.getElementById("bqName").value;';
+      html += '  var price = parseFloat(document.getElementById("bqPrice").value);';
+      html += '  var photoUrl = document.getElementById("bqPhotoUrl").value;';
+      html += '  if (!name || !price) { showAlert("Ошибка", "Заполните поля", false); return; }';
+      html += '  var btn = document.getElementById("btnSave");';
+      html += '  btn.disabled = true; btn.innerText = "Сохранение...";';
+      html += '  fetch("/api/warehouse/bouquet/save", { method: "POST",';
+      html += '  headers: { "Content-Type": "application/json" },';
+      html += '  body: JSON.stringify({ id: bId, name: name, price: price,';
+      html += '  photo_url: photoUrl }) })';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if (d.ok) { window.location.href = "/warehouse/bouquets"; }';
+      html += '    else { btn.disabled = false; btn.innerText = "Сохранить";';
+      html += '    showAlert("Ошибка", d.error, false); }';
+      html += '  }).catch(function(){ btn.disabled = false;';
+      html += '  btn.innerText = "Сохранить"; showAlert("Ошибка", "Сеть", false); });';
+      html += '}';
+      html += '<\/script></body></html>';
+      res.send(html);
+    } catch(e) { res.status(500).send('Ошибка сервера'); }
+  });
+
+  // ====== 54. API ДАННЫХ БУКЕТА ======
   app.get('/api/warehouse/bouquets/info', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
-      
       const r = await pool.query(
-        'SELECT id, name, price FROM bouquets ' +
+        'SELECT id, name, price, photos FROM bouquets ' +
         'WHERE id = $1 AND shop_id = $2',
         [req.query.id, auth.shopId]
       );
       if (r.rows.length === 0) return res.json({ ok: false });
       res.json({ ok: true, bouquet: r.rows[0] });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
+  });
+
+  // ====== 55. API СОХРАНЕНИЯ БУКЕТА ======
+  app.post('/api/warehouse/bouquet/save', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const bId = parseInt(req.body.id);
+      const name = String(req.body.name || '').trim();
+      const price = parseFloat(req.body.price);
+      const photoUrl = req.body.photo_url;
+      
+      if (!name || !price || price <= 0) {
+        return res.json({ ok: false, error: 'Неверные данные' });
+      }
+
+      let photos = [];
+      if (photoUrl) { photos.push(photoUrl); }
+
+      if (bId > 0) {
+        if (photoUrl) {
+          await pool.query(
+            'UPDATE bouquets SET name = $1, price = $2, photos = $3 ' +
+            'WHERE id = $4 AND shop_id = $5',
+            [name, price, JSON.stringify(photos), bId, auth.shopId]
+          );
+        } else {
+          await pool.query(
+            'UPDATE bouquets SET name = $1, price = $2 ' +
+            'WHERE id = $3 AND shop_id = $4',
+            [name, price, bId, auth.shopId]
+          );
+        }
+      } else {
+        const shopNumberRes = await pool.query(
+          'SELECT COALESCE(MAX(shop_number), 0) + 1 AS next ' +
+          'FROM bouquets WHERE shop_id = $1', [auth.shopId]
+        );
+        const shopNumber = shopNumberRes.rows[0].next;
+        await pool.query(
+          'INSERT INTO bouquets (shop_id, shop_number, name, price, ' +
+          'photos, chat_id, confirmed_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+          [auth.shopId, shopNumber, name, price, 
+           JSON.stringify(photos), auth.chatId]
+        );
+      }
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // ====== 56. API ПОЛУЧЕНИЯ РЕЦЕПТА ======
@@ -7669,9 +7721,7 @@ function setupWarehouse(app, bot, s3ctx) {
         [req.query.id, auth.shopId]
       );
       res.json({ ok: true, items: r.rows });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   // ====== 57. ЭКРАН СОСТАВА (РЕЦЕПТА) ======
@@ -7968,9 +8018,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
       html += '<\/script></body></html>';
       res.send(html);
-    } catch(e) {
-      res.status(500).send('Ошибка сервера');
-    }
+    } catch(e) { res.status(500).send('Ошибка сервера'); }
   });
 
   // ====== 58. API СОХРАНЕНИЯ РЕЦЕПТА ======
@@ -7978,17 +8026,13 @@ function setupWarehouse(app, bot, s3ctx) {
     const client = await pool.connect();
     try {
       const auth = getAuth(req);
-      if (!auth) { 
-        client.release(); 
-        return res.status(401).json({ ok: false }); 
-      }
+      if (!auth) { client.release(); return res.status(401).json({ ok: false }); }
       
       const bId = parseInt(req.body.bouquet_id);
       const items = req.body.items;
       
       if (!bId || !Array.isArray(items)) {
-        client.release(); 
-        return res.json({ ok: false, error: 'Неверные данные' });
+        client.release(); return res.json({ ok: false, error: 'Неверные данные' });
       }
 
       await client.query('BEGIN');
@@ -8010,8 +8054,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.json({ ok: true });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (e2) {}
-      client.release(); 
-      res.status(500).json({ ok: false, error: e.message });
+      client.release(); res.status(500).json({ ok: false, error: e.message });
     }
   });
 
