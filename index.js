@@ -3998,6 +3998,31 @@ async function showAdminShopCard(chatId, shopId, editMessageId) {
     });
   } catch (e) { /* ignore */ }
 }
+async function advanceOnboardingAfter(chatId, shopId, action) {
+  try {
+    const ownerState = await getOwnerOnboardingState(shopId);
+    if (ownerState && !ownerState.passed) {
+      const isThisOwner = await isOwner(
+        await getShopFromDb(shopId), chatId
+      );
+      if (isThisOwner && 
+          ownerState.step === 'add_bouquet' && 
+          action === 'add_bouquet') {
+        return advanceOwnerOnboarding(chatId, shopId);
+      }
+    }
+    const floristState = await getFloristOnboardingState(chatId, shopId);
+    if (floristState && !floristState.passed) {
+      if (floristState.step === 'add_bouquet' && 
+          action === 'add_bouquet') {
+        return advanceFloristOnboarding(chatId, shopId);
+      }
+    }
+  } catch (e) {
+    console.error('Onboarding error:', e.message);
+  }
+}
+
 // ========== КОМАНДА /start ==========
 bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
