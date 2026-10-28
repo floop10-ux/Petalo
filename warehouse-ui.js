@@ -8553,7 +8553,240 @@ function setupWarehouse(app, bot, s3ctx) {
       res.json({ ok: true });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (e2) {}
-      client.release(); res.status(500).json({ ok: false, error: e.message });
+client.release(); res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+      // ====== 61. API ЖУРНАЛА ======
+  app.get('/api/warehouse/audit', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const shopId = auth.shopId;
+      const period = req.query.period || 'today';
+      const targetDate = req.query.date;
+      
+      let dateFilter = '';
+      let params = [shopId];
+
+      if (targetDate) {
+        dateFilter = 'AND l.date >= $2::date AND l.date < ($2::date + 1)';
+        params.push(targetDate);
+      } else if (period === 'today') {
+        dateFilter = 'AND l.date >= CURRENT_DATE AND l.date < ';
+        dateFilter += 'CURRENT_DATE + 1';
+      } else if (period === 'week') {
+        dateFilter = 'AND l.date >= NOW() - INTERVAL \'7 days\'';
+      } else if (period === 'month') {
+        dateFilter = 'AND l.date >= NOW() - INTERVAL \'1 month\'';
+      }
+
+      const r = await pool.query(
+        'SELECT l.action, l.details, l.date, l.ref_id, ' +
+        'a.name as person ' +
+        'FROM wh_audit_log l ' +
+        'LEFT JOIN admins a ON a.chat_id = l.chat_id ' +
+        'WHERE l.shop_id = $1 ' + dateFilter + ' ' +
+        'ORDER BY l.date DESC LIMIT 100',
+        params
+      );
+      res.json({ ok: true, logs: r.rows });
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
+  // ====== 62. ЭКРАН ЖУРНАЛА ======
+  app.get('/warehouse/audit', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      
+      let html = '<!DOCTYPE html><html><head>';
+      html += '<meta charset="UTF-8">';
+      html += '<meta name="viewport" content="width=device-width, ';
+      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += fontLink;
+      html += uiScript;
+      html += '<style>';
+      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
+      html += 'padding: 15px; background: ' + bgGradient + '; ';
+      html += 'color: ' + brandColor + '; }';
+      html += '.header { display: flex; align-items: center; ';
+      html += 'margin-bottom: 15px; justify-content: space-between; }';
+      html += '.header-left { display: flex; align-items: center; }';
+      html += '.back { font-size: 24px; text-decoration: none; ';
+      html += 'color: ' + brandColor + '; margin-right: 15px; }';
+      
+      html += '.filters { display: flex; gap: 8px; margin-bottom: 15px; }';
+      html += '.filter { flex: 1; padding: 10px; border: 1px solid #ddd; ';
+      html += 'border-radius: 12px; background: #fff; text-align: center; ';
+      html += 'cursor: pointer; font-size: 13px; font-weight: 600; }';
+      html += '.filter.active { background: ' + brandColor + '; color: #fff; }';
+      
+      html += '.date-label { font-size: 13px; font-weight: 600; ';
+      html += 'color: #666; margin-bottom: 5px; }';
+      html += '.date-row { display: flex; margin-bottom: 15px; }';
+      html += '.date-row input { width: 100%; padding: 10px; margin: 0; ';
+      html += 'border: 2px solid transparent; transition: border 0.2s; }';
+      html += '.date-row input.active-date { border-color: ' + accentColor + '; }';
+      
+      html += '.log-card { background: #fff; border-radius: 16px; ';
+      html += 'padding: 15px; margin-bottom: 10px; cursor: pointer; ';
+      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
+      html += 'border-left: 4px solid #ddd; }';
+      html += '.log-card.sale { border-left-color: #3C7A89; }';
+      html += '.log-card.receipt { border-left-color: ' + successColor + '; }';
+      html += '.log-card.writeoff { border-left-color: ' + dangerColor + '; }';
+      html += '.log-card.shift { border-left-color: #E67E22; }';
+      html += '.log-top { display: flex; justify-content: space-between; ';
+      html += 'align-items: center; margin-bottom: 8px; }';
+      html += '.log-title { font-weight: 800; font-size: 15px; ';
+      html += 'display: flex; align-items: center; }';
+      html += '.log-title svg { width: 18px; height: 18px; margin-right: 6px; }';
+      html += '.log-date { font-size: 11px; color: #888; }';
+      html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
+      html += '.log-link { font-size: 12px; color: #3C7A89; ';
+      html += 'margin-top: 8px; font-weight: 600; }';
+      html += '</style></head><body>';
+
+      html += '<div class="header">';
+      html += '<div class="header-left">';
+      html += '<a href="/warehouse-app" class="back">←</a>';
+      html += '<h2 style="margin:0; display:flex; align-items:center;">';
+      html += getIconSvg('audit') + 'Журнал</h2></div>';
+      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '</div>';
+
+      html += '<div class="filters">';
+      html += '<div class="filter active" id="f-today" ';
+      html += 'onclick="setPeriod(\'today\')">Сегодня</div>';
+      html += '<div class="filter" id="f-week" ';
+      html += 'onclick="setPeriod(\'week\')">Неделя</div>';
+      html += '<div class="filter" id="f-month" ';
+      html += 'onclick="setPeriod(\'month\')">Месяц</div>';
+      html += '</div>';
+      
+      html += '<div class="date-label">Или выберите конкретную дату:</div>';
+      html += '<div class="date-row">';
+      html += '<input type="date" id="auditDate" ';
+      html += 'onchange="setCustomDate(this.value)">';
+      html += '</div>';
+      html += '<div id="list">Загрузка...</div>';
+      
+      html += getUnifiedMenu('audit');
+
+      html += '<script>';
+      html += 'var currentPeriod = "today"; var currentDate = "";';
+      html += 'function setPeriod(p) {';
+      html += '  currentPeriod = p; currentDate = "";';
+      html += '  var dInp = document.getElementById("auditDate");';
+      html += '  dInp.value = ""; dInp.classList.remove("active-date");';
+      html += '  document.querySelectorAll(".filter").forEach(function(el){';
+      html += '    el.classList.remove("active");});';
+      html += '  document.getElementById("f-" + p).classList.add("active");';
+      html += '  loadData();';
+      html += '}';
+      html += 'function setCustomDate(val) {';
+      html += '  currentDate = val;';
+      html += '  var dInp = document.getElementById("auditDate");';
+      html += '  if (val) {';
+      html += '    dInp.classList.add("active-date");';
+      html += '    document.querySelectorAll(".filter").forEach(function(el){';
+      html += '      el.classList.remove("active");});';
+      html += '  } else { setPeriod("today"); }';
+      html += '  loadData();';
+      html += '}';
+      html += 'function getActionIcon(action) {';
+      html += '  var c = "class=\'svg-ico\' viewBox=\'0 0 24 24\' ';
+      html += 'fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'";';
+      html += '  if (action === "sale") return "<svg " + c + ';
+      html += '"><rect x=\'2\' y=\'5\' width=\'20\' height=\'14\' ';
+      html += 'rx=\'2\'/><line x1=\'2\' y1=\'10\' x2=\'22\' y2=\'10\'/></svg>";';
+      html += '  if (action === "receipt") return "<svg " + c + ';
+      html += '"><path d=\'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 ';
+      html += '0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 ';
+      html += '2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\'/></svg>";';
+      html += '  if (action === "writeoff" || action === "cancel") ';
+      html += 'return "<svg " + c + "><polyline points=\'3 6 5 6 21 ';
+      html += '6\'/><path d=\'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2';
+      html += 'V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\'/></svg>";';
+      html += '  if (action === "shift") return "<svg " + c + ';
+      html += '"><circle cx=\'12\' cy=\'12\' r=\'10\'/><polyline ';
+      html += 'points=\'12 6 12 12 16 14\'/></svg>";';
+      html += '  return "<svg " + c + "><circle cx=\'12\' cy=\'12\' ';
+      html += 'r=\'3\'/></svg>";';
+      html += '}';
+      html += 'function loadData() {';
+      html += '  var listEl = document.getElementById("list");';
+      html += '  listEl.textContent = "Загрузка...";';
+      html += '  var url = "/api/warehouse/audit";';
+      html += '  if (currentDate) { url += "?date=" + currentDate; }';
+      html += '  else { url += "?period=" + currentPeriod; }';
+      html += '  fetch(url)';
+      html += '  .then(function(r) { return r.json(); })';
+      html += '  .then(function(d) {';
+      html += '    while (listEl.firstChild) ';
+      html += '    listEl.removeChild(listEl.firstChild);';
+      html += '    if (!d.ok || d.logs.length === 0) {';
+      html += '      listEl.textContent = "Журнал пуст"; return; }';
+      html += '    d.logs.forEach(function(l) {';
+      html += '      var div = document.createElement("div");';
+      html += '      var acts = ["sale","receipt","writeoff","shift"];';
+      html += '      var actClass = acts.indexOf(l.action) >= 0 ? ';
+      html += '      l.action : "";';
+      html += '      div.className = "log-card " + actClass;';
+      html += '      var ds = new Date(l.date).toLocaleString("ru-RU", ';
+      html += '      { day: "2-digit", month: "2-digit", ';
+      html += '      hour: "2-digit", minute: "2-digit" });';
+      html += '      var p = l.person || "Система";';
+      html += '      var top = document.createElement("div");';
+      html += '      top.className = "log-top";';
+      html += '      var titleDiv = document.createElement("div");';
+      html += '      titleDiv.className = "log-title";';
+      html += '      titleDiv.innerHTML = getActionIcon(l.action);';
+      html += '      var nameSpan = document.createElement("span");';
+      html += '      nameSpan.textContent = p;';
+      html += '      titleDiv.appendChild(nameSpan);';
+      html += '      var dateDiv = document.createElement("div");';
+      html += '      dateDiv.className = "log-date";';
+      html += '      dateDiv.textContent = ds;';
+      html += '      top.appendChild(titleDiv); top.appendChild(dateDiv);';
+      html += '      div.appendChild(top);';
+      html += '      var desc = document.createElement("div");';
+      html += '      desc.className = "log-desc";';
+      html += '      desc.textContent = l.details || "";';
+      html += '      div.appendChild(desc);';
+      html += '      if (l.ref_id) {';
+      html += '        var link = document.createElement("div");';
+      html += '        link.className = "log-link";';
+      html += '        if (l.action === "sale") {';
+      html += '          link.textContent = "Чек №" + l.ref_id + " →";';
+      html += '          div.onclick = function() { window.location.href = ';
+      html += '          "/warehouse/sale/details?id=" + l.ref_id; };';
+      html += '        } else if (l.action === "receipt") {';
+      html += '          link.textContent = "Накладная №" + l.ref_id + " →";';
+      html += '          div.onclick = function() { window.location.href = ';
+      html += '          "/warehouse/documents/details?id=" + l.ref_id + ';
+      html += '          "&type=receipts"; };';
+      html += '        } else if (l.action === "writeoff") {';
+      html += '          link.textContent = "Акт списания №" + l.ref_id + " →";';
+      html += '          div.onclick = function() { window.location.href = ';
+      html += '          "/warehouse/documents/details?id=" + l.ref_id + ';
+      html += '          "&type=writeoffs"; };';
+      html += '        }';
+      html += '        div.appendChild(link);';
+      html += '      }';
+      html += '      listEl.appendChild(div);';
+      html += '    });';
+      html += '  }).catch(function() { ';
+      html += '    listEl.textContent = "Ошибка загрузки"; });';
+      html += '}';
+      html += 'loadData();';
+      html += '<\/script></body></html>';
+      res.send(html);
+    } catch(e) {
+      res.status(500).send('Ошибка сервера');
     }
   });
 
