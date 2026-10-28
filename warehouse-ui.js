@@ -65,7 +65,7 @@ function esc(s) {
 }
 
 function fmtNum(n) {
-  var num = parseFloat(n);
+  var num = parseFloat(String(n).replace(',', '.'));
   if (isNaN(num)) return '0';
   return num % 1 === 0 ? num.toString() :
     num.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
@@ -581,7 +581,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '.login-block { display: none; }';
     html += '</style></head><body>';
     
-    // Правка №1: Логотип вместо ящика
+    // Логотип
     html += '<div class="card">';
     html += '<div style="display:flex; align-items:center; ';
     html += 'justify-content:center; margin-bottom:15px;">';
@@ -599,7 +599,7 @@ function setupWarehouse(app, bot, s3ctx) {
     html += '<h1 style="margin:0;">Flowind</h1>';
     html += '</div>';
 
-    // Правка №7: Два режима входа
+    // Два режима входа
     html += '<div id="pinBlock">';
     html += '<p>Введите PIN-код флориста</p>';
     html += '<input type="password" id="pin" maxlength="4" ';
@@ -724,7 +724,6 @@ function setupWarehouse(app, bot, s3ctx) {
       const password = String(req.body.password || '');
       const hash = crypto.createHash('sha256').update(password).digest('hex');
 
-      // Ищем владельца по логину и хешу пароля
       const r = await pool.query(
         'SELECT chat_id, shop_id FROM admins WHERE ' +
         '(login = $1 OR chat_id::text = $1) AND password_hash = $2 ' +
@@ -1187,6 +1186,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += getUnifiedMenu('inventory');
 
       html += '<script>';
+      
+      // ФИКС БАГА: добавляем fmtNum на клиент
+      html += 'function fmtNum(n) {';
+      html += '  var num = parseFloat(String(n).replace(",", "."));';
+      html += '  if (isNaN(num)) return "0";';
+      html += '  return num % 1 === 0 ? num.toString() : ';
+      html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "");';
+      html += '}';
+
       html += 'var allItems = []; var currentCat = 0;';
       html += 'var currentPage = 1; var pageLimit = 10; ';
       html += 'var viewMode = "tile"; ';
@@ -1358,7 +1366,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    pageItems.forEach(function(i) {';
       html += '      var a = document.createElement("a");';
       html += '      a.href = "/warehouse/item?id=" + i.id;';
-      html += '      var stock = parseFloat(i.current_stock);';
+      html += '      var stock = parseFloat(i.current_stock) || 0;';
       html += '      var cl = stock > 0 ? "green" : "red";';
       html += '      var unit = i.unit || "шт";';
       html += '      var hasPrice = parseFloat(i.retail_price) > 0;';
@@ -1576,9 +1584,9 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let list = historyRes.rows;
       
-      let runningStock = parseFloat(itemInfo.rows[0].current_stock);
+      let runningStock = parseFloat(itemInfo.rows[0].current_stock) || 0;
       list.forEach(function(op) {
-        let qty = parseFloat(op.qty);
+        let qty = parseFloat(op.qty) || 0;
         op.stock_after = runningStock;
         if (op.type === 'receipt') {
           op.stock_before = runningStock - qty;
@@ -1608,7 +1616,7 @@ function setupWarehouse(app, bot, s3ctx) {
       if (!auth) return res.status(401).json({ ok: false });
       
       const itemId = parseInt(req.body.id);
-      const price = parseFloat(req.body.price);
+      const price = parseFloat(String(req.body.price).replace(',', '.'));
       if (!itemId || isNaN(itemId) || isNaN(price) || price <= 0) {
         return res.json({ ok: false, error: 'Неверные данные' });
       }
@@ -1859,7 +1867,6 @@ function setupWarehouse(app, bot, s3ctx) {
       client.release(); res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== 15. КАРТОЧКА ТОВАРА (ВЫПИСКА) ======
   app.get('/warehouse/item', async (req, res) => {
     try {
@@ -2134,6 +2141,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
 
       html += 'loadHistory();';
+
       html += 'function deleteItem() {';
       html += '  showConfirm("Удаление", "Вы уверены, что хотите удалить " + ';
       html += '  itemName + "? Если есть история, он будет скрыт.", ';
@@ -2155,7 +2163,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  showPrompt("Розничная цена", "Введите цену (₽)", "", ';
       html += '  function(p) {';
       html += '    if (!p) return;';
-      html += '    var num = parseFloat(p.replace(",", "."));';
+      html += '    var num = parseFloat(String(p).replace(",", "."));';
       html += '    if (isNaN(num) || num <= 0) { ';
       html += '      showAlert("Ошибка", "Неверная цена", false); return; }';
       html += '    fetch("/api/warehouse/item/set-price", { method: "POST", ';
@@ -2680,7 +2688,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '21.5,8 21.5,8C21.5,8 19.5,6 17,8Z"/></svg>\';';
 
       html += 'function fmtNum(n) {';
-      html += '  var num = parseFloat(n);';
+      html += '  var num = parseFloat(String(n).replace(",", "."));';
       html += '  if (isNaN(num)) return "0";';
       html += '  return num % 1 === 0 ? num.toString() : ';
       html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "");';
@@ -3036,7 +3044,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  while(b.firstChild) b.removeChild(b.firstChild); ';
       html += '  var total = 0; var count = 0;';
       html += '  cart.forEach(function(item, idx) {';
-      html += '    total += (item.retail * item.qty); count += item.qty;';
+      html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
+      html += '    var r = parseFloat(String(item.retail).replace(",", ".")) || 0;';
+      html += '    total += (r * q); count += q;';
       html += '    var div = document.createElement("div"); ';
       html += '    div.className = "b-row";';
       html += '    var name = document.createElement("div"); ';
@@ -3102,7 +3112,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
 
       html += 'function changeQty(idx, delta) {';
-      html += '  cart[idx].qty += delta;';
+      html += '  var cur = parseFloat(String(cart[idx].qty) || "0");';
+      html += '  cart[idx].qty = cur + delta;';
       html += '  if (cart[idx].qty <= 0) {';
       html += '    showConfirm("Удаление", "Убрать товар?", function() {';
       html += '      cart.splice(idx, 1); resetPayments();';
@@ -3385,7 +3396,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-  // ====== 17. API ПРОДАЖИ (С ЗАЩИТОЙ ОТ ДВОЙНОГО ТАПА) ======
+
+  // ====== 17. API ПРОДАЖИ ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -3398,7 +3410,7 @@ function setupWarehouse(app, bot, s3ctx) {
       const shopId = auth.shopId;
       const chatId = auth.chatId;
 
-      const real_price = parseFloat(req.body.real_price);
+      const real_price = parseFloat(String(req.body.real_price).replace(',', '.'));
       if (!real_price || real_price <= 0) {
         client.release(); 
         return res.json({ ok: false, error: 'Сумма > 0' });
@@ -3448,11 +3460,12 @@ function setupWarehouse(app, bot, s3ctx) {
 
       for (var i = 0; i < items.length; i++) {
         var item = items[i];
+        var qty = parseFloat(String(item.qty).replace(',', '.'));
         
         await client.query(
           'UPDATE wh_shop_items SET current_stock = ' +
           'current_stock - $1 WHERE id = $2 AND shop_id = $3',
-          [item.qty, item.id, shopId]
+          [qty, item.id, shopId]
         );
         
         const costQ = await client.query(
@@ -3468,10 +3481,10 @@ function setupWarehouse(app, bot, s3ctx) {
         await client.query(
           'INSERT INTO wh_sale_items (sale_id, shop_item_id, ' +
           'qty, cost_at_sale) VALUES ($1, $2, $3, $4)',
-          [saleId, item.id, item.qty, costVal]
+          [saleId, item.id, qty, costVal]
         );
         
-        itemsStr += item.name + ' x' + item.qty + ', ';
+        itemsStr += item.name + ' x' + qty + ', ';
       }
       if (itemsStr.length > 2) { itemsStr = itemsStr.slice(0, -2); }
 
@@ -3489,7 +3502,6 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== 18. API БУКЕТОВ ДЛЯ КАССЫ ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
@@ -3939,6 +3951,13 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var currentLastCost = 0; var itemsCatalog = [];';
       html += 'var receiptItems = [];';
 
+      html += 'function fmtNum(n) {';
+      html += '  var num = parseFloat(String(n).replace(",", "."));';
+      html += '  if (isNaN(num)) return "0";';
+      html += '  return num % 1 === 0 ? num.toString() : ';
+      html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "");';
+      html += '}';
+
       html += 'function checkCat() {';
       html += '  var sel = document.getElementById("itemCategory");';
       html += '  var unitBlock = document.getElementById("unitBlock");';
@@ -3974,7 +3993,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    nm.className = "dd-name"; nm.textContent = i.name;';
       html += '    var st = document.createElement("div"); ';
       html += '    st.className = "dd-stock"; ';
-      html += '    var s = parseFloat(i.current_stock);';
+      html += '    var s = parseFloat(i.current_stock) || 0;';
       html += '    st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
       html += '    st.style.color = s > 0 ? "' + successColor + '" : "';
       html += dangerColor + '";';
@@ -4149,8 +4168,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var totalSum = 0;';
       
       html += '  receiptItems.forEach(function(item, idx) {';
-      html += '    var q = parseFloat(item.qty) || 0;';
-      html += '    var p = parseFloat(item.unit_cost) || 0;';
+      html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
+      html += '    var p = parseFloat(String(item.unit_cost).replace(",", ".")) || 0;';
       html += '    var rowSum = Math.round(q * p * 100) / 100;';
       html += '    totalSum += rowSum;';
       
@@ -4179,34 +4198,34 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var c1 = document.createElement("div");';
       html += '    c1.innerHTML = "<label>Количество</label>";';
       html += '    var inpQ = document.createElement("input"); ';
-      html += '    inpQ.type = "number"; inpQ.value = item.qty; ';
+      html += '    inpQ.type = "number"; inpQ.value = fmtNum(item.qty); ';
       html += '    inpQ.step = "0.1"; inpQ.inputMode = "decimal";';
       html += '    inpQ.onchange = function() { ';
-      html += '      var v = parseFloat(this.value); ';
+      html += '      var v = parseFloat(String(this.value).replace(",", ".")); ';
       html += '      if (v > 0) { receiptItems[idx].qty = v; renderList(); } ';
-      html += '      else { this.value = item.qty; }';
+      html += '      else { this.value = fmtNum(item.qty); }';
       html += '    };';
       html += '    c1.appendChild(inpQ);';
       
       html += '    var c2 = document.createElement("div");';
       html += '    c2.innerHTML = "<label>Закупка (₽)</label>";';
       html += '    var inpP = document.createElement("input"); ';
-      html += '    inpP.type = "number"; inpP.value = item.unit_cost; ';
+      html += '    inpP.type = "number"; inpP.value = fmtNum(item.unit_cost); ';
       html += '    inpP.inputMode = "decimal";';
       html += '    inpP.onchange = function() { ';
-      html += '      var v = parseFloat(this.value); ';
+      html += '      var v = parseFloat(String(this.value).replace(",", ".")); ';
       html += '      if (v > 0) { receiptItems[idx].unit_cost = v; renderList(); } ';
-      html += '      else { this.value = item.unit_cost; }';
+      html += '      else { this.value = fmtNum(item.unit_cost); }';
       html += '    };';
       html += '    c2.appendChild(inpP);';
       
       html += '    var c3 = document.createElement("div");';
       html += '    c3.innerHTML = "<label>Розница (₽)</label>";';
       html += '    var inpR = document.createElement("input"); ';
-      html += '    inpR.type = "number"; inpR.value = item.retail_price || ""; ';
+      html += '    inpR.type = "number"; inpR.value = item.retail_price > 0 ? fmtNum(item.retail_price) : ""; ';
       html += '    inpR.inputMode = "decimal";';
       html += '    inpR.onchange = function() { ';
-      html += '      var v = parseFloat(this.value) || 0; ';
+      html += '      var v = parseFloat(String(this.value).replace(",", ".")) || 0; ';
       html += '      receiptItems[idx].retail_price = v; ';
       html += '    };';
       html += '    c3.appendChild(inpR);';
@@ -4463,8 +4482,8 @@ function setupWarehouse(app, bot, s3ctx) {
       let totalSum = 0;
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const qty = parseFloat(it.qty);
-        const price = parseFloat(it.unit_cost);
+        const qty = parseFloat(String(it.qty).replace(',', '.'));
+        const price = parseFloat(String(it.unit_cost).replace(',', '.'));
         const sum = Math.round(qty * price * 100) / 100;
         totalSum += sum;
 
@@ -4498,8 +4517,8 @@ function setupWarehouse(app, bot, s3ctx) {
         
         let oldStock = parseFloat(curr.rows[0].current_stock) || 0;
         let oldAvg = parseFloat(curr.rows[0].avg_cost) || 0;
-        let qty = parseFloat(it.qty) || 0;
-        let price = parseFloat(it.unit_cost) || 0;
+        let qty = parseFloat(String(it.qty).replace(',', '.')) || 0;
+        let price = parseFloat(String(it.unit_cost).replace(',', '.')) || 0;
 
         let newStock = oldStock + qty;
         let newAvg = 0;
@@ -4715,6 +4734,13 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '14.5,20C17,20 19.5,17.5 20.5,14.5C21.5,11.5 ';
       html += '21.5,8 21.5,8C21.5,8 19.5,6 17,8Z"/></svg>\';';
 
+      html += 'function fmtNum(n) {';
+      html += '  var num = parseFloat(String(n).replace(",", "."));';
+      html += '  if (isNaN(num)) return "0";';
+      html += '  return num % 1 === 0 ? num.toString() : ';
+      html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, "");';
+      html += '}';
+
       html += 'fetch("/api/warehouse/items")';
       html += '.then(function(r) { return r.json(); })';
       html += '.then(function(d) { allItems = d.items; renderGrid(); })';
@@ -4830,9 +4856,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  while(list.firstChild) list.removeChild(list.firstChild);';
       html += '  var totQty = 0; var totSum = 0;';
       html += '  cart.forEach(function(item, idx) {';
-      html += '    totQty += parseFloat(item.qty) || 0;';
-      html += '    var c = parseFloat(item.avg_cost) || 0;';
-      html += '    totSum += (parseFloat(item.qty) || 0) * c;';
+      html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
+      html += '    var c = parseFloat(String(item.avg_cost).replace(",", ".")) || 0;';
+      html += '    totQty += q; totSum += q * c;';
       
       html += '    var div = document.createElement("div");';
       html += '    div.className = "b-row";';
@@ -4957,10 +4983,12 @@ function setupWarehouse(app, bot, s3ctx) {
 
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
+        const qty = parseFloat(String(item.qty).replace(',', '.'));
+        
         await client.query(
           'UPDATE wh_shop_items SET current_stock = ' +
           'current_stock - $1 WHERE id = $2 AND shop_id = $3', 
-          [item.qty, item.id, shopId]
+          [qty, item.id, shopId]
         );
         
         const costQ = await client.query(
@@ -4969,13 +4997,13 @@ function setupWarehouse(app, bot, s3ctx) {
           [item.id, shopId]
         );
         const cost = parseFloat(costQ.rows[0].avg_cost) || 0;
-        totalLoss += (cost * parseFloat(item.qty));
+        totalLoss += (cost * qty);
 
         const wRes = await client.query(
           'INSERT INTO wh_writeoffs (shop_id, shop_item_id, qty, ' +
           'reason, comment, photo_url, chat_id) ' +
           'VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-          [shopId, item.id, item.qty, req.body.reason, 
+          [shopId, item.id, qty, req.body.reason, 
            req.body.comment, req.body.photo, chatId]
         );
         if (!wId) wId = wRes.rows[0].id;
@@ -5007,7 +5035,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-// ====== 30. API ЗАГРУЗКИ ФОТО (S3) ======
+  // ====== 30. API ЗАГРУЗКИ ФОТО (S3) ======
   app.post('/api/warehouse/upload', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5099,7 +5127,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 32. ЭКРАН ДОКУМЕНТОВ ======
+  // ====== 32. ЭКРАН ДОКУМЕНТОВ (С LONG PRESS) ======
   app.get('/warehouse/documents', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5126,11 +5154,20 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.doc { background: #fff; border-radius: 12px; padding: 15px; ';
       html += 'margin-bottom: 10px; text-decoration: none; color: ' + 
               brandColor + '; display: flex; justify-content: space-between; ';
-      html += 'align-items: center; box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += 'align-items: center; box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
+      html += 'user-select: none; -webkit-user-select: none; }';
       html += '.doc.receipt { border-left: 4px solid #3C7A89; } ';
       html += '.doc.writeoff { border-left: 4px solid ' + accentColor + '; } ';
       html += '.meta { font-size: 12px; color: #888; margin-top: 4px; } ';
       html += '.amount { font-weight: 800; font-size: 16px; }';
+      
+      // Стили для модалки быстрого просмотра
+      html += '#docPreviewModal .custom-modal { ';
+      html += 'text-align: left; padding: 20px; }';
+      html += '.dp-row { display: flex; justify-content: space-between; ';
+      html += 'margin-bottom: 8px; font-size: 14px; }';
+      html += '.dp-total { font-weight: 800; font-size: 16px; ';
+      html += 'margin-top: 10px; text-align: right; }';
       html += '</style></head><body>';
       
       html += '<div class="header"><div class="header-left">';
@@ -5146,6 +5183,19 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'id="tab-writeoffs">Списания</a></div><div id="list">';
       html += 'Загрузка...</div>';
 
+      // Модалка быстрого просмотра
+      html += '<div class="custom-modal-overlay" id="docPreviewModal">';
+      html += '<div class="custom-modal">';
+      html += '<h3 id="docPreviewTitle" style="margin:0 0 15px 0; ';
+      html += 'text-align:center;">Загрузка...</h3>';
+      html += '<div id="docPreviewList" style="max-height:50vh; ';
+      html += 'overflow-y:auto; border-top:1px solid #eee; ';
+      html += 'border-bottom:1px solid #eee; padding:10px 0;"></div>';
+      html += '<div id="docPreviewTotal" class="dp-total"></div>';
+      html += '<button class="btn-cancel" style="margin-top:15px; width:100%;" ';
+      html += 'onclick="closeDocPreview()">Закрыть</button>';
+      html += '</div></div>';
+
       html += getUnifiedMenu('documents');
 
       html += '<script>';
@@ -5153,14 +5203,16 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var map = { spoilage: "Порча", loss: "Потеря", ';
       html += 'markdown: "Уценка", sorting: "Пересорт" }; ';
       html += 'return map[r] || r; }';
-      html += 'function fmtNum(n) { var num = parseFloat(n); ';
+      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
+      
       html += 'var currentType = new URLSearchParams(window.location.search)';
       html += '.get("type") || "receipts";';
       html += 'var tab = document.getElementById("tab-" + currentType); ';
       html += 'if (tab) tab.classList.add("active");';
+      
       html += 'fetch("/api/warehouse/documents?type=" + currentType)';
       html += '.then(function(r){return r.json();})';
       html += '.then(function(d){';
@@ -5169,6 +5221,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  if (!d.ok) { b.textContent = "Ошибка"; return; } ';
       html += '  if (d.docs.length === 0) { ';
       html += '  b.textContent = "Документов нет"; return; }';
+      
       html += '  d.docs.forEach(function(doc){ ';
       html += '    var a = document.createElement("a"); ';
       html += '    a.className = "doc " + (currentType === "receipts" ? ';
@@ -5198,9 +5251,68 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      amount.style.color = "' + accentColor + '"; }';
       html += '    left.appendChild(title); left.appendChild(meta); ';
       html += '    a.appendChild(left); a.appendChild(amount); ';
+
+      // Логика долгого нажатия
+      html += '    var pressTimer;';
+      html += '    a.addEventListener("touchstart", function() {';
+      html += '      pressTimer = setTimeout(function() { ';
+      html += '        a.dataset.longpress = "true";';
+      html += '        showDocPreview(doc.id, currentType);';
+      html += '        if (navigator.vibrate) navigator.vibrate(50);';
+      html += '      }, 600);';
+      html += '    });';
+      html += '    a.addEventListener("touchend", function() { ';
+      html += '      clearTimeout(pressTimer); });';
+      html += '    a.addEventListener("touchmove", function() { ';
+      html += '      clearTimeout(pressTimer); });';
+      html += '    a.addEventListener("click", function(e) {';
+      html += '      if (a.dataset.longpress === "true") {';
+      html += '        e.preventDefault(); a.dataset.longpress = "false";';
+      html += '      }';
+      html += '    });';
+
       html += '    b.appendChild(a); });';
       html += '}).catch(function(){ ';
       html += 'document.getElementById("list").textContent = "Ошибка"; });';
+
+      // Функция открытия модалки
+      html += 'function showDocPreview(id, type) {';
+      html += '  var ov = document.getElementById("docPreviewModal");';
+      html += '  var title = document.getElementById("docPreviewTitle");';
+      html += '  var list = document.getElementById("docPreviewList");';
+      html += '  var total = document.getElementById("docPreviewTotal");';
+      html += '  title.textContent = "Загрузка...";';
+      html += '  list.innerHTML = ""; total.textContent = "";';
+      html += '  ov.style.display = "flex";';
+      
+      html += '  fetch("/api/warehouse/documents/details?id=" + id + ';
+      html += '  "&type=" + type)';
+      html += '  .then(function(r){return r.json();})';
+      html += '  .then(function(d) {';
+      html += '    if (!d.ok) { title.textContent = "Ошибка"; return; }';
+      html += '    title.textContent = (type === "receipts" ? ';
+      html += '    "Накладная №" : "Акт №") + id;';
+      html += '    d.items.forEach(function(i) {';
+      html += '      var row = document.createElement("div");';
+      html += '      row.className = "dp-row";';
+      html += '      var n = document.createElement("div");';
+      html += '      n.textContent = i.name;';
+      html += '      var q = document.createElement("div");';
+      html += '      q.style.fontWeight = "bold";';
+      html += '      q.textContent = fmtNum(i.qty) + " шт";';
+      html += '      row.appendChild(n); row.appendChild(q);';
+      html += '      list.appendChild(row);';
+      html += '    });';
+      html += '    var totalTxt = type === "receipts" ? ';
+      html += '    parseFloat(d.header.total_sum).toLocaleString("ru-RU") ';
+      html += '    + " ₽" : fmtNum(d.header.total_sum) + " шт";';
+      html += '    total.textContent = "Итого: " + totalTxt;';
+      html += '  }).catch(function(){ title.textContent = "Ошибка сети"; });';
+      html += '}';
+      
+      html += 'function closeDocPreview() {';
+      html += '  document.getElementById("docPreviewModal").style.display = "none";';
+      html += '}';
       html += '<\/script></body></html>';
       res.send(html);
     } catch(e) {
@@ -5326,7 +5438,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var map = { spoilage: "Порча", loss: "Потеря", ';
       html += 'markdown: "Уценка", sorting: "Пересорт" }; ';
       html += 'return map[r] || r; }';
-      html += 'function fmtNum(n) { var num = parseFloat(n); ';
+      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
@@ -5400,7 +5512,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        .then(function(res){ ';
       html += '        if(res.ok){ showAlert("Готово", ';
       html += '        "Накладная отменена", true); ';
-      // Правка №9: Редирект сразу в черновик для редактирования
+      // Редирект сразу в черновик
       html += '        setTimeout(function(){window.location.href=';
       html += '        "/warehouse/receipt/edit?id=" + docId;}, 1000); } ';
       html += '        else showAlert("Ошибка", res.error, false); })';
@@ -5721,7 +5833,7 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += 'function fmtMoney(v) { ';
       html += 'return Math.round(v).toLocaleString("ru-RU") + " ₽"; }';
-      html += 'function fmtNum(n) { var num = parseFloat(n); ';
+      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
@@ -6015,7 +6127,219 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-  // ====== 39. API ФЛОРИСТОВ И ВЛАДЕЛЬЦА ======
+  // ====== 39. ЭКРАН СМЕНЫ ======
+  app.get('/warehouse/shift', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      
+      const shopId = auth.shopId;
+      const chatId = auth.chatId;
+
+      const shiftRes = await pool.query(
+        'SELECT * FROM wh_shifts WHERE shop_id = $1 ' +
+        'AND chat_id = $2 AND status = \'open\' LIMIT 1',
+        [shopId, chatId]
+      );
+
+      let html = '<!DOCTYPE html><html><head>';
+      html += '<meta charset="UTF-8">';
+      html += '<meta name="viewport" content="width=device-width, ';
+      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += fontLink;
+      html += uiScript;
+      html += '<style>';
+      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
+      html += 'padding: 15px; background: ' + bgGradient + '; ';
+      html += 'color: ' + brandColor + '; }';
+      html += '.header { display: flex; align-items: center; ';
+      html += 'margin-bottom: 15px; justify-content: space-between; }';
+      html += '.header-left { display: flex; align-items: center; }';
+      html += '.back { font-size: 24px; text-decoration: none; ';
+      html += 'color: ' + brandColor + '; margin-right: 15px; }';
+      html += '.card { background: #fff; border-radius: 20px; padding: 20px; ';
+      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += '.btn { width: 100%; padding: 15px; color: #fff; ';
+      html += 'border: none; border-radius: 12px; font-size: 16px; ';
+      html += 'font-weight: 800; margin-top: 15px; font-family: inherit; }';
+      html += '.btn-green { background: ' + successColor + '; }';
+      html += '.btn-red { background: ' + dangerColor + '; }';
+      html += 'input { width: 100%; padding: 15px; font-size: 20px; ';
+      html += 'border: none; border-radius: 12px; margin-top: 5px; ';
+      html += 'box-sizing: border-box; font-family: inherit; }';
+      html += 'label { display: block; margin-top: 15px; ';
+      html += 'font-weight: 600; font-size: 14px; }';
+      html += '.stats { margin-top: 15px; font-size: 14px; }';
+      html += '.stats div { display: flex; justify-content: space-between; ';
+      html += 'margin-bottom: 8px; }';
+      html += '.total-rev { font-size: 18px; font-weight: 800; ';
+      html += 'margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }';
+      html += '</style></head><body>';
+
+      html += '<div class="header"><div class="header-left">';
+      html += '<a href="/warehouse-app" class="back">←</a>';
+      html += '<h2 style="margin:0; display:flex; align-items:center;">';
+      html += getIconSvg('shift') + 'Смена</h2></div>';
+      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '</div>';
+
+      if (shiftRes.rows.length === 0) {
+        html += '<div class="card">';
+        html += '<h3 style="margin-top:0;">Открытие смены</h3>';
+        html += '<p style="color:#666; font-size:14px;">';
+        html += 'Укажите сумму наличных в кассе на начало дня.</p>';
+        html += '<label>Наличные в кассе (₽)</label>';
+        html += '<input type="number" id="startCash" placeholder="0">';
+        html += '<button class="btn btn-green" ';
+        html += 'onclick="openShift()">Открыть смену</button></div>';
+      } else {
+        const shift = shiftRes.rows[0];
+        const salesRes = await pool.query(
+          'SELECT SUM(pay_cash) as c, SUM(pay_card) as k, ' +
+          'SUM(pay_qr) as q, SUM(real_price) as t ' +
+          'FROM wh_sales WHERE shop_id = $1 AND date >= $2',
+          [shopId, shift.open_time]
+        );
+        const st = salesRes.rows[0];
+        const cash = parseFloat(st.c || 0);
+        const card = parseFloat(st.k || 0);
+        const qr = parseFloat(st.q || 0);
+        const total = parseFloat(st.t || 0);
+        const start = parseFloat(shift.start_cash);
+
+        html += '<div class="card">';
+        html += '<h3 style="margin-top:0;">Смена открыта</h3>';
+        html += '<div class="stats">';
+        html += '<div><span>Наличные:</span> <b>' + cash + ' ₽</b></div>';
+        html += '<div><span>Карта:</span> <b>' + card + ' ₽</b></div>';
+        html += '<div><span>QR:</span> <b>' + qr + ' ₽</b></div>';
+        html += '<div class="total-rev"><span>Выручка:</span> ';
+        html += '<span>' + total + ' ₽</span></div>';
+        html += '</div>';
+        html += '<label>Фактически наличных в кассе (₽)</label>';
+        html += '<input type="number" id="endCash" ';
+        html += 'placeholder="' + (start + cash) + '">';
+        html += '<p style="font-size:12px; color:#888;">';
+        html += 'Ожидается: ' + (start + cash) + ' ₽ (Остаток + Нал)</p>';
+        html += '<button class="btn btn-red" ';
+        html += 'onclick="closeShift()">Закрыть смену</button></div>';
+      }
+
+      html += getUnifiedMenu('shift');
+
+      html += '<script>';
+      html += 'function openShift() {';
+      html += '  var v = document.getElementById("startCash").value || 0;';
+      html += '  fetch("/api/warehouse/shift", { method: "POST", ';
+      html += 'headers: { "Content-Type": "application/json" }, ';
+      html += 'body: JSON.stringify({ action: "open", val: v }) })';
+      html += '  .then(function(r) { return r.json(); })';
+      html += '  .then(function(d) {';
+      html += '    if (d.ok) window.location.href = "/warehouse/sale";';
+      html += '    else showAlert("Ошибка", d.error, false);';
+      html += '  })';
+      html += '  .catch(function() {';
+      html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
+      html += '  });';
+      html += '}';
+
+      html += 'function closeShift() {';
+      html += '  var v = document.getElementById("endCash").value;';
+      html += '  if (!v) { showAlert("Внимание", "Введите сумму", false); return; }';
+      html += '  fetch("/api/warehouse/shift", { method: "POST", ';
+      html += 'headers: { "Content-Type": "application/json" }, ';
+      html += 'body: JSON.stringify({ action: "close", val: v }) })';
+      html += '  .then(function(r) { return r.json(); })';
+      html += '  .then(function(d) {';
+      html += '    if (d.ok) { ';
+      html += 'showAlert("Готово", "Смена закрыта", true); ';
+      html += '      setTimeout(function() { ';
+      html += 'window.location.href = "/warehouse-app"; }, 1500); ';
+      html += '    } else showAlert("Ошибка", d.error, false);';
+      html += '  })';
+      html += '  .catch(function() {';
+      html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
+      html += '  });';
+      html += '}';
+      html += '<\/script></body></html>';
+      res.send(html);
+    } catch (e) { 
+      res.status(500).send('Ошибка сервера'); 
+    }
+  });
+
+  // ====== 40. API СМЕНЫ ======
+  app.post('/api/warehouse/shift', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const shopId = auth.shopId;
+      const chatId = auth.chatId;
+
+      if (req.body.action === 'open') {
+        const existing = await pool.query(
+          'SELECT id FROM wh_shifts WHERE shop_id = $1 ' +
+          'AND chat_id = $2 AND status = \'open\' LIMIT 1',
+          [shopId, chatId]
+        );
+        if (existing.rows.length > 0) {
+          return res.json({ ok: false, error: 'Смена уже открыта' });
+        }
+        const startCash = parseFloat(req.body.val) || 0;
+        if (startCash < 0) {
+          return res.json({ ok: false, error: 'Некорректная сумма' });
+        }
+        await pool.query(
+          'INSERT INTO wh_shifts (shop_id, chat_id, start_cash) ' +
+          'VALUES ($1, $2, $3)',
+          [shopId, chatId, startCash]
+        );
+      } else {
+        const shiftRes = await pool.query(
+          'SELECT id, start_cash, open_time FROM wh_shifts ' +
+          'WHERE shop_id = $1 AND chat_id = $2 ' +
+          'AND status = \'open\' ORDER BY open_time DESC LIMIT 1',
+          [shopId, chatId]
+        );
+        if (shiftRes.rows.length === 0) {
+          return res.json({ ok: false, error: 'Смена не найдена' });
+        }
+        const shift = shiftRes.rows[0];
+        const salesRes = await pool.query(
+          'SELECT SUM(pay_cash) as c, SUM(pay_card) as k, ' +
+          'SUM(pay_qr) as q, SUM(real_price) as t ' +
+          'FROM wh_sales WHERE shop_id = $1 AND date >= $2',
+          [shopId, shift.open_time]
+        );
+        const st = salesRes.rows[0];
+        const cash = parseFloat(st.c || 0);
+        const total = parseFloat(st.t || 0);
+        const expected = parseFloat(shift.start_cash) + cash;
+        const actual = parseFloat(req.body.val);
+        if (isNaN(actual)) {
+          return res.json({ ok: false, error: 'Некорректная сумма' });
+        }
+        const discrepancy = actual - expected;
+
+        await pool.query(
+          'UPDATE wh_shifts SET close_time = NOW(), ' +
+          'end_cash_fact = $1, total_sales = $2, cash_sales = $3, ' +
+          'card_sales = $4, qr_sales = $5, discrepancy = $6, ' +
+          'status = \'closed\' WHERE id = $7',
+          [actual, total, cash, parseFloat(st.k || 0), 
+           parseFloat(st.q || 0), discrepancy, shift.id]
+        );
+        await logAction(shopId, chatId, 'shift',
+          'Закрыта смена. Расхождение: ' + discrepancy);
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ====== 41. API ФЛОРИСТОВ И ВЛАДЕЛЬЦА ======
   app.get('/api/warehouse/staff', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6057,7 +6381,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 40. ЭКРАН ФЛОРИСТОВ ======
+  // ====== 42. ЭКРАН ФЛОРИСТОВ ======
   app.get('/warehouse/staff', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6229,7 +6553,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 41. API ПРАВ И УДАЛЕНИЯ ФЛОРИСТОВ ======
+  // ====== 43. API ПРАВ И УДАЛЕНИЯ ФЛОРИСТОВ ======
   app.post('/api/warehouse/florist/pin', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6301,7 +6625,7 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 42. API НАСТРОЕК ======
+  // ====== 44. API НАСТРОЕК ======
   app.get('/api/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6376,7 +6700,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 43. ЭКРАН НАСТРОЕК ======
+  // ====== 45. ЭКРАН НАСТРОЕК ======
   app.get('/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6509,8 +6833,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 44. API ИСТОРИИ ======
+  // ====== 46. API ИСТОРИИ ======
   app.get('/api/warehouse/history', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6598,7 +6921,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
-  // ====== 45. ЭКРАН ИСТОРИИ ======
+
+  // ====== 47. ЭКРАН ИСТОРИИ ======
   app.get('/warehouse/history', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6722,9 +7046,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'function translateReason(r) { var map = { spoilage: "Порча", ';
       html += 'loss: "Потеря", markdown: "Уценка", sorting: "Пересорт" }; ';
       html += 'return map[r] || r || ""; }';
-      html += 'function fmtNum(n) { var num = parseFloat(n); if (isNaN(num)) ';
-      html += 'return "0"; return num % 1 === 0 ? num.toString() : ';
-      html += 'num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); }';
+      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
+      html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
+      html += '.replace(/\\.$/, ""); }';
       html += 'function fmtMoney(n) { return Math.round(n)';
       html += '.toLocaleString("ru-RU") + " ₽"; }';
       
@@ -6905,7 +7230,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 46. API ДЕТАЛЕЙ ПРОДАЖИ ======
+  // ====== 48. API ДЕТАЛЕЙ ПРОДАЖИ ======
   app.get('/api/warehouse/sale/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6941,7 +7266,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 47. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
+  // ====== 49. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
   app.get('/warehouse/sale/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6988,7 +7313,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += getUnifiedMenu('history');
 
       html += '<script>';
-      html += 'function fmtNum(n) { var num = parseFloat(n); ';
+      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
@@ -7055,7 +7380,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 48. API ОТМЕНЫ ПРОДАЖИ ======
+  // ====== 50. API ОТМЕНЫ ПРОДАЖИ ======
   app.post('/api/warehouse/sale/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -7128,15 +7453,14 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
-  // ====== 49. API ВСЕХ БУКЕТОВ ======
+  // ====== 51. API ВСЕХ БУКЕТОВ ======
   app.get('/api/warehouse/bouquets/all', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
       const r = await pool.query(
-        'SELECT b.id, b.name, b.price, b.photos, b.wh_linked, ' +
+        'SELECT b.id, b.name, b.price, b.photos, b.wh_linked, b.deleted, ' +
         '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) ' +
         '|| \' x\' || TRIM(TRAILING \'.\' FROM TRIM(TRAILING \'0\' ' +
         'FROM rcp.qty::text)), \', \') ' +
@@ -7145,7 +7469,7 @@ function setupWarehouse(app, bot, s3ctx) {
         'JOIN wh_items i ON i.id = shi.item_id ' +
         'WHERE rcp.bouquet_id = b.id) as recipe_text ' +
         'FROM bouquets b ' +
-        'WHERE b.shop_id = $1 AND b.deleted = FALSE ORDER BY b.name ASC',
+        'WHERE b.shop_id = $1 ORDER BY b.name ASC',
         [auth.shopId]
       );
       
@@ -7160,7 +7484,7 @@ function setupWarehouse(app, bot, s3ctx) {
         return {
           id: b.id, name: b.name, price: b.price,
           photo_url: photoUrl, wh_linked: b.wh_linked,
-          recipe_text: b.recipe_text
+          recipe_text: b.recipe_text, deleted: b.deleted
         };
       });
       
@@ -7170,7 +7494,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 50. ЭКРАН УПРАВЛЕНИЯ БУКЕТАМИ ======
+  // ====== 52. ЭКРАН УПРАВЛЕНИЯ БУКЕТАМИ ======
   app.get('/warehouse/bouquets', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7189,6 +7513,11 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.back { font-size: 24px; text-decoration: none; ';
       html += 'color: ' + brandColor + '; margin-right: 15px; } ';
       
+      html += '.search { width: 100%; padding: 15px; border: none; ';
+      html += 'border-radius: 12px; margin-bottom: 15px; ';
+      html += 'box-sizing: border-box; font-family: inherit; ';
+      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+
       html += '.controls { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 15px; gap: 10px; }';
       html += '.view-toggles { display: flex; gap: 4px; ';
@@ -7274,6 +7603,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<button class="btn-add" onclick="window.location.href=';
       html += '\'/warehouse/bouquet/edit\'">+ Создать новый букет</button>';
 
+      html += '<input type="text" class="search" id="search" ';
+      html += 'placeholder="🔍 Поиск по названию..." oninput="render()">';
+
       html += '<div class="controls">';
       html += '  <div class="view-toggles">';
       html += '    <button class="view-btn active" id="btn-v-grid" ';
@@ -7302,6 +7634,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'onclick="setFilter(\'active\')">На витрине</button>';
       html += '<button class="f-btn" id="f-inactive" ';
       html += 'onclick="setFilter(\'inactive\')">Сняты</button>';
+      html += '<button class="f-btn" id="f-deleted" ';
+      html += 'onclick="setFilter(\'deleted\')">В корзине</button>';
       html += '</div>';
 
       html += '<div id="list" class="b-grid">Загрузка...</div>';
@@ -7355,10 +7689,16 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var container = document.getElementById("list");';
       html += '  while(container.firstChild) container.removeChild(container.firstChild);';
       
+      html += '  var q = document.getElementById("search").value.toLowerCase();';
+      
       html += '  var filtered = allBouquets.filter(function(b) {';
-      html += '    if (currentFilter === "active") return b.wh_linked;';
-      html += '    if (currentFilter === "inactive") return !b.wh_linked;';
-      html += '    return true;';
+      html += '    var matchQ = b.name.toLowerCase().includes(q);';
+      html += '    var matchF = true;';
+      html += '    if (currentFilter === "active") matchF = (b.wh_linked && !b.deleted);';
+      html += '    if (currentFilter === "inactive") matchF = (!b.wh_linked && !b.deleted);';
+      html += '    if (currentFilter === "deleted") matchF = b.deleted;';
+      html += '    if (currentFilter === "all") matchF = !b.deleted;';
+      html += '    return matchQ && matchF;';
       html += '  });';
       
       html += '  if (filtered.length === 0) { ';
@@ -7401,43 +7741,54 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      info.appendChild(rec);';
       html += '    }';
       
-      html += '    var sw = document.createElement("label"); ';
-      html += '    sw.className = "switch";';
-      html += '    var cb = document.createElement("input"); cb.type = "checkbox"; ';
-      html += '    cb.checked = bq.wh_linked; ';
-      html += '    cb.onchange = function(){toggleLink(bq.id, cb.checked, bq);}; ';
-      html += '    sw.appendChild(cb);';
-      html += '    var sl = document.createElement("span"); ';
-      html += '    sl.className = "slider"; sw.appendChild(sl); ';
-      html += '    info.appendChild(sw);';
+      html += '    if (!bq.deleted) {';
+      html += '      var sw = document.createElement("label"); ';
+      html += '      sw.className = "switch";';
+      html += '      var cb = document.createElement("input"); cb.type = "checkbox"; ';
+      html += '      cb.checked = bq.wh_linked; ';
+      html += '      cb.onchange = function(){toggleLink(bq.id, cb.checked, bq);}; ';
+      html += '      sw.appendChild(cb);';
+      html += '      var sl = document.createElement("span"); ';
+      html += '      sl.className = "slider"; sw.appendChild(sl); ';
+      html += '      info.appendChild(sw);';
+      html += '    }';
       
       html += '    var btnRow = document.createElement("div"); ';
       html += '    btnRow.style = "display:flex; gap:5px; margin-top:auto;";';
       
-      html += '    var btnEdit = document.createElement("button"); ';
-      html += '    btnEdit.className = "btn-setup"; ';
-      html += '    btnEdit.style = "flex:1;";';
-      html += '    btnEdit.innerHTML = "✏️"; ';
-      html += '    btnEdit.onclick = function() { ';
-      html += '      window.location.href = "/warehouse/bouquet/edit?id=" ';
-      html += '      + bq.id; }; ';
-      html += '    btnRow.appendChild(btnEdit);';
+      html += '    if (bq.deleted) {';
+      html += '      var btnRestore = document.createElement("button"); ';
+      html += '      btnRestore.className = "btn-setup"; ';
+      html += '      btnRestore.style = "flex:1; color:' + successColor + ';"';
+      html += '      btnRestore.innerHTML = "♻️ Восстановить"; ';
+      html += '      btnRestore.onclick = function() { restoreBouquet(bq.id); }; ';
+      html += '      btnRow.appendChild(btnRestore);';
+      html += '    } else {';
+      html += '      var btnEdit = document.createElement("button"); ';
+      html += '      btnEdit.className = "btn-setup"; ';
+      html += '      btnEdit.style = "flex:1;";';
+      html += '      btnEdit.innerHTML = "✏️"; ';
+      html += '      btnEdit.onclick = function() { ';
+      html += '        window.location.href = "/warehouse/bouquet/edit?id=" ';
+      html += '        + bq.id; }; ';
+      html += '      btnRow.appendChild(btnEdit);';
       
-      html += '    var btnSetup = document.createElement("button"); ';
-      html += '    btnSetup.className = "btn-setup"; ';
-      html += '    btnSetup.style = "flex:3;";';
-      html += '    btnSetup.textContent = "Состав"; ';
-      html += '    btnSetup.onclick = function() { ';
-      html += '      window.location.href = "/warehouse/bouquets/recipe?id=" ';
-      html += '      + bq.id; }; ';
-      html += '    btnRow.appendChild(btnSetup);';
+      html += '      var btnSetup = document.createElement("button"); ';
+      html += '      btnSetup.className = "btn-setup"; ';
+      html += '      btnSetup.style = "flex:3;";';
+      html += '      btnSetup.textContent = "Состав"; ';
+      html += '      btnSetup.onclick = function() { ';
+      html += '        window.location.href = "/warehouse/bouquets/recipe?id=" ';
+      html += '        + bq.id; }; ';
+      html += '      btnRow.appendChild(btnSetup);';
       
-      html += '    var btnDel = document.createElement("button"); ';
-      html += '    btnDel.className = "btn-setup"; ';
-      html += '    btnDel.style = "flex:1; color:red;";';
-      html += '    btnDel.innerHTML = "🗑"; ';
-      html += '    btnDel.onclick = function() { delBouquet(bq.id); }; ';
-      html += '    btnRow.appendChild(btnDel);';
+      html += '      var btnDel = document.createElement("button"); ';
+      html += '      btnDel.className = "btn-setup"; ';
+      html += '      btnDel.style = "flex:1; color:red;";';
+      html += '      btnDel.innerHTML = "🗑"; ';
+      html += '      btnDel.onclick = function() { delBouquet(bq.id); }; ';
+      html += '      btnRow.appendChild(btnDel);';
+      html += '    }';
       
       html += '    info.appendChild(btnRow);';
       html += '    card.appendChild(info); container.appendChild(card);';
@@ -7464,15 +7815,25 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}); }';
 
       html += 'function delBouquet(id) {';
-      html += '  showConfirm("Удаление", "Удалить букет с витрины?", function() {';
+      html += '  showConfirm("Удаление", "Удалить букет в корзину?", function() {';
       html += '    fetch("/api/warehouse/bouquet/delete", { method: "POST", ';
       html += '    headers: { "Content-Type": "application/json" }, ';
       html += '    body: JSON.stringify({ id: id }) })';
       html += '    .then(function(r){return r.json();}).then(function(d){';
-      html += '      if (d.ok) window.location.reload();';
+      html += '      if (d.ok) location.reload();';
       html += '      else showAlert("Ошибка", d.error, false);';
       html += '    }).catch(function(){});';
       html += '  }, true);';
+      html += '}';
+
+      html += 'function restoreBouquet(id) {';
+      html += '  fetch("/api/warehouse/bouquet/restore", { method: "POST", ';
+      html += '  headers: { "Content-Type": "application/json" }, ';
+      html += '  body: JSON.stringify({ id: id }) })';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if (d.ok) location.reload();';
+      html += '    else showAlert("Ошибка", d.error, false);';
+      html += '  }).catch(function(){});';
       html += '}';
       html += '<\/script></body></html>';
       res.send(html);
@@ -7481,7 +7842,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 51. API ПЕРЕКЛЮЧЕНИЯ СВЯЗИ БУКЕТА ======
+  // ====== 53. API ПЕРЕКЛЮЧЕНИЯ СВЯЗИ БУКЕТА ======
   app.post('/api/warehouse/bouquet/toggle', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7496,7 +7857,7 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 52. API УДАЛЕНИЯ БУКЕТА ======
+  // ====== 54. API УДАЛЕНИЯ БУКЕТА (В КОРЗИНУ) ======
   app.post('/api/warehouse/bouquet/delete', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7509,7 +7870,93 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // ====== 53. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
+  // ====== 55. API ВОССТАНОВЛЕНИЯ БУКЕТА ======
+  app.post('/api/warehouse/bouquet/restore', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      await pool.query(
+        'UPDATE bouquets SET deleted = FALSE WHERE id = $1 AND shop_id = $2',
+        [req.body.id, auth.shopId]
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+  // ====== 56. API ДАННЫХ БУКЕТА ======
+  app.get('/api/warehouse/bouquets/info', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const r = await pool.query(
+        'SELECT id, name, price, photos, wh_linked FROM bouquets ' +
+        'WHERE id = $1 AND shop_id = $2',
+        [req.query.id, auth.shopId]
+      );
+      if (r.rows.length === 0) return res.json({ ok: false });
+      res.json({ ok: true, bouquet: r.rows[0] });
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
+  // ====== 57. API СОХРАНЕНИЯ БУКЕТА ======
+  app.post('/api/warehouse/bouquet/save', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const bId = parseInt(req.body.id);
+      const name = String(req.body.name || '').trim();
+      const price = parseFloat(String(req.body.price).replace(',', '.'));
+      const photoUrl = req.body.photo_url;
+      const isLinked = req.body.is_linked === true;
+      
+      if (!name || !price || price <= 0) {
+        return res.json({ ok: false, error: 'Неверные данные' });
+      }
+
+      let photos = [];
+      if (photoUrl) { photos.push(photoUrl); }
+
+      let finalId = bId;
+
+      if (bId > 0) {
+        if (photoUrl) {
+          await pool.query(
+            'UPDATE bouquets SET name = $1, price = $2, photos = $3 ' +
+            'WHERE id = $4 AND shop_id = $5',
+            [name, price, JSON.stringify(photos), bId, auth.shopId]
+          );
+        } else {
+          await pool.query(
+            'UPDATE bouquets SET name = $1, price = $2 ' +
+            'WHERE id = $3 AND shop_id = $4',
+            [name, price, bId, auth.shopId]
+          );
+        }
+      } else {
+        const shopNumberRes = await pool.query(
+          'SELECT COALESCE(MAX(shop_number), 0) + 1 AS next ' +
+          'FROM bouquets WHERE shop_id = $1', [auth.shopId]
+        );
+        const shopNumber = shopNumberRes.rows[0].next;
+        const ins = await pool.query(
+          'INSERT INTO bouquets (shop_id, shop_number, name, price, ' +
+          'photos, chat_id, confirmed_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) ' +
+          'RETURNING id',
+          [auth.shopId, shopNumber, name, price, 
+           JSON.stringify(photos), auth.chatId]
+        );
+        finalId = ins.rows[0].id;
+      }
+      res.json({ ok: true, id: finalId });
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
+  });
+
+  // ====== 58. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
   app.get('/warehouse/bouquet/edit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7538,6 +7985,36 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'margin-top: 15px; }';
       html += '.img-preview { width: 100px; height: 100px; border-radius: 12px; ';
       html += 'object-fit: cover; display: none; margin-bottom: 10px; }';
+      
+      html += '.recipe-block { display: none; margin-top: 15px; ';
+      html += 'border-top: 2px dashed #eee; padding-top: 15px; }';
+      html += '.b-row { display: flex; justify-content: space-between; ';
+      html += 'align-items: center; margin-bottom: 8px; font-size: 14px; }';
+      html += '.b-controls { display: flex; gap: 5px; align-items: center; }';
+      html += '.qty-btn { background: #F0F4F4; border: none; width: 26px; ';
+      html += 'height: 26px; border-radius: 6px; font-weight: bold; ';
+      html += 'font-size: 14px; color: ' + brandColor + '; }';
+      html += '.qty-input { width: 50px !important; height: 26px; ';
+      html += 'font-size: 14px; margin: 0; padding: 0; }';
+      html += '.btn-add-raw { width: 100%; background: ' + brandColor + '; ';
+      html += 'color: #fff; border: none; padding: 12px; border-radius: 10px; ';
+      html += 'font-weight: 800; font-size: 14px; margin-top: 10px; }';
+
+      html += '.dropdown-wrap { position: relative; }';
+      html += '.dropdown-list { position: absolute; top: 100%; left: 0; ';
+      html += 'right: 0; background: #fff; border: 1px solid #eee; ';
+      html += 'border-radius: 12px; margin-top: -10px; z-index: 100; ';
+      html += 'box-shadow: 0 4px 15px rgba(0,0,0,0.1); ';
+      html += 'max-height: 200px; overflow-y: auto; display: none; }';
+      html += '.dd-item { padding: 12px 15px; border-bottom: 1px solid #eee; ';
+      html += 'cursor: pointer; display: flex; justify-content: space-between; ';
+      html += 'align-items: center; }';
+      html += '.dd-item:last-child { border-bottom: none; }';
+      html += '.dd-name { font-weight: 600; font-size: 14px; }';
+      html += '.dd-stock { font-size: 12px; font-weight: 800; }';
+      html += '.clear-search { position: absolute; right: 15px; top: 22px; ';
+      html += 'font-size: 20px; color: #aaa; cursor: pointer; ';
+      html += 'display: none; background: none; border: none; padding: 0; }';
       html += '</style></head><body>';
 
       html += '<div class="header"><div class="header-left">';
@@ -7559,14 +8036,53 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'onchange="uploadPhoto(this)" style="margin-bottom:10px;">';
       html += '<img id="bqPreview" class="img-preview">';
       html += '<input type="hidden" id="bqPhotoUrl" value="">';
-      html += '<button class="btn-save" id="btnSave" onclick="saveBouquet()">';
-      html += 'Сохранить</button>';
+      
+      html += '<label style="display:flex; align-items:center; gap:8px; ';
+      html += 'margin-top:15px; font-weight:800; cursor:pointer;">';
+      html += '<input type="checkbox" id="bqLinked" onchange="toggleRecipe()" ';
+      html += 'style="width:20px; height:20px; margin:0;"> ';
+      html += 'Привязать к складу (Рецепт)</label>';
+      
+      // Блок рецепта
+      html += '<div class="recipe-block" id="recipeSection">';
+      html += '<h3 style="margin-top:0; font-size:16px;">Состав:</h3>';
+      html += '<div id="recipeList"></div>';
+      
+      html += '<div style="margin-top:15px; background:#fafaf8; ';
+      html += 'padding:10px; border-radius:12px;">';
+      html += '<label>Поиск по складу</label>';
+      html += '<div class="dropdown-wrap">';
+      html += '<input type="text" id="searchItem" oninput="onSearchInput()" ';
+      html += 'placeholder="Начните вводить..." autocomplete="off">';
+      html += '<button class="clear-search" id="clearSearch" ';
+      html += 'onclick="clearSearchText()">✕</button>';
+      html += '<div class="dropdown-list" id="ddList"></div>';
+      html += '</div>';
+      
+      html += '<label>Количество</label>';
+      html += '<input type="number" id="qtyAdd" placeholder="1" step="0.1" ';
+      html += 'inputmode="decimal">';
+      
+      html += '<button class="btn-add-raw" onclick="addItem()">';
+      html += '+ Добавить ингредиент</button>';
+      html += '</div></div>';
+
+      html += '<button class="btn-save" id="btnSave" onclick="saveAll()">';
+      html += 'Сохранить букет</button>';
       html += '</div>';
 
       html += getUnifiedMenu('bouquets');
 
       html += '<script>';
       html += 'var bId = ' + bId + ';';
+      html += 'var catalog = []; var recipe = [];';
+      html += 'var selectedItem = null;';
+
+      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
+      html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
+      html += '.replace(/\\.$/, ""); }';
+
       html += 'if (bId > 0) { ';
       html += '  document.getElementById("pageTitle").textContent = "Редактирование";';
       html += '  fetch("/api/warehouse/bouquets/info?id=" + bId)';
@@ -7574,6 +8090,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    if (d.ok) {';
       html += '      document.getElementById("bqName").value = d.bouquet.name;';
       html += '      document.getElementById("bqPrice").value = d.bouquet.price;';
+      html += '      if (d.bouquet.wh_linked) {';
+      html += '        document.getElementById("bqLinked").checked = true;';
+      html += '        toggleRecipe();';
+      html += '      }';
       html += '      if (d.bouquet.photos && d.bouquet.photos.length > 0) {';
       html += '        var p = d.bouquet.photos[0];';
       html += '        var url = (typeof p === "string") ? p : (p.s3 || p.s3b);';
@@ -7585,290 +8105,20 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      }';
       html += '    }';
       html += '  }).catch(function(){});';
+
+      html += '  fetch("/api/warehouse/bouquets/recipe?id=" + bId)';
+      html += '  .then(function(r){return r.json();}).then(function(d){ ';
+      html += '  if (d.ok) { recipe = d.items; renderRecipe(); } });';
       html += '}';
-
-      html += 'function uploadPhoto(input) {';
-      html += '  var f = input.files[0]; if (!f) return;';
-      html += '  var rd = new FileReader();';
-      html += '  rd.onload = function(e) {';
-      html += '    var img = new Image();';
-      html += '    img.onload = function() {';
-      html += '      var canvas = document.createElement("canvas");';
-      html += '      var MAX = 800; var w = img.width, h = img.height;';
-      html += '      if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }';
-      html += '      else { if (h > MAX) { w *= MAX / h; h = MAX; } }';
-      html += '      canvas.width = w; canvas.height = h;';
-      html += '      var ctx = canvas.getContext("2d");';
-      html += '      ctx.drawImage(img, 0, 0, w, h);';
-      html += '      var dataUrl = canvas.toDataURL("image/jpeg", 0.7);';
-      html += '      showAlert("Загрузка", "Отправляем фото...", true);';
-      html += '      fetch("/api/warehouse/upload", { method: "POST",';
-      html += '      headers: { "Content-Type": "application/json" },';
-      html += '      body: JSON.stringify({ image: dataUrl }) })';
-      html += '      .then(function(r){return r.json();}).then(function(d){';
-      html += '        if (d.ok) {';
-      html += '          document.getElementById("bqPhotoUrl").value = d.url;';
-      html += '          var prev = document.getElementById("bqPreview");';
-      html += '          prev.src = d.url; prev.style.display = "block";';
-      html += '        } else showAlert("Ошибка", "Фото не принято", false);';
-      html += '      }).catch(function(){ showAlert("Ошибка", "Сеть", false); });';
-      html += '    }; img.src = e.target.result;';
-      html += '  }; rd.readAsDataURL(f);';
-      html += '}';
-
-      html += 'function saveBouquet() {';
-      html += '  var name = document.getElementById("bqName").value;';
-      html += '  var price = parseFloat(document.getElementById("bqPrice").value);';
-      html += '  var photoUrl = document.getElementById("bqPhotoUrl").value;';
-      html += '  if (!name || !price) { showAlert("Ошибка", "Заполните поля", false); return; }';
-      html += '  var btn = document.getElementById("btnSave");';
-      html += '  btn.disabled = true; btn.innerText = "Сохранение...";';
-      html += '  fetch("/api/warehouse/bouquet/save", { method: "POST",';
-      html += '  headers: { "Content-Type": "application/json" },';
-      html += '  body: JSON.stringify({ id: bId, name: name, price: price,';
-      html += '  photo_url: photoUrl }) })';
-      html += '  .then(function(r){return r.json();}).then(function(d){';
-      html += '    if (d.ok) { window.location.href = "/warehouse/bouquets"; }';
-      html += '    else { btn.disabled = false; btn.innerText = "Сохранить";';
-      html += '    showAlert("Ошибка", d.error, false); }';
-      html += '  }).catch(function(){ btn.disabled = false;';
-      html += '  btn.innerText = "Сохранить"; showAlert("Ошибка", "Сеть", false); });';
-      html += '}';
-      html += '<\/script></body></html>';
-      res.send(html);
-    } catch(e) { res.status(500).send('Ошибка сервера'); }
-  });
-
-  // ====== 54. API ДАННЫХ БУКЕТА ======
-  app.get('/api/warehouse/bouquets/info', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      const r = await pool.query(
-        'SELECT id, name, price, photos FROM bouquets ' +
-        'WHERE id = $1 AND shop_id = $2',
-        [req.query.id, auth.shopId]
-      );
-      if (r.rows.length === 0) return res.json({ ok: false });
-      res.json({ ok: true, bouquet: r.rows[0] });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-
-  // ====== 55. API СОХРАНЕНИЯ БУКЕТА ======
-  app.post('/api/warehouse/bouquet/save', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      
-      const bId = parseInt(req.body.id);
-      const name = String(req.body.name || '').trim();
-      const price = parseFloat(req.body.price);
-      const photoUrl = req.body.photo_url;
-      
-      if (!name || !price || price <= 0) {
-        return res.json({ ok: false, error: 'Неверные данные' });
-      }
-
-      let photos = [];
-      if (photoUrl) { photos.push(photoUrl); }
-
-      if (bId > 0) {
-        if (photoUrl) {
-          await pool.query(
-            'UPDATE bouquets SET name = $1, price = $2, photos = $3 ' +
-            'WHERE id = $4 AND shop_id = $5',
-            [name, price, JSON.stringify(photos), bId, auth.shopId]
-          );
-        } else {
-          await pool.query(
-            'UPDATE bouquets SET name = $1, price = $2 ' +
-            'WHERE id = $3 AND shop_id = $4',
-            [name, price, bId, auth.shopId]
-          );
-        }
-      } else {
-        const shopNumberRes = await pool.query(
-          'SELECT COALESCE(MAX(shop_number), 0) + 1 AS next ' +
-          'FROM bouquets WHERE shop_id = $1', [auth.shopId]
-        );
-        const shopNumber = shopNumberRes.rows[0].next;
-        await pool.query(
-          'INSERT INTO bouquets (shop_id, shop_number, name, price, ' +
-          'photos, chat_id, confirmed_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())',
-          [auth.shopId, shopNumber, name, price, 
-           JSON.stringify(photos), auth.chatId]
-        );
-      }
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
-  });
-
-  // ====== 56. API ПОЛУЧЕНИЯ РЕЦЕПТА ======
-  app.get('/api/warehouse/bouquets/recipe', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      
-      const r = await pool.query(
-        'SELECT r.id, r.shop_item_id, r.qty, ' +
-        'COALESCE(shi.custom_name, i.name) as name, ' +
-        'i.unit, shi.current_stock, shi.retail_price ' +
-        'FROM wh_bouquet_recipes r ' +
-        'JOIN wh_shop_items shi ON shi.id = r.shop_item_id ' +
-        'JOIN wh_items i ON i.id = shi.item_id ' +
-        'WHERE r.bouquet_id = $1 AND shi.shop_id = $2 ' +
-        'ORDER BY r.id ASC',
-        [req.query.id, auth.shopId]
-      );
-      res.json({ ok: true, items: r.rows });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-
-  // ====== 57. ЭКРАН СОСТАВА (РЕЦЕПТА) ======
-  app.get('/warehouse/bouquets/recipe', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
-      
-      const bId = parseInt(req.query.id);
-      if (!bId || isNaN(bId)) return res.status(400).send('Неверный ID');
-
-      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
-      html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
-      html += '.card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 20px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      
-      html += '.b-row { display: grid; grid-template-columns: 1fr 115px 20px; ';
-      html += 'gap: 5px; align-items: center; margin-bottom: 6px; ';
-      html += 'font-size: 13px; padding-bottom: 6px; ';
-      html += 'border-bottom: 1px solid #eee; }';
-      html += '.qty-btn { background: #F0F4F4; border: none; ';
-      html += 'width: 26px; height: 28px; border-radius: 6px; ';
-      html += 'font-weight: bold; font-size: 14px; ';
-      html += 'color: ' + brandColor + '; }';
-      
-      html += '.btn-save { width: 100%; background: ' + successColor + '; ';
-      html += 'color: #fff; border: none; padding: 16px; ';
-      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
-      html += 'margin-top: 15px; }';
-      
-      html += '.btn-add-toggle { width: 100%; background: #F0F4F4; ';
-      html += 'color: ' + brandColor + '; border: none; padding: 15px; ';
-      html += 'border-radius: 12px; font-size: 15px; font-weight: 700; ';
-      html += 'font-family: inherit; margin-bottom: 15px; ';
-      html += 'display: flex; align-items: center; justify-content: center; ';
-      html += 'gap: 8px; }';
-      
-      html += '#addFormBlock { display: none; }';
-
-      html += '.dropdown-wrap { position: relative; margin-bottom: 15px; }';
-      html += '.dropdown-list { position: absolute; top: 100%; left: 0; ';
-      html += 'right: 0; background: #fff; border: 1px solid #eee; ';
-      html += 'border-radius: 12px; margin-top: -10px; z-index: 100; ';
-      html += 'box-shadow: 0 4px 15px rgba(0,0,0,0.1); ';
-      html += 'max-height: 200px; overflow-y: auto; display: none; }';
-      html += '.dd-item { padding: 12px 15px; border-bottom: 1px solid #eee; ';
-      html += 'cursor: pointer; display: flex; justify-content: space-between; ';
-      html += 'align-items: center; }';
-      html += '.dd-item:last-child { border-bottom: none; }';
-      html += '.dd-name { font-weight: 600; font-size: 14px; }';
-      html += '.dd-stock { font-size: 12px; font-weight: 800; }';
-      html += '.clear-search { position: absolute; right: 15px; top: 22px; ';
-      html += 'font-size: 20px; color: #aaa; cursor: pointer; ';
-      html += 'display: none; background: none; border: none; padding: 0; }';
-      html += '</style></head><body>';
-
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse/bouquets" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;" ';
-      html += 'id="bTitle">Состав...</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
-      html += '</div>';
-
-      html += '<div class="card">';
-      html += '<div id="recipeList"><div style="color:#888;text-align:center;">';
-      html += 'Загрузка...</div></div>';
-      html += '</div>';
-
-      html += '<div class="card">';
-      html += '<button class="btn-add-toggle" id="btnToggleForm" ';
-      html += 'onclick="toggleAddForm()">';
-      html += '<span id="toggleFormText">+ Добавить ингредиент</span></button>';
-      
-      html += '<div id="addFormBlock">';
-      html += '<label>Поиск по складу</label>';
-      html += '<div class="dropdown-wrap">';
-      html += '<input type="text" id="searchItem" oninput="onSearchInput()" ';
-      html += 'placeholder="Начните вводить..." autocomplete="off">';
-      html += '<button class="clear-search" id="clearSearch" ';
-      html += 'onclick="clearSearchText()">✕</button>';
-      html += '<div class="dropdown-list" id="ddList"></div>';
-      html += '</div>';
-      
-      html += '<div style="display:flex; gap:10px; align-items:center;">';
-      html += '<div style="flex:1;">';
-      html += '<label>Количество</label>';
-      html += '<input type="number" id="qtyAdd" placeholder="1" step="0.1" ';
-      html += 'inputmode="decimal">';
-      html += '</div>';
-      html += '<button onclick="addItem()" style="background:' + brandColor + '; ';
-      html += 'color:#fff; border:none; border-radius:12px; padding:15px; ';
-      html += 'font-weight:800; font-family:inherit; margin-top:15px;">+';
-      html += '</button></div>';
-      html += '</div>';
-      html += '</div>';
-
-      html += '<button class="btn-save" onclick="saveRecipe()">';
-      html += 'Сохранить состав</button>';
-
-      html += getUnifiedMenu('bouquets');
-
-      html += '<script>';
-      html += 'var bId = ' + bId + ';';
-      html += 'var catalog = []; var recipe = [];';
-      html += 'var selectedItem = null;';
-
-      html += 'function fmtNum(n) { var num = parseFloat(n); ';
-      html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
-      html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
-      html += '.replace(/\\.$/, ""); }';
-
-      html += 'fetch("/api/warehouse/bouquets/info?id=" + bId)';
-      html += '.then(function(r){return r.json();}).then(function(d){ ';
-      html += 'if (d.ok) { document.getElementById("bTitle").textContent = ';
-      html += '"Букет: " + d.bouquet.name; } });';
 
       html += 'fetch("/api/warehouse/items")';
       html += '.then(function(r){return r.json();}).then(function(d){ ';
       html += 'if (d.ok) catalog = d.items; });';
 
-      html += 'fetch("/api/warehouse/bouquets/recipe?id=" + bId)';
-      html += '.then(function(r){return r.json();}).then(function(d){ ';
-      html += 'if (d.ok) { recipe = d.items; renderRecipe(); } });';
-
-      html += 'function toggleAddForm() {';
-      html += '  var block = document.getElementById("addFormBlock");';
-      html += '  var text = document.getElementById("toggleFormText");';
-      html += '  if (block.style.display === "block") {';
-      html += '    block.style.display = "none";';
-      html += '    text.textContent = "+ Добавить ингредиент";';
-      html += '  } else {';
-      html += '    block.style.display = "block";';
-      html += '    text.textContent = "× Скрыть форму";';
-      html += '    setTimeout(function() { ';
-      html += '      document.getElementById("searchItem").focus(); }, 100);';
-      html += '  }';
+      html += 'function toggleRecipe() {';
+      html += '  var isChecked = document.getElementById("bqLinked").checked;';
+      html += '  document.getElementById("recipeSection").style.display = ';
+      html += '  isChecked ? "block" : "none";';
       html += '}';
 
       html += 'document.addEventListener("click", function(e) {';
@@ -7951,7 +8201,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var list = document.getElementById("recipeList");';
       html += '  while(list.firstChild) list.removeChild(list.firstChild);';
       html += '  if (recipe.length === 0) { ';
-      html += '    list.textContent = "Состав пуст. Добавьте ингредиенты."; ';
+      html += '    list.textContent = "Состав пуст."; ';
       html += '    return; }';
       
       html += '  recipe.forEach(function(item, idx) {';
@@ -7960,7 +8210,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var n = document.createElement("div"); ';
       html += '    n.textContent = item.name;';
       html += '    var ctrl = document.createElement("div"); ';
-      html += '    ctrl.style = "display:flex; gap:2px; align-items:center;";';
+      html += '    ctrl.className = "b-controls";';
       html += '    var mn = document.createElement("button"); ';
       html += '    mn.textContent = "-"; mn.className = "qty-btn"; ';
       html += '    mn.onclick = function() { changeQty(idx, -1); };';
@@ -7983,45 +8233,131 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '    var del = document.createElement("span"); ';
       html += '    del.textContent = "✕"; ';
-      html += '    del.style = "color:red; cursor:pointer; font-size:18px;";';
+      html += '    del.style = "color:red; cursor:pointer; font-size:18px; ';
+      html += '    margin-left:10px;";';
       html += '    del.onclick = function() { ';
-      html += '      showConfirm("Удаление", "Убрать " + item.name + "?", ';
-      html += '      function() { ';
-      html += '        recipe.splice(idx, 1); renderRecipe(); ';
-      html += '      }, true); ';
+      html += '      recipe.splice(idx, 1); renderRecipe(); ';
       html += '    };';
+      html += '    ctrl.appendChild(del);';
       
       html += '    div.appendChild(n); div.appendChild(ctrl); ';
-      html += '    div.appendChild(del); list.appendChild(div);';
+      html += '    list.appendChild(div);';
       html += '  });';
       html += '}';
 
       html += 'function changeQty(idx, delta) {';
       html += '  recipe[idx].qty = parseFloat(recipe[idx].qty) + delta;';
       html += '  if (recipe[idx].qty <= 0) {';
-      html += '    showConfirm("Удаление", "Удалить позицию?", function() {';
-      html += '      recipe.splice(idx, 1); renderRecipe();';
-      html += '    }, true);';
+      html += '    recipe.splice(idx, 1); renderRecipe();';
       html += '  } else { renderRecipe(); }';
       html += '}';
 
-      html += 'function saveRecipe() {';
-      html += '  fetch("/api/warehouse/bouquets/recipe/save", { method: "POST", ';
-      html += '  headers: { "Content-Type": "application/json" }, ';
-      html += '  body: JSON.stringify({ bouquet_id: bId, items: recipe }) })';
-      html += '  .then(function(r){return r.json();}).then(function(d){ ';
-      html += '    if (d.ok) { showAlert("Готово", "Состав сохранен", true); ';
-      html += '    setTimeout(function(){window.location.href=';
-      html += '    "/warehouse/bouquets";}, 1000); } ';
-      html += '    else showAlert("Ошибка", d.error, false); })';
-      html += '  .catch(function(){ showAlert("Ошибка", "Сеть", false); });';
+      html += 'function uploadPhoto(input) {';
+      html += '  var f = input.files[0]; if (!f) return;';
+      html += '  var rd = new FileReader();';
+      html += '  rd.onload = function(e) {';
+      html += '    var img = new Image();';
+      html += '    img.onload = function() {';
+      html += '      var canvas = document.createElement("canvas");';
+      html += '      var MAX = 800; var w = img.width, h = img.height;';
+      html += '      if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }';
+      html += '      else { if (h > MAX) { w *= MAX / h; h = MAX; } }';
+      html += '      canvas.width = w; canvas.height = h;';
+      html += '      var ctx = canvas.getContext("2d");';
+      html += '      ctx.drawImage(img, 0, 0, w, h);';
+      html += '      var dataUrl = canvas.toDataURL("image/jpeg", 0.7);';
+      html += '      showAlert("Загрузка", "Отправляем фото...", true);';
+      html += '      fetch("/api/warehouse/upload", { method: "POST",';
+      html += '      headers: { "Content-Type": "application/json" },';
+      html += '      body: JSON.stringify({ image: dataUrl }) })';
+      html += '      .then(function(r){return r.json();}).then(function(d){';
+      html += '        if (d.ok) {';
+      html += '          document.getElementById("bqPhotoUrl").value = d.url;';
+      html += '          var prev = document.getElementById("bqPreview");';
+      html += '          prev.src = d.url; prev.style.display = "block";';
+      html += '        } else showAlert("Ошибка", "Фото не принято", false);';
+      html += '      }).catch(function(){ showAlert("Ошибка", "Сеть", false); });';
+      html += '    }; img.src = e.target.result;';
+      html += '  }; rd.readAsDataURL(f);';
+      html += '}';
+
+      html += 'function saveAll() {';
+      html += '  var isLinked = document.getElementById("bqLinked").checked;';
+      html += '  var pendingItem = document.getElementById("searchItem").value;';
+      html += '  var pendingQty = document.getElementById("qtyAdd").value;';
+      
+      // Умное добавление (если забыли нажать +)
+      html += '  if (isLinked && pendingItem && pendingQty && selectedItem) {';
+      html += '    var q = parseFloat(pendingQty);';
+      html += '    if (q > 0) {';
+      html += '      var ex = recipe.find(function(r) { ';
+      html += '        return r.shop_item_id === selectedItem.id; });';
+      html += '      if (ex) { ex.qty = parseFloat(ex.qty) + q; }';
+      html += '      else { recipe.push({ shop_item_id: selectedItem.id, ';
+      html += '        name: selectedItem.name, qty: q }); }';
+      html += '    }';
+      html += '  }';
+
+      html += '  var name = document.getElementById("bqName").value;';
+      html += '  var price = parseFloat(document.getElementById("bqPrice").value);';
+      html += '  var photoUrl = document.getElementById("bqPhotoUrl").value;';
+      html += '  if (!name || !price) { showAlert("Ошибка", "Заполните поля", false); return; }';
+      
+      html += '  var btn = document.getElementById("btnSave");';
+      html += '  btn.disabled = true; btn.innerText = "Сохранение...";';
+      
+      html += '  fetch("/api/warehouse/bouquet/save", { method: "POST",';
+      html += '  headers: { "Content-Type": "application/json" },';
+      html += '  body: JSON.stringify({ id: bId, name: name, price: price,';
+      html += '  photo_url: photoUrl, is_linked: isLinked }) })';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if (!d.ok) { btn.disabled = false; btn.innerText = "Сохранить"; ';
+      html += '      showAlert("Ошибка", d.error, false); return; }';
+      
+      html += '    var newId = d.id;';
+      html += '    if (isLinked) {';
+      html += '      fetch("/api/warehouse/bouquets/recipe/save", { method: "POST",';
+      html += '      headers: { "Content-Type": "application/json" },';
+      html += '      body: JSON.stringify({ bouquet_id: newId, items: recipe }) })';
+      html += '      .then(function(r){return r.json();}).then(function(res){';
+      html += '        if (res.ok) { window.location.href = "/warehouse/bouquets"; }';
+      html += '        else { btn.disabled = false; btn.innerText = "Сохранить";';
+      html += '        showAlert("Ошибка рецепта", res.error, false); }';
+      html += '      }).catch(function(){ btn.disabled = false; ';
+      html += '      btn.innerText = "Сохранить"; showAlert("Ошибка", "Сеть", false); });';
+      html += '    } else {';
+      html += '      window.location.href = "/warehouse/bouquets";';
+      html += '    }';
+      html += '  }).catch(function(){ btn.disabled = false;';
+      html += '  btn.innerText = "Сохранить"; showAlert("Ошибка", "Сеть", false); });';
       html += '}';
       html += '<\/script></body></html>';
       res.send(html);
     } catch(e) { res.status(500).send('Ошибка сервера'); }
   });
 
-  // ====== 58. API СОХРАНЕНИЯ РЕЦЕПТА ======
+  // ====== 59. API ПОЛУЧЕНИЯ РЕЦЕПТА ======
+  app.get('/api/warehouse/bouquets/recipe', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const r = await pool.query(
+        'SELECT r.id, r.shop_item_id, r.qty, ' +
+        'COALESCE(shi.custom_name, i.name) as name, ' +
+        'i.unit, shi.current_stock ' +
+        'FROM wh_bouquet_recipes r ' +
+        'JOIN wh_shop_items shi ON shi.id = r.shop_item_id ' +
+        'JOIN wh_items i ON i.id = shi.item_id ' +
+        'WHERE r.bouquet_id = $1 AND shi.shop_id = $2 ' +
+        'ORDER BY r.id ASC',
+        [req.query.id, auth.shopId]
+      );
+      res.json({ ok: true, items: r.rows });
+    } catch (e) { res.status(500).json({ ok: false }); }
+  });
+
+  // ====== 60. API СОХРАНЕНИЯ РЕЦЕПТА ======
   app.post('/api/warehouse/bouquets/recipe/save', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -8042,10 +8378,11 @@ function setupWarehouse(app, bot, s3ctx) {
       
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
+        const qty = parseFloat(String(it.qty).replace(',', '.'));
         await client.query(
           'INSERT INTO wh_bouquet_recipes (bouquet_id, shop_item_id, qty) ' +
           'VALUES ($1, $2, $3)',
-          [bId, it.shop_item_id, it.qty]
+          [bId, it.shop_item_id, qty]
         );
       }
       
