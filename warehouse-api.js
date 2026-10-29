@@ -109,7 +109,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-}
+
 // ====== УПРАВЛЕНИЕ ТОВАРОМ ======
   app.post('/api/warehouse/item/set-price', async (req, res) => {
     try {
@@ -2055,4 +2055,5 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
+}
 module.exports = { setupWarehouseApi };
