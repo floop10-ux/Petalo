@@ -2880,23 +2880,27 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  }';
       html += '}).catch(function() {});';
 
-      html += 'fetch("/api/warehouse/items?t=" + Date.now())';
+    
+html += 'fetch("/api/warehouse/items?t=" + Date.now())';
       html += '.then(function(r) { return r.json(); })';
       html += '.then(function(d) { ';
       html += '  if (d.ok) { allItems = d.items; render(); } ';
       html += '  else { ';
       html += '    var g = document.getElementById("itemsGrid"); ';
-      html += '    g.innerHTML = "<div style=\'grid-column:1/-1; ';
-      html += '    color:red; text-align:center; padding:20px;\'>" + ';
-      html += '    (d.error || "Ошибка загрузки") + "</div>"; ';
+      html += '    var msg = d.error || "Ошибка загрузки"; ';
+      html += '    g.innerHTML = "<div style=&quot;color:red; '; 
+      html += '    text-align:center; padding:20px;&quot;>" + msg + "</div>"; ';
       html += '  }';
       html += '}).catch(function(e) { ';
-      html += '  var g = document.getElementById("itemsGrid"); ';
-      html += '  g.innerHTML = "<div style=\'grid-column:1/-1; ';
-      html += '  color:red; text-align:center; padding:20px;\'>Сеть: " + ';
-      html += '  e.message + "</div>"; ';
+    html += '  var g = document.getElementById("itemsGrid"); ';
+      html += '  var ed = document.createElement("div"); ';
+      html += '  ed.style.gridColumn = "1/-1"; ';
+      html += '  ed.style.color = "red"; ';
+      html += '  ed.style.textAlign = "center"; ';
+      html += '  ed.style.padding = "20px"; ';
+      html += '  ed.textContent = "Сеть: " + e.message; ';
+      html += '  g.appendChild(ed); ';
       html += '});';
-
       html += 'function onSearchInput() {';
       html += '  var val = document.getElementById("search").value;';
       html += '  var btn = document.getElementById("clearSearch");';
