@@ -131,7 +131,7 @@ function setupWarehouse(app, bot, s3ctx) {
   const BC_BUCKET = s3ctx.BC_BUCKET || null;
   const BC_ENDPOINT = s3ctx.BC_ENDPOINT || null;
 
-  // ====== МИГРАЦИИ БД ДЛЯ СПИСАНИЙ (ПРАВКА 6, 8) ======
+  // ====== МИГРАЦИИ БД ДЛЯ СПИСАНИЙ ======
   pool.query(
     'ALTER TABLE wh_writeoffs ADD COLUMN ' +
     'IF NOT EXISTS doc_id VARCHAR(100)'
@@ -141,16 +141,16 @@ function setupWarehouse(app, bot, s3ctx) {
     'IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\''
   ).catch(function(){});
 
-  const brandColor = '#0F3D3E';
-  const accentColor = '#E2856B';
+  const brandColor = '#064C49'; // Обновленный цвет из логотипа
+  const accentColor = '#E1846D';
   const successColor = '#2E8B57';
   const dangerColor = '#D9534F';
   const bgGradient =
-    'linear-gradient(135deg, #F5F8F8 0%, #E6EFEE 100%)';
+    'linear-gradient(135deg, #F5F8F7 0%, #E6EFEE 100%)';
 
   const fontLink = '<link href="https://fonts.googleapis.com/css2?' +
-    'family=Manrope:wght@400;600;800&display=swap" ' +
-    'rel="stylesheet">';
+    'family=Manrope:wght@400;600;800&family=Inter:wght@400;600&' +
+    'display=swap" rel="stylesheet">';
 
   // ====== ИКОНКИ ======
   function getIconSvg(type) {
@@ -235,49 +235,100 @@ function setupWarehouse(app, bot, s3ctx) {
       '<rect x="14" y="3" width="7" height="7"/>' +
       '<rect x="14" y="14" width="7" height="7"/>' +
       '<path d="M3 14h7v7H3z"/></svg>';
+    if (type === 'search') return '<svg ' + c +
+      '><circle cx="11" cy="11" r="8"/>' +
+      '<line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+    if (type === 'warn') return '<svg ' + c +
+      '><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94' +
+      'a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>' +
+      '<line x1="12" y1="9" x2="12" y2="13"/>' +
+      '<line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
     return '';
   }
-
   // ====== ЕДИНОЕ МЕНЮ ======
   function getUnifiedMenu(active) {
     const items = [
-      { id: 'home', url: '/warehouse-app', text: 'Главная', icon: 'home' },
-      { id: 'sale', url: '/warehouse/sale', text: 'Касса (Продажа)', icon: 'sale' },
-      { id: 'receipts', url: '/warehouse/receipts', text: 'Приход', icon: 'receipt' },
-      { id: 'writeoff', url: '/warehouse/writeoff', text: 'Списание', icon: 'writeoff' },
-      { id: 'inventory', url: '/warehouse/inventory', text: 'Обзор склада', icon: 'inventory' },
-      { id: 'history', url: '/warehouse/history', text: 'История смены', icon: 'history' },
-      { id: 'bouquets', url: '/warehouse/bouquets', text: 'Букеты (Рецепты)', icon: 'bouquets' },
-      { id: 'documents', url: '/warehouse/documents', text: 'Документы', icon: 'docs' },
-      { id: 'reports', url: '/warehouse/reports', text: 'Отчёты', icon: 'reports' },
-      { id: 'staff', url: '/warehouse/staff', text: 'Флористы', icon: 'staff' },
-      { id: 'audit', url: '/warehouse/audit', text: 'Журнал', icon: 'audit' },
-      { id: 'settings', url: '/warehouse/settings', text: 'Настройки', icon: 'settings' }
+      { id: 'home', url: '/warehouse-app', text: 'Главная', 
+        icon: 'home' },
+      { id: 'sale', url: '/warehouse/sale', text: 'Касса', 
+        icon: 'sale' },
+      { id: 'receipts', url: '/warehouse/receipts', text: 'Приход', 
+        icon: 'receipt' },
+      { id: 'writeoff', url: '/warehouse/writeoff', text: 'Списание', 
+        icon: 'writeoff' },
+      { id: 'inventory', url: '/warehouse/inventory', text: 'Обзор', 
+        icon: 'inventory' },
+      { id: 'history', url: '/warehouse/history', text: 'История', 
+        icon: 'history' },
+      { id: 'bouquets', url: '/warehouse/bouquets', text: 'Букеты', 
+        icon: 'bouquets' },
+      { id: 'documents', url: '/warehouse/documents', text: 'Документы', 
+        icon: 'docs' },
+      { id: 'reports', url: '/warehouse/reports', text: 'Отчёты', 
+        icon: 'reports' },
+      { id: 'staff', url: '/warehouse/staff', text: 'Флористы', 
+        icon: 'staff' },
+      { id: 'audit', url: '/warehouse/audit', text: 'Журнал', 
+        icon: 'audit' },
+      { id: 'settings', url: '/warehouse/settings', text: 'Настройки', 
+        icon: 'settings' }
     ];
 
-    let html = '<div class="sidebar-overlay" id="unifiedMenuOverlay" onclick="toggleMenu()"></div>';
+    let html = '<div class="sidebar-overlay" ';
+    html += 'id="unifiedMenuOverlay" onclick="toggleMenu()"></div>';
     html += '<div class="sidebar" id="unifiedMenuSidebar">';
-    html += '<h3 style="margin-top:0;">Меню</h3>';
+    html += '<h3 style="margin-top:0; font-weight:800;">Меню</h3>';
     
     items.forEach(function(it) {
-      let isActive = (active === it.id) ? 'background:#F0F4F4; font-weight:800;' : '';
-      html += '<a href="' + it.url + '" class="menu-item" style="' + isActive + '">';
-      html += getIconSvg(it.icon) + it.text + '</a>';
+      let isActive = (active === it.id) ? 'active' : '';
+      html += '<a href="' + it.url + '" class="menu-item ' + isActive;
+      html += '">' + getIconSvg(it.icon) + it.text + '</a>';
     });
     
     html += '</div>';
     return html;
   }
 
-  // ====== ГЛОБАЛЬНЫЕ СТИЛИ И МОДАЛКИ ======
+  // ====== ГЛОБАЛЬНЫЕ СТИЛИ ======
   const uiScript = `
     <style>
+      :root {
+        --f-brand: #064C49;
+        --f-accent: #E1846D;
+        --f-bg: #F5F8F7;
+        --f-surface: #FFFFFF;
+        --f-text: #183B39;
+        --f-text-2: #6A8785;
+        --f-border: #E1EAE9;
+        --f-success: #2E8B57;
+        --f-danger: #D9534F;
+        --f-warn: #F0AD4E;
+        --r-sm: 8px;
+        --r-md: 12px;
+        --r-lg: 16px;
+        --r-xl: 24px;
+        --sh-1: 0 2px 8px rgba(6,76,73,0.04);
+        --sh-2: 0 4px 16px rgba(6,76,73,0.08);
+        --sh-3: 0 10px 30px rgba(6,76,73,0.15);
+      }
+
       *, *::before, *::after { box-sizing: border-box; }
-      html, body { overflow-x: hidden; width: 100%; margin: 0; }
+      html, body { 
+        overflow-x: hidden; 
+        width: 100%; 
+        margin: 0; 
+        background: var(--f-bg);
+        color: var(--f-text);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 
+          'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      
       body { 
         -webkit-touch-callout: none; 
         -webkit-user-select: none; 
         user-select: none; 
+        padding-bottom: env(safe-area-inset-bottom);
       }
       input, textarea { 
         -webkit-user-select: text; 
@@ -286,126 +337,294 @@ function setupWarehouse(app, bot, s3ctx) {
 
       input:not([type="checkbox"]):not([type="radio"]), 
       select, textarea {
-        width: 100%; padding: 15px;
-        border: 1px solid transparent;
-        border-radius: 12px;
-        background: #fff;
-        box-shadow: 0 4px 12px rgba(15,61,62,0.06);
-        font-family: inherit; font-size: 16px;
-        color: ${brandColor}; font-weight: 600;
-        transition: all 0.2s ease; margin-bottom: 15px;
+        width: 100%; 
+        padding: 14px 16px;
+        border: 1px solid var(--f-border);
+        border-radius: var(--r-md);
+        background: var(--f-surface);
+        font-family: inherit; 
+        font-size: 16px;
+        color: var(--f-text); 
+        font-weight: 500;
+        transition: all 0.2s ease; 
+        margin-bottom: 16px;
         -webkit-appearance: none;
+        box-shadow: var(--sh-1);
       }
       input:focus, select:focus, textarea:focus {
         outline: none;
-        box-shadow: 0 4px 12px rgba(15,61,62,0.12);
-        border-color: ${brandColor};
+        border-color: var(--f-brand);
+        box-shadow: 0 0 0 3px rgba(6,76,73,0.1);
       }
       input::placeholder, textarea::placeholder {
-        color: #A0B4B4; font-weight: 400;
+        color: var(--f-text-2); 
+        font-weight: 400;
       }
-      
+      input[type="file"] {
+        background: transparent;
+        box-shadow: none;
+        border: 1px dashed var(--f-border);
+        cursor: pointer;
+      }
+
       @keyframes blinkCaret {
         0%, 100% { box-shadow: none; }
-        50% { box-shadow: inset -2px 0 0 ${brandColor}; }
+        50% { box-shadow: inset -2px 0 0 var(--f-brand); }
       }
       .input-active {
-        border: 2px solid ${brandColor} !important;
+        border: 2px solid var(--f-brand) !important;
         animation: blinkCaret 1s step-end infinite !important;
       }
 
-      .qty-input { 
-        width: 70px !important; height: 32px; 
-        text-align: center; font-size: 15px; 
-        font-weight: bold; border: 1px solid #ddd; 
-        border-radius: 8px; padding: 0; margin: 0;
-        -webkit-appearance: none;
-        background: #fff;
+      /* Типографика */
+      h1, h2, h3, h4 { margin: 0; color: var(--f-text); }
+      .page-title { font-size: 22px; font-weight: 800; }
+      .card-title { font-size: 16px; font-weight: 700; }
+      .text-muted { color: var(--f-text-2); font-size: 13px; }
+
+      /* Кнопки */
+      .btn {
+        display: flex; 
+        align-items: center; 
+        justify-content: center;
+        padding: 14px 20px;
+        border-radius: var(--r-md);
+        font-weight: 600;
+        font-size: 16px;
+        font-family: inherit;
+        border: none;
+        cursor: pointer;
+        transition: 0.2s;
+        text-decoration: none;
+      }
+      .btn-primary { 
+        background: var(--f-brand); 
+        color: #fff; 
+        box-shadow: 0 4px 12px rgba(6,76,73,0.2); 
+      }
+      .btn-primary:active { transform: scale(0.98); }
+      .btn-secondary { 
+        background: var(--f-surface); 
+        color: var(--f-brand);
+        border: 1px solid var(--f-border);
+        box-shadow: var(--sh-1);
+      }
+      .btn-danger { 
+        background: var(--f-danger); 
+        color: #fff; 
       }
 
-      .empty-state { text-align: center; padding: 40px 20px; 
-        color: #888; font-family: "Manrope", sans-serif; }
-      .empty-state svg { width: 64px; height: 64px; 
-        margin-bottom: 15px; opacity: 0.5; }
-      .empty-state-title { font-size: 18px; font-weight: 800; 
-        color: ${brandColor}; margin-bottom: 5px; }
-      .empty-state-text { font-size: 14px; margin-bottom: 20px; }
+      /* Карточки */
+      .card {
+        background: var(--f-surface);
+        border-radius: var(--r-lg);
+        padding: 16px;
+        box-shadow: var(--sh-1);
+        border: 1px solid rgba(0,0,0,0.02);
+        margin-bottom: 12px;
+      }
 
-      .custom-modal-overlay { display: none; position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(15, 61, 62, 0.6); z-index: 2000;
-        align-items: center; justify-content: center;
-        backdrop-filter: blur(4px); }
-      .custom-modal { background: #fff; padding: 32px 24px;
-        border-radius: 28px; width: 85%; max-width: 320px;
-        text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+      /* Сетка */
+      .grid-2 { 
+        display: grid; 
+        grid-template-columns: 1fr 1fr; 
+        gap: 12px; 
+      }
       
-      .modal-icon-wrap { margin: 0 auto 16px; width: 56px; height: 56px;
-        border-radius: 50%; display: flex; align-items: center; 
-        justify-content: center; }
-      .modal-icon-success { background: #E8F5E9; color: ${successColor}; }
-      .modal-icon-error { background: #FFEBEE; color: ${dangerColor}; }
-      .modal-icon-info { background: #E0F2F1; color: ${brandColor}; }
-      
-      .custom-modal h3 { margin: 0 0 8px 0; font-size: 22px;
-        font-weight: 800; color: ${brandColor}; }
-      .custom-modal p { margin: 0 0 24px 0;
-        font-size: 15px; color: #666; line-height: 1.5; }
-      
-      .custom-modal-btns { display: flex; gap: 12px; }
-      .custom-modal-btns button { flex: 1; padding: 16px;
-        border: none; border-radius: 16px;
-        font-size: 16px; font-weight: 700;
-        font-family: inherit; cursor: pointer; transition: 0.2s; }
-        
-      .btn-cancel { background: #F0F4F4; color: #555; }
-      .btn-ok { background: ${brandColor}; color: #fff; 
-        box-shadow: 0 4px 15px rgba(15,61,62,0.2); }
-      .btn-danger { background: ${dangerColor}; color: #fff; 
-        box-shadow: 0 4px 15px rgba(217,83,79,0.2); }
+      /* Хедер */
+      .page-header {
+        display: flex; 
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 0;
+        margin-bottom: 12px;
+      }
+      .page-header-left {
+        display: flex; 
+        align-items: center; 
+        gap: 12px;
+      }
+      .back-btn {
+        font-size: 24px; 
+        text-decoration: none;
+        color: var(--f-brand);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: var(--sh-1);
+      }
+      .burger-btn {
+        font-size: 24px; 
+        background: #fff; 
+        border: none;
+        color: var(--f-brand); 
+        cursor: pointer; 
+        width: 40px; 
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: var(--sh-1);
+      }
 
-      .flowind-watermark { position: fixed; bottom: 15px;
-        left: 15px; display: flex; align-items: center;
-        gap: 5px; font-family: "Manrope", sans-serif;
-        font-weight: 800; font-size: 12px;
-        color: ${brandColor}; opacity: 0.3;
-        pointer-events: none; z-index: 9999; }
+      /* Водяной знак */
+      .flowind-watermark { 
+        position: fixed; 
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        left: 16px; 
+        display: flex; 
+        align-items: center;
+        gap: 6px; 
+        font-weight: 700; 
+        font-size: 12px;
+        color: var(--f-brand); 
+        opacity: 0.15;
+        pointer-events: none; 
+        z-index: 900; 
+      }
 
-      .svg-ico { width: 24px; height: 24px;
-        vertical-align: middle; margin-right: 8px;
-        color: ${brandColor}; }
+      /* Иконки */
+      .svg-ico { 
+        width: 24px; 
+        height: 24px;
+        vertical-align: middle; 
+        margin-right: 12px;
+        color: currentColor; 
+      }
 
-      button, .btn, .pay-btn, .card, .qty-btn {
-        touch-action: manipulation; }
-
-      .pay-btn { padding: 8px 2px; border: 1px solid #ddd;
-        border-radius: 10px; background: #fff; cursor: pointer;
-        flex: 1; display: flex; align-items: center;
-        justify-content: center; gap: 3px; font-weight: 600;
-        font-size: 12px; transition: 0.2s; color: #666; }
-      .pay-btn svg { width: 16px; height: 16px; margin: 0; }
-      .pay-btn.active { background: #E0F2F1;
-        border-color: ${brandColor};
-        color: ${brandColor}; font-weight: 800; }
-
-      .sidebar { position: fixed; top: 0; right: -280px; 
-        width: 260px; height: 100%; background: #fff; 
-        box-shadow: -5px 0 15px rgba(0,0,0,0.1); 
-        transition: right 0.3s ease; z-index: 3000; 
-        padding: 20px; box-sizing: border-box; overflow-y: auto; }
+      /* Сайдбар */
+      .sidebar { 
+        position: fixed; 
+        top: 0; 
+        right: -300px; 
+        width: 280px; 
+        height: 100%; 
+        background: var(--f-surface); 
+        box-shadow: var(--sh-3); 
+        transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        z-index: 3000; 
+        padding: 24px; 
+        padding-bottom: env(safe-area-inset-bottom);
+        overflow-y: auto; 
+      }
       .sidebar.open { right: 0; }
-      .sidebar-overlay { position: fixed; top: 0; left: 0; 
-        width: 100%; height: 100%; background: rgba(0,0,0,0.4); 
-        display: none; z-index: 2999; }
+      .sidebar-overlay { 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        height: 100%; 
+        background: rgba(0,0,0,0.4); 
+        backdrop-filter: blur(2px);
+        display: none; 
+        z-index: 2999; 
+      }
       .sidebar-overlay.open { display: block; }
-      .menu-item { display: flex; align-items: center; 
-        padding: 12px 10px; text-decoration: none; 
-        color: ${brandColor}; font-size: 15px; 
-        border-bottom: 1px solid #eee; border-radius: 8px; }
+      .menu-item { 
+        display: flex; 
+        align-items: center; 
+        padding: 12px 16px; 
+        text-decoration: none; 
+        color: var(--f-text); 
+        font-size: 15px; 
+        border-radius: var(--r-md);
+        margin-bottom: 4px;
+        font-weight: 600;
+        transition: 0.2s;
+      }
+      .menu-item.active {
+        background: rgba(6,76,73,0.06);
+        color: var(--f-brand);
+        font-weight: 700;
+      }
+
+      /* Модалки */
+      .custom-modal-overlay { 
+        display: none; 
+        position: fixed;
+        top: 0; left: 0; 
+        width: 100%; height: 100%;
+        background: rgba(6, 76, 73, 0.4); 
+        z-index: 4000;
+        align-items: center; 
+        justify-content: center;
+        backdrop-filter: blur(4px); 
+      }
+      .custom-modal { 
+        background: #fff; 
+        padding: 24px;
+        border-radius: var(--r-xl); 
+        width: 90%; 
+        max-width: 340px;
+        text-align: center; 
+        box-shadow: var(--sh-3); 
+      }
+      
+      .modal-icon-wrap { 
+        margin: 0 auto 16px; 
+        width: 56px; 
+        height: 56px;
+        border-radius: 50%; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+      }
+      
+      .custom-modal h3 { 
+        margin: 0 0 8px 0; 
+        font-size: 20px;
+        font-weight: 800; 
+      }
+      .custom-modal p { 
+        margin: 0 0 24px 0;
+        font-size: 15px; 
+        color: var(--f-text-2); 
+        line-height: 1.5; 
+      }
+      
+      .custom-modal-btns { 
+        display: flex; gap: 12px; 
+      }
+      .custom-modal-btns button { 
+        flex: 1; 
+        padding: 14px;
+        border: none; 
+        border-radius: var(--r-md);
+        font-size: 16px; 
+        font-weight: 700;
+        font-family: inherit; 
+        cursor: pointer; 
+      }
+        
+      .btn-cancel { background: var(--f-bg); color: var(--f-text-2); }
+      .btn-ok { background: var(--f-brand); color: #fff; }
+      .btn-danger { background: var(--f-danger); color: #fff; }
+
+      .empty-state { 
+        text-align: center; 
+        padding: 40px 20px; 
+        color: var(--f-text-2); 
+      }
+      .empty-state svg { 
+        width: 64px; height: 64px; 
+        margin-bottom: 16px; opacity: 0.4; 
+      }
+      .empty-state-title { 
+        font-size: 18px; font-weight: 800; 
+        color: var(--f-text); margin-bottom: 8px; 
+      }
+      .empty-state-text { 
+        font-size: 14px; margin-bottom: 20px; 
+      }
     </style>
     <div class="custom-modal-overlay" id="uiModal">
       <div class="custom-modal">
-        <div id="uiModalIcon" class="modal-icon-wrap modal-icon-info"></div>
+        <div id="uiModalIcon" class="modal-icon-wrap"></div>
         <h3 id="uiModalTitle"></h3>
         <p id="uiModalText"></p>
         <div class="custom-modal-btns" id="uiModalBtns"></div>
@@ -413,9 +632,9 @@ function setupWarehouse(app, bot, s3ctx) {
     </div>
     <div class="flowind-watermark">
       <svg viewBox="0 0 100 100" style="width: 20px; height: 20px;">
-        <rect x="10" y="10" width="80" height="80" rx="20" fill="${brandColor}"/>
+        <rect x="10" y="10" width="80" height="80" rx="20" fill="currentColor"/>
         <path d="M25 30 L70 30 Q75 30 75 35 L75 60 Q75 65 70 65 L55 65 L45 75 L45 65 L30 65 Q25 65 25 60 L25 35 Q25 30 30 30 Z" fill="none" stroke="#fff" stroke-width="5"/>
-        <path d="M40 45 Q55 35 60 50 Q45 60 40 45 Z" fill="${accentColor}"/>
+        <path d="M40 45 Q55 35 60 50 Q45 60 40 45 Z" fill="#fff"/>
         <path d="M55 45 Q70 35 75 50 Q60 60 55 45 Z" fill="#fff"/>
       </svg>
       Flowind
@@ -424,14 +643,16 @@ function setupWarehouse(app, bot, s3ctx) {
       function showAlert(title, text, isSuccess) {
         var ov = document.getElementById('uiModal');
         var icon = document.getElementById('uiModalIcon');
-        while (icon.firstChild) icon.removeChild(icon.firstChild);
+        icon.innerHTML = '';
         
         if (isSuccess) {
-          icon.className = 'modal-icon-wrap modal-icon-success';
+          icon.style.background = '#E8F5E9';
+          icon.style.color = '#2E8B57';
           icon.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
           if (title === 'Успех') title = 'Готово';
         } else {
-          icon.className = 'modal-icon-wrap modal-icon-error';
+          icon.style.background = '#FFEBEE';
+          icon.style.color = '#D9534F';
           icon.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
         }
 
@@ -446,9 +667,10 @@ function setupWarehouse(app, bot, s3ctx) {
       function showConfirm(title, text, onConfirm, isDanger) {
         var ov = document.getElementById('uiModal');
         var icon = document.getElementById('uiModalIcon');
-        while (icon.firstChild) icon.removeChild(icon.firstChild);
+        icon.innerHTML = '';
         
-        icon.className = isDanger ? 'modal-icon-wrap modal-icon-error' : 'modal-icon-wrap modal-icon-info';
+        icon.style.background = isDanger ? '#FFEBEE' : '#E0F2F1';
+        icon.style.color = isDanger ? '#D9534F' : '#064C49';
         icon.innerHTML = isDanger 
           ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
           : '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
@@ -460,15 +682,19 @@ function setupWarehouse(app, bot, s3ctx) {
         btns.innerHTML = '<button class="btn-cancel" onclick="closeModal()">Отмена</button>' +
           '<button class="' + btnClass + '" id="uiModalConfirmBtn">Да</button>';
         ov.style.display = 'flex';
-        document.getElementById('uiModalConfirmBtn').onclick = function() { closeModal(); onConfirm(); };
+        document.getElementById('uiModalConfirmBtn').onclick = function() { 
+          closeModal(); 
+          onConfirm(); 
+        };
       }
       
       function showPrompt(title, placeholder, defaultVal, onOk) {
         var ov = document.getElementById('uiModal');
         var icon = document.getElementById('uiModalIcon');
-        while (icon.firstChild) icon.removeChild(icon.firstChild);
+        icon.innerHTML = '';
         
-        icon.className = 'modal-icon-wrap modal-icon-info';
+        icon.style.background = '#E0F2F1';
+        icon.style.color = '#064C49';
         icon.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
 
         document.getElementById('uiModalTitle').innerText = title;
@@ -500,11 +726,11 @@ function setupWarehouse(app, bot, s3ctx) {
       }
 
       function toggleMenu() {
-        var sb = document.getElementById("unifiedMenuSidebar");
-        var ov = document.getElementById("unifiedMenuOverlay");
+        var sb = document.getElementById('unifiedMenuSidebar');
+        var ov = document.getElementById('unifiedMenuOverlay');
         if (sb && ov) {
-          sb.classList.toggle("open");
-          ov.classList.toggle("open");
+          sb.classList.toggle('open');
+          ov.classList.toggle('open');
         }
       }
     </script>
@@ -563,69 +789,66 @@ function setupWarehouse(app, bot, s3ctx) {
     if (!match) return null;
     return verifyAuth(match[1]);
   }
-
   // ====== 1. ВХОД ======
   app.get('/warehouse-login', (req, res) => {
     const shopId = req.query.shop || 'kupidon';
     let html = '<!DOCTYPE html><html><head>';
     html += '<meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width, ';
-    html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+    html += 'initial-scale=1.0, maximum-scale=1.0, ';
+    html += 'user-scalable=no, viewport-fit=cover">';
     html += fontLink;
     html += uiScript;
     html += '<style>';
-    html += 'body { font-family: "Manrope", sans-serif; ';
-    html += 'text-align: center; padding: 50px 20px; ';
-    html += 'background: ' + bgGradient + '; }';
-    html += '.card { background: #fff; border-radius: 20px; ';
-    html += 'padding: 30px; max-width: 400px; margin: 0 auto; ';
-    html += 'box-shadow: 0 4px 15px rgba(15,61,62,0.1); }';
-    html += 'input { font-size: 20px; padding: 15px; width: 100%; ';
-    html += 'text-align: center; margin: 0 auto 10px; }';
-    html += 'button { background: ' + brandColor + '; color: white; ';
-    html += 'border: none; padding: 15px 40px; font-size: 18px; ';
-    html += 'border-radius: 30px; font-weight: 600; margin-top: 10px; ';
-    html += 'font-family: inherit; width: 100%; }';
-    html += '.link-owner { display: block; margin-top: 20px; ';
-    html += 'color: #888; font-size: 13px; cursor: pointer; }';
+    html += 'body { text-align: center; padding: 40px 20px; }';
+    html += '.login-card { background: var(--f-surface); ';
+    html += 'border-radius: var(--r-xl); padding: 32px 24px; ';
+    html += 'max-width: 400px; margin: 0 auto; box-shadow: var(--sh-2); }';
+    html += 'input { font-size: 20px; padding: 16px; width: 100%; ';
+    html += 'text-align: center; margin: 0 auto 16px; }';
+    html += '.link-owner { display: block; margin-top: 24px; ';
+    html += 'color: var(--f-text-2); font-size: 13px; cursor: pointer; }';
     html += '.login-block { display: none; }';
     html += '</style></head><body>';
     
-    // Логотип
-    html += '<div class="card">';
+    html += '<div class="login-card">';
     html += '<div style="display:flex; align-items:center; ';
-    html += 'justify-content:center; margin-bottom:15px;">';
+    html += 'justify-content:center; margin-bottom:24px;">';
     html += '<svg viewBox="0 0 100 100" ';
-    html += 'style="width: 40px; height: 40px; margin-right: 10px;">';
+    html += 'style="width: 48px; height: 48px; margin-right: 12px;">';
     html += '<rect x="10" y="10" width="80" height="80" rx="20" ';
-    html += 'fill="' + brandColor + '"/>';
+    html += 'fill="var(--f-brand)"/>';
     html += '<path d="M25 30 L70 30 Q75 30 75 35 L75 60 Q75 65 70 65 ';
     html += 'L55 65 L45 75 L45 65 L30 65 Q25 65 25 60 L25 35 Q25 30 30 30 Z" ';
     html += 'fill="none" stroke="#fff" stroke-width="5"/>';
     html += '<path d="M40 45 Q55 35 60 50 Q45 60 40 45 Z" ';
-    html += 'fill="' + accentColor + '"/>';
+    html += 'fill="var(--f-accent)"/>';
     html += '<path d="M55 45 Q70 35 75 50 Q60 60 55 45 Z" fill="#fff"/>';
     html += '</svg>';
-    html += '<h1 style="margin:0;">Flowind</h1>';
+    html += '<h1 style="margin:0; font-size:26px; font-weight:800; ';
+    html += 'letter-spacing:-0.5px;">Flowind</h1>';
     html += '</div>';
 
-    // Два режима входа
     html += '<div id="pinBlock">';
-    html += '<p>Введите PIN-код флориста</p>';
+    html += '<p class="text-muted" style="margin-bottom:16px;">';
+    html += 'Введите PIN-код флориста</p>';
     html += '<input type="password" id="pin" maxlength="4" ';
     html += 'inputmode="numeric" placeholder="****">';
-    html += '<button onclick="loginPin()">Войти</button>';
+    html += '<button class="btn btn-primary" onclick="loginPin()">';
+    html += 'Войти</button>';
     html += '<span class="link-owner" onclick="showOwnerLogin()">';
     html += 'Вход для владельца (Логин/Пароль)</span>';
     html += '</div>';
 
     html += '<div id="ownerBlock" class="login-block">';
-    html += '<p>Вход для владельца</p>';
+    html += '<p class="text-muted" style="margin-bottom:16px;">';
+    html += 'Вход для владельца</p>';
     html += '<input type="text" id="login" placeholder="Логин" ';
-    html += 'autocomplete="username">';
+    html += 'autocomplete="username" style="text-align:left;">';
     html += '<input type="password" id="password" placeholder="Пароль" ';
-    html += 'autocomplete="current-password">';
-    html += '<button onclick="loginOwner()">Войти</button>';
+    html += 'autocomplete="current-password" style="text-align:left;">';
+    html += '<button class="btn btn-primary" onclick="loginOwner()">';
+    html += 'Войти</button>';
     html += '<span class="link-owner" onclick="showPinLogin()">';
     html += 'Вход для флориста (PIN)</span>';
     html += '</div>';
@@ -760,6 +983,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
+
   // ====== 4. ГЛАВНЫЙ ЭКРАН ======
   app.get('/warehouse-app', async (req, res) => {
     try {
@@ -819,69 +1043,64 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
       html += 'initial-scale=1.0, maximum-scale=1.0, ';
-      html += 'user-scalable=no">';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += '<script src="https://telegram.org/js/';
       html += 'telegram-web-app.js"><\/script>';
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; ';
-      html += 'margin: 0; padding: 0 15px 15px 15px; ';
-      html += 'background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
       html += '.top-bar { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; position: sticky; top: 0; ';
-      html += 'z-index: 100; background: #F5F8F8; ';
-      html += 'padding: 15px 0; margin-bottom: 10px; }';
-      html += '.logo-wrap { display: flex; align-items: center; ';
-      html += 'gap: 10px; }';
+      html += 'align-items: center; padding: 16px 0; margin-bottom: 8px; }';
+      html += '.logo-wrap { display: flex; align-items: center; gap: 10px; }';
       html += '.logo-svg { width: 40px; height: 40px; }';
-      html += '.logo-text { font-size: 20px; font-weight: 800; ';
-      html += 'line-height: 1; letter-spacing: -0.5px; }';
-      html += '.logo-text span { font-size: 10px; color: #888; ';
+      html += '.logo-text { font-size: 20px; font-weight: 800; line-height: 1; }';
+      html += '.logo-text span { font-size: 10px; color: var(--f-text-2); ';
       html += 'font-weight: 600; letter-spacing: 1px; }';
+      
       html += '.shift-badge { display: inline-flex; align-items: center; ';
-      html += 'padding: 5px 10px; border-radius: 20px; font-size: 11px; ';
-      html += 'font-weight: 600; text-decoration: none; ';
-      html += 'margin-right: 10px; }';
-      html += '.shift-open { background: #E0F2F1; color: #00695C; }';
-      html += '.shift-closed { background: #FFEBEE; color: #C62828; }';
+      html += 'padding: 6px 12px; border-radius: 20px; font-size: 12px; ';
+      html += 'font-weight: 700; text-decoration: none; margin-right: 12px; }';
+      html += '.shift-open { background: #E8F5E9; color: #2E8B57; }';
+      html += '.shift-closed { background: #FFEBEE; color: #D9534F; }';
       html += '.dot { width: 6px; height: 6px; border-radius: 50%; ';
-      html += 'margin-right: 4px; }';
+      html += 'margin-right: 6px; }';
       html += '.dot-green { background: #2E8B57; }';
       html += '.dot-red { background: #D9534F; }';
-      html += '.burger { font-size: 24px; background: none; ';
-      html += 'border: none; color: ' + brandColor + '; ';
-      html += 'cursor: pointer; padding: 0; }';
-      html += '.attention-box { background: #FFF3E0; border-radius: 16px; ';
-      html += 'padding: 15px; margin-bottom: 20px; ';
-      html += 'border: 1px solid ' + accentColor + '; }';
+      
+      html += '.attention-box { background: #FFF8E1; border-radius: 16px; ';
+      html += 'padding: 16px; margin-bottom: 20px; border: 1px solid #FFE082; }';
       html += '.attention-title { font-size: 14px; font-weight: 800; ';
-      html += 'color: ' + accentColor + '; margin-bottom: 10px; }';
+      html += 'color: #F57F17; margin-bottom: 8px; display: flex; ';
+      html += 'align-items: center; gap: 6px; }';
       html += '.att-item { display: flex; justify-content: space-between; ';
-      html += 'font-size: 13px; margin-bottom: 5px; font-weight: 600; }';
-      html += '.grid { display: grid; grid-template-columns: 1fr 1fr; ';
-      html += 'gap: 15px; }';
-      html += '.btn { background: #fff; padding: 20px 10px; ';
+      html += 'font-size: 14px; margin-bottom: 4px; font-weight: 500; }';
+      html += '.att-item.red { color: var(--f-danger); font-weight: 700; }';
+      
+      html += '.action-grid { display: grid; grid-template-columns: 1fr 1fr; ';
+      html += 'gap: 12px; }';
+      html += '.action-card { background: #fff; padding: 24px 16px; ';
       html += 'border-radius: 16px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; font-weight: 600; ';
-      html += 'font-size: 15px; display: flex; ';
-      html += 'flex-direction: column; align-items: center; ';
-      html += 'justify-content: center; box-shadow: 0 4px 15px ';
-      html += 'rgba(15, 61, 62, 0.05); border: none; }';
-      html += '.btn svg { width: 32px; height: 32px; ';
-      html += 'margin-bottom: 8px; }';
+      html += 'color: var(--f-text); font-weight: 700; font-size: 15px; ';
+      html += 'display: flex; flex-direction: column; align-items: center; ';
+      html += 'justify-content: center; box-shadow: var(--sh-1); ';
+      html += 'border: 1px solid rgba(0,0,0,0.02); transition: 0.2s; }';
+      html += '.action-card:active { transform: scale(0.98); }';
+      html += '.action-card svg { width: 32px; height: 32px; ';
+      html += 'margin-bottom: 12px; color: var(--f-brand); }';
       html += '.full { grid-column: 1 / -1; }';
       html += '</style></head><body>';
 
       html += '<div class="top-bar">';
       html += '<div class="logo-wrap">';
       html += '<svg class="logo-svg" viewBox="0 0 100 100">';
-      html += '<rect x="10" y="10" width="80" height="80" rx="20" fill="' + brandColor + '"/>';
+      html += '<rect x="10" y="10" width="80" height="80" rx="20" ';
+      html += 'fill="var(--f-brand)"/>';
       html += '<path d="M25 30 L70 30 Q75 30 75 35 L75 60 Q75 65 70 65 ';
       html += 'L55 65 L45 75 L45 65 L30 65 Q25 65 25 60 L25 35 Q25 30 30 30 Z" ';
       html += 'fill="none" stroke="#fff" stroke-width="5"/>';
-      html += '<path d="M40 45 Q55 35 60 50 Q45 60 40 45 Z" fill="' + accentColor + '"/>';
+      html += '<path d="M40 45 Q55 35 60 50 Q45 60 40 45 Z" ';
+      html += 'fill="var(--f-accent)"/>';
       html += '<path d="M55 45 Q70 35 75 50 Q60 60 55 45 Z" fill="#fff"/>';
       html += '</svg>';
       html += '<div class="logo-text">Flowind<br><span>СКЛАД</span></div>';
@@ -894,22 +1113,31 @@ function setupWarehouse(app, bot, s3ctx) {
       html += (hasOpenShift ? 'dot-green' : 'dot-red') + '"></div>';
       html += (hasOpenShift ? 'Открыта' : 'Закрыта');
       html += '</a>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">';
+      html += '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" ';
+      html += 'stroke="currentColor" stroke-width="2" stroke-linecap="round">';
+      html += '<line x1="3" y1="12" x2="21" y2="12"></line>';
+      html += '<line x1="3" y1="6" x2="21" y2="6"></line>';
+      html += '<line x1="3" y1="18" x2="21" y2="18"></line></svg>';
+      html += '</button>';
       html += '</div></div>';
 
-      html += '<div style="margin-bottom:20px;">';
-      html += '<h2 style="margin:0; font-size:24px;">Привет, ';
-      html += userName + '!</h2></div>';
+      html += '<h2 style="margin:0 0 20px 0; font-size:26px; font-weight:800;">';
+      html += 'Привет, ' + userName + '!</h2>';
 
       if (hasAttention) {
         html += '<div class="attention-box">';
-        html += '<div class="attention-title">⚠️ Требует внимания:</div>';
+        html += '<div class="attention-title">';
+        html += getIconSvg('warn') + ' Требует внимания:';
+        html += '</div>';
+        
         if (parseInt(att.no_price) > 0) {
           html += '<div class="att-item"><span>Без розничной цены:</span>';
           html += '<span>' + att.no_price + ' шт</span></div>';
         }
         if (parseInt(att.minus_stock) > 0) {
-          html += '<div class="att-item"><span>Минусовой остаток:</span>';
+          html += '<div class="att-item red">';
+          html += '<span>Минусовой остаток:</span>';
           html += '<span>' + att.minus_stock + ' шт</span></div>';
         }
         if (parseInt(att.zero_stock) > 0) {
@@ -919,23 +1147,23 @@ function setupWarehouse(app, bot, s3ctx) {
         html += '</div>';
       }
 
-      html += '<div class="grid">';
+      html += '<div class="action-grid">';
       if (isOwner || canSale) {
-        html += '<a href="/warehouse/sale" class="btn">';
+        html += '<a href="/warehouse/sale" class="action-card">';
         html += getIconSvg('sale') + 'Продажа</a>';
       }
       if (isOwner || canReceipt) {
-        html += '<a href="/warehouse/receipts" class="btn">';
+        html += '<a href="/warehouse/receipts" class="action-card">';
         html += getIconSvg('receipt') + 'Приход</a>';
       }
       if (isOwner || canWriteoff) {
-        html += '<a href="/warehouse/writeoff" class="btn">';
+        html += '<a href="/warehouse/writeoff" class="action-card">';
         html += getIconSvg('writeoff') + 'Списание</a>';
       }
-      html += '<a href="/warehouse/inventory" class="btn">';
+      html += '<a href="/warehouse/inventory" class="action-card">';
       html += getIconSvg('inventory') + 'Обзор склада</a>';
       
-      html += '<a href="/warehouse/history" class="btn full">';
+      html += '<a href="/warehouse/history" class="action-card full">';
       html += getIconSvg('history') + 'История смены</a>';
       html += '</div>';
 
@@ -995,7 +1223,6 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== 7. ОБЗОР СКЛАДА ======
   app.get('/warehouse/inventory', async (req, res) => {
     try {
@@ -1017,105 +1244,105 @@ function setupWarehouse(app, bot, s3ctx) {
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
       
-      html += '.stats-bar { display: flex; gap: 10px; margin-bottom: 15px; }';
-      html += '.stat-box { flex: 1; background: #fff; padding: 10px; ';
-      html += 'border-radius: 12px; text-align: center; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += '.stats-bar { display: flex; gap: 12px; margin-bottom: 16px; }';
+      html += '.stat-box { flex: 1; background: #fff; padding: 12px; ';
+      html += 'border-radius: var(--r-md); text-align: center; ';
+      html += 'box-shadow: var(--sh-1); }';
       html += '.stat-val { font-size: 18px; font-weight: 800; }';
-      html += '.stat-lbl { font-size: 11px; color: #888; ';
+      html += '.stat-lbl { font-size: 12px; color: var(--f-text-2); ';
       html += 'font-weight: 600; margin-top: 4px; }';
 
-      html += '.search { width: 100%; padding: 15px; border: none; ';
-      html += 'border-radius: 12px; margin-bottom: 15px; ';
-      html += 'box-sizing: border-box; font-family: inherit; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += '.search { width: 100%; padding: 14px 16px 14px 44px; ';
+      html += 'border: 1px solid var(--f-border); border-radius: var(--r-md); ';
+      html += 'margin-bottom: 16px; box-sizing: border-box; ';
+      html += 'font-family: inherit; font-size: 16px; ';
+      html += 'box-shadow: var(--sh-1); }';
+      html += '.search-wrap { position: relative; }';
+      html += '.search-icon { position: absolute; left: 14px; top: 50%; ';
+      html += 'transform: translateY(-50%); width: 20px; height: 20px; ';
+      html += 'color: var(--f-text-2); pointer-events: none; }';
       
       html += '.controls { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; margin-bottom: 15px; gap: 10px; }';
+      html += 'align-items: center; margin-bottom: 16px; gap: 8px; }';
       html += '.view-toggles { display: flex; gap: 4px; ';
       html += 'background: #e0e0e0; padding: 4px; border-radius: 10px; }';
-      html += '.view-btn { border: none; background: none; padding: 6px; ';
+      html += '.view-btn { border: none; background: none; padding: 8px; ';
       html += 'border-radius: 8px; cursor: pointer; color: #666; ';
       html += 'display: flex; }';
       html += '.view-btn.active { background: #fff; ';
-      html += 'box-shadow: 0 2px 5px rgba(0,0,0,0.1); }';
+      html += 'box-shadow: var(--sh-1); color: var(--f-brand); }';
       html += '.view-btn svg { width: 20px; height: 20px; }';
       
-      html += '.limit-select { padding: 8px 15px; border-radius: 10px; ';
+      html += '.limit-select { padding: 8px 12px; border-radius: 10px; ';
       html += 'border: none; font-family: inherit; font-weight: 600; ';
-      html += 'color: ' + brandColor + '; background: #fff; ';
-      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); ';
-      html += 'width: 85px; text-align: center; margin: 0; }';
+      html += 'color: var(--f-brand); background: #fff; ';
+      html += 'box-shadow: var(--sh-1); width: 80px; text-align: center; ';
+      html += 'margin: 0; }';
 
       html += '.h-scroll { display: flex; overflow-x: auto; ';
-      html += 'gap: 8px; margin-bottom: 15px; padding-bottom: 5px; }';
-      html += '.cat-btn { padding: 8px 15px; border: none; ';
+      html += 'gap: 8px; margin-bottom: 16px; padding-bottom: 4px; }';
+      html += '.h-scroll::-webkit-scrollbar { display: none; }';
+      
+      html += '.cat-btn { padding: 8px 16px; border: none; ';
       html += 'border-radius: 20px; background: #fff; cursor: pointer; ';
       html += 'font-size: 14px; white-space: nowrap; ';
-      html += 'font-family: inherit; color: ' + brandColor + '; ';
-      html += 'font-weight: 600; ';
-      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
-      html += '.cat-btn.active { background: ' + brandColor + '; color: #fff; }';
+      html += 'font-family: inherit; color: var(--f-text); ';
+      html += 'font-weight: 600; box-shadow: var(--sh-1); }';
+      html += '.cat-btn.active { background: var(--f-brand); color: #fff; }';
       
-      html += '.spec-btn { padding: 6px 10px; border: none; ';
+      html += '.spec-btn { padding: 6px 12px; border: none; ';
       html += 'border-radius: 12px; background: #fff; cursor: pointer; ';
-      html += 'font-size: 12px; font-weight: 600; font-family: inherit; }';
-      html += '.spec-btn.active { background: ' + brandColor + '; color: #fff; }';
+      html += 'font-size: 13px; font-weight: 600; font-family: inherit; ';
+      html += 'box-shadow: var(--sh-1); color: var(--f-text); }';
+      html += '.spec-btn.active { background: var(--f-brand); color: #fff; }';
       
       html += '.grid-tiles { display: grid; grid-template-columns: 1fr 1fr; ';
-      html += 'gap: 10px; }';
-      html += '.card-tile { background: #fff; padding: 10px; ';
-      html += 'border-radius: 16px; text-align: center; ';
-      html += 'text-decoration: none; color: ' + brandColor + '; ';
-      html += 'position: relative; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.card-tile img { width: 100%; height: 80px; ';
-      html += 'object-fit: cover; border-radius: 12px; ';
-      html += 'margin-bottom: 5px; }';
-      html += '.card-tile .ph { height: 80px; border-radius: 12px; ';
+      html += 'gap: 12px; }';
+      html += '.card-tile { background: #fff; padding: 12px; ';
+      html += 'border-radius: var(--r-lg); text-align: center; ';
+      html += 'text-decoration: none; color: var(--f-text); ';
+      html += 'position: relative; box-shadow: var(--sh-1); }';
+      html += '.card-tile img { width: 100%; height: 100px; ';
+      html += 'object-fit: cover; border-radius: var(--r-md); ';
+      html += 'margin-bottom: 8px; }';
+      html += '.card-tile .ph { height: 100px; border-radius: var(--r-md); ';
       html += 'background: #F0F4F4; display: flex; align-items: center; ';
-      html += 'justify-content: center; margin-bottom: 5px; }';
-      html += '.card-tile .ph svg { width: 32px; height: 32px; }';
+      html += 'justify-content: center; margin-bottom: 8px; }';
+      html += '.card-tile .ph svg { width: 32px; height: 32px; color: #A0B4B4; }';
       
       html += '.grid-rows { display: flex; flex-direction: column; gap: 8px; }';
-      html += '.card-row { background: #fff; padding: 10px 15px; ';
-      html += 'border-radius: 12px; display: flex; align-items: center; ';
+      html += '.card-row { background: #fff; padding: 12px 16px; ';
+      html += 'border-radius: var(--r-md); display: flex; align-items: center; ';
       html += 'justify-content: space-between; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += 'color: var(--f-text); box-shadow: var(--sh-1); }';
       html += '.card-row .row-left { display: flex; align-items: center; ';
       html += 'gap: 12px; }';
-      html += '.card-row img, .card-row .ph { width: 40px; height: 40px; ';
-      html += 'border-radius: 8px; object-fit: cover; }';
+      html += '.card-row img, .card-row .ph { width: 48px; height: 48px; ';
+      html += 'border-radius: var(--r-sm); object-fit: cover; }';
       html += '.card-row .ph { background: #F0F4F4; display: flex; ';
       html += 'align-items: center; justify-content: center; }';
-      html += '.card-row .ph svg { width: 20px; height: 20px; }';
+      html += '.card-row .ph svg { width: 24px; height: 24px; color: #A0B4B4; }';
       
-      html += '.name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }';
+      html += '.name { font-size: 14px; font-weight: 600; margin-bottom: 4px; ';
+      html += 'line-height: 1.2; word-break: break-word; }';
       html += '.card-row .name { font-size: 15px; margin-bottom: 0; }';
-      html += '.stock { font-size: 12px; font-weight: 800; }';
-      html += '.green { color: ' + successColor + '; } ';
-      html += '.red { color: ' + dangerColor + '; }';
-      html += '.pin-icon { position: absolute; top: 6px; right: 6px; ';
+      html += '.stock { font-size: 13px; font-weight: 800; }';
+      html += '.green { color: var(--f-success); } ';
+      html += '.red { color: var(--f-danger); }';
+      html += '.pin-icon { position: absolute; top: 8px; right: 8px; ';
       html += 'color: #E67E22; }';
-      html += '.card-row .pin-icon { position: static; margin-left: 5px; }';
-      html += '.price-warn { font-size: 10px; color: ' + accentColor + '; ';
-      html += 'font-weight: 800; margin-top: 2px; }';
-      html += '.cost-info { font-size: 10px; color: #888; ';
-      html += 'margin-top: 2px; font-weight: 600; }';
+      html += '.card-row .pin-icon { position: static; margin-left: 6px; }';
+      html += '.price-warn { font-size: 11px; color: var(--f-accent); ';
+      html += 'font-weight: 800; margin-top: 4px; }';
+      html += '.cost-info { font-size: 11px; color: var(--f-text-2); ';
+      html += 'margin-top: 4px; font-weight: 600; }';
       
       html += '.archived-item { opacity: 0.6; }';
       html += '.archived-badge { font-size: 10px; color: #666; ';
@@ -1123,12 +1350,11 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'display: inline-block; margin-top: 4px; }';
       html += '</style></head><body>';
 
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('inventory') + 'Обзор склада</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Обзор склада</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<div class="stats-bar">';
@@ -1143,20 +1369,22 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '</div><div class="stat-lbl">Розница</div></div>';
       html += '</div>';
 
+      html += '<div class="search-wrap">';
+      html += '<div class="search-icon">' + getIconSvg('search') + '</div>';
       html += '<input type="text" class="search" id="search" ';
-      html += 'placeholder="🔍 Поиск..." onkeyup="applyFilters()">';
+      html += 'placeholder="Поиск по названию..." onkeyup="applyFilters()">';
+      html += '</div>';
       
       html += '<div class="controls">';
-      html += '  <div style="display:flex; gap:5px; flex-wrap:wrap;">';
+      html += '  <div style="display:flex; gap:6px; flex-wrap:wrap;">';
       html += '    <button class="spec-btn" id="cat-noprice" ';
       html += 'onclick="toggleNoPrice()">Без цены</button>';
       html += '    <button class="spec-btn" id="cat-minus" ';
-      html += 'onclick="toggleMinus()" style="color:' + dangerColor + ';">';
-      html += '    Минус</button>';
+      html += 'onclick="toggleMinus()">Минус</button>';
       html += '    <button class="spec-btn" id="cat-archive" ';
-      html += 'onclick="toggleArchive()" style="color:#666;">Архив</button>';
+      html += 'onclick="toggleArchive()">Архив</button>';
       html += '  </div>';
-      html += '  <div style="display:flex; gap:10px; align-items:center;">';
+      html += '  <div style="display:flex; gap:8px; align-items:center;">';
       html += '    <div class="view-toggles">';
       html += '      <button class="view-btn active" id="btn-view-tile" ';
       html += 'onclick="setViewMode(\'tile\')"><svg viewBox="0 0 24 24" ';
@@ -1196,7 +1424,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += getUnifiedMenu('inventory');
 
       html += '<script>';
-      
       html += 'function fmtNum(n) {';
       html += '  var num = parseFloat(String(n).replace(",", "."));';
       html += '  if (isNaN(num)) return "0";';
@@ -1210,7 +1437,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var noPriceFilter = false; var minusFilter = false; ';
       html += 'var showArchive = false;';
       
-      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4">';
+      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="currentColor">';
       html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
       html += 'L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3';
       html += 'C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5';
@@ -1267,8 +1494,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'function toggleArchive() {';
       html += '  showArchive = !showArchive; noPriceFilter = false; ';
       html += 'minusFilter = false;';
-      html += '  updateFilterUI();';
-      html += '  fetchItems();';
+      html += '  updateFilterUI(); fetchItems();';
       html += '}';
 
       html += 'function updateFilterUI() {';
@@ -1524,7 +1750,6 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 8. API ИСТОРИИ ТОВАРА ======
   app.get('/api/warehouse/item/history', async (req, res) => {
     try {
@@ -1618,7 +1843,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 9. API УСТАНОВКИ ЦЕНЫ ======
+  // ====== 9. API УПРАВЛЕНИЯ ТОВАРОМ ======
   app.post('/api/warehouse/item/set-price', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1630,13 +1855,6 @@ function setupWarehouse(app, bot, s3ctx) {
         return res.json({ ok: false, error: 'Неверные данные' });
       }
       
-      const nameQ = await pool.query(
-        'SELECT COALESCE(i.custom_name, w.name) AS name ' +
-        'FROM wh_shop_items i JOIN wh_items w ON w.id = i.item_id ' +
-        'WHERE i.id = $1 AND i.shop_id = $2', [itemId, auth.shopId]
-      );
-      const itemName = nameQ.rows.length > 0 ? nameQ.rows[0].name : 'Товар';
-
       await pool.query(
         'UPDATE wh_shop_items SET retail_price = $1 ' +
         'WHERE id = $2 AND shop_id = $3',
@@ -1644,7 +1862,7 @@ function setupWarehouse(app, bot, s3ctx) {
       );
       
       await logAction(auth.shopId, auth.chatId, 'set_price', 
-        'Цена ' + price + ' ₽ для: ' + itemName, itemId);
+        'Цена ' + price + ' ₽ для ID: ' + itemId, itemId);
         
       res.json({ ok: true });
     } catch (e) { 
@@ -1652,7 +1870,6 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 10. API ПЕРЕИМЕНОВАНИЯ ======
   app.post('/api/warehouse/item/rename', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1674,13 +1891,11 @@ function setupWarehouse(app, bot, s3ctx) {
       }
 
       const r = await pool.query(
-        'SELECT i.item_id, COALESCE(i.custom_name, w.name) AS old_name ' +
-        'FROM wh_shop_items i JOIN wh_items w ON w.id = i.item_id ' +
+        'SELECT i.item_id FROM wh_shop_items i ' +
         'WHERE i.id = $1 AND i.shop_id = $2', 
         [itemId, auth.shopId]
       );
       if (r.rows.length === 0) return res.json({ ok: false });
-      const oldName = r.rows[0].old_name;
 
       await pool.query(
         'UPDATE wh_items SET name = $1 WHERE id = $2',
@@ -1692,14 +1907,13 @@ function setupWarehouse(app, bot, s3ctx) {
       );
       
       await logAction(auth.shopId, auth.chatId, 'rename', 
-        'Переименование: ' + oldName + ' → ' + newName, itemId);
+        'Переименование в: ' + newName, itemId);
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
 
-  // ====== 11. API ЗАКРЕПЛЕНИЯ ======
   app.post('/api/warehouse/item/pin', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1719,88 +1933,6 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 12. API ОБЪЕДИНЕНИЯ ======
-  app.post('/api/warehouse/item/merge', async (req, res) => {
-    const client = await pool.connect();
-    try {
-      const auth = getAuth(req);
-      if (!auth) { 
-        client.release(); 
-        return res.status(401).json({ ok: false }); 
-      }
-      
-      const ownerCheck = await client.query(
-        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
-        [auth.chatId, auth.shopId]
-      );
-      if (ownerCheck.rows.length === 0 ||
-          ownerCheck.rows[0].role !== 'owner') {
-        client.release(); 
-        return res.status(403).json({ ok: false });
-      }
-
-      const sourceId = parseInt(req.body.source_id);
-      const targetName = String(req.body.target_name || '').trim();
-      if (!sourceId || isNaN(sourceId) || !targetName) {
-        client.release(); return res.json({ ok: false });
-      }
-
-      await client.query('BEGIN');
-      
-      const srcRes = await client.query(
-        'SELECT COALESCE(i.custom_name, w.name) AS name ' +
-        'FROM wh_shop_items i JOIN wh_items w ON w.id = i.item_id ' +
-        'WHERE i.id = $1 AND i.shop_id = $2', [sourceId, auth.shopId]
-      );
-      const sourceName = srcRes.rows.length > 0 ? 
-        srcRes.rows[0].name : 'ID ' + sourceId;
-
-      const targetRes = await client.query(
-        'SELECT i.id FROM wh_shop_items i ' +
-        'JOIN wh_items w ON w.id = i.item_id ' +
-        'WHERE i.shop_id = $1 AND w.name = $2',
-        [auth.shopId, targetName]
-      );
-      if (targetRes.rows.length === 0) {
-        await client.query('ROLLBACK'); client.release();
-        return res.json({ ok: false, error: 'Целевой товар не найден' });
-      }
-      const targetId = targetRes.rows[0].id;
-      if (sourceId === targetId) {
-        await client.query('ROLLBACK'); client.release();
-        return res.json({ ok: false, error: 'Одинаковые товары' });
-      }
-
-      await client.query('UPDATE wh_sale_items SET shop_item_id = $1 ' +
-        'WHERE shop_item_id = $2', [targetId, sourceId]);
-      await client.query('UPDATE wh_receipt_items SET shop_item_id = $1 ' +
-        'WHERE shop_item_id = $2', [targetId, sourceId]);
-      await client.query('UPDATE wh_writeoffs SET shop_item_id = $1 ' +
-        'WHERE shop_item_id = $2', [targetId, sourceId]);
-      await client.query('UPDATE wh_bouquet_recipes SET shop_item_id = $1 ' +
-        'WHERE shop_item_id = $2', [targetId, sourceId]);
-      
-      await client.query(
-        'UPDATE wh_shop_items SET current_stock = ' +
-        'current_stock + (SELECT current_stock FROM wh_shop_items ' +
-        'WHERE id = $1) WHERE id = $2', [sourceId, targetId]
-      );
-      
-      await client.query('DELETE FROM wh_shop_items WHERE id = $1', [sourceId]);
-
-      await client.query('COMMIT');
-      client.release();
-      
-      await logAction(auth.shopId, auth.chatId, 'merge', 
-        'Объединение: ' + sourceName + ' → ' + targetName, targetId);
-      res.json({ ok: true });
-    } catch (e) {
-      try { await client.query('ROLLBACK'); } catch (e2) {}
-      client.release(); res.status(500).json({ ok: false, error: e.message });
-    }
-  });
-
-  // ====== 13. API УСТАНОВКИ ФОТО ======
   app.post('/api/warehouse/item/set-photo', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1828,7 +1960,6 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 14. API УДАЛЕНИЯ ТОВАРА ======
   app.post('/api/warehouse/item/delete', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1873,11 +2004,12 @@ function setupWarehouse(app, bot, s3ctx) {
       res.json({ ok: true, archived: hasHistory });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (e2) {}
-      client.release(); res.status(500).json({ ok: false, error: e.message });
+      client.release(); 
+      res.status(500).json({ ok: false, error: e.message });
     }
   });
 
-  // ====== 15. КАРТОЧКА ТОВАРА (ВЫПИСКА) ======
+  // ====== 10. КАРТОЧКА ТОВАРА (ВЫПИСКА) ======
   app.get('/warehouse/item', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1886,139 +2018,115 @@ function setupWarehouse(app, bot, s3ctx) {
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.history-card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 16px; margin-bottom: 12px; display: flex; ';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.history-card { background: #fff; border-radius: var(--r-md); ';
+      html += 'padding: 16px; margin-bottom: 10px; display: flex; ';
       html += 'justify-content: space-between; align-items: center; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
-      html += 'text-decoration: none; color: ' + brandColor + '; ';
-      html += 'border-left: 5px solid transparent; transition: 0.2s; }';
-      html += '.history-card:active { transform: scale(0.98); }';
+      html += 'box-shadow: var(--sh-1); text-decoration: none; ';
+      html += 'color: var(--f-text); border-left: 4px solid transparent; }';
       html += '.history-card.sale { border-left-color: #3C7A89; }';
-      html += '.history-card.receipt { border-left-color: ' + 
-              successColor + '; }';
-      html += '.history-card.writeoff { border-left-color: ' + 
-              dangerColor + '; }';
+      html += '.history-card.receipt { border-left-color: var(--f-success); }';
+      html += '.history-card.writeoff { border-left-color: var(--f-danger); }';
+      
       html += '.h-left { display: flex; flex-direction: column; gap: 4px; }';
       html += '.h-title { font-weight: 700; font-size: 15px; display: flex; ';
       html += 'align-items: center; gap: 6px; }';
-      html += '.h-meta { font-size: 12px; color: #888; }';
+      html += '.h-meta { font-size: 12px; color: var(--f-text-2); }';
       html += '.h-badge { font-size: 11px; padding: 2px 8px; ';
       html += 'border-radius: 10px; font-weight: 700; display: inline-block; }';
       html += '.badge-sale { background: #E3F2FD; color: #3C7A89; }';
-      html += '.badge-receipt { background: #E8F5E9; color: ' + 
-              successColor + '; }';
-      html += '.badge-writeoff { background: #FFEBEE; color: ' + 
-              dangerColor + '; }';
+      html += '.badge-receipt { background: #E8F5E9; color: var(--f-success); }';
+      html += '.badge-writeoff { background: #FFEBEE; color: var(--f-danger); }';
+      
       html += '.h-right { text-align: right; display: flex; ';
       html += 'flex-direction: column; align-items: flex-end; gap: 4px; }';
       html += '.h-amount { font-weight: 800; font-size: 16px; }';
       html += '.h-stock { font-size: 11px; color: #aaa; font-weight: 600; }';
-      html += '.actions { display: flex; gap: 8px; margin-top: 15px; ';
-      html += 'justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }';
-      html += '.btn-act { padding: 10px 15px; border-radius: 12px; ';
-      html += 'border: none; font-weight: 600; color: #fff; font-size: 13px; ';
-      html += 'font-family: inherit; cursor: pointer; display: flex; ';
-      html += 'align-items: center; gap: 5px; }';
-      html += '.btn-act svg { width: 16px; height: 16px; }';
-      html += '.btn-rename { background: #E67E22; }';
-      html += '.btn-merge { background: ' + dangerColor + '; }';
-      html += '.btn-photo { background: #3C7A89; }';
-      html += '.btn-pin { background: ' + (brandColor) + '; }';
-      html += '.btn-pin.active { background: #E67E22; }';
-      html += '.btn-set-price { background: ' + accentColor + '; }';
-      html += '.btn-delete { background: #ff0000; margin-top: 30px; }';
+      
+      html += '.actions { display: grid; grid-template-columns: 1fr 1fr; ';
+      html += 'gap: 8px; margin-top: 16px; margin-bottom: 24px; }';
+      html += '.btn-act { padding: 12px; border-radius: var(--r-md); ';
+      html += 'border: 1px solid var(--f-border); font-weight: 600; ';
+      html += 'color: var(--f-text); font-size: 14px; background: #fff;';
+      html += 'font-family: inherit; display: flex; align-items: center; ';
+      html += 'justify-content: center; gap: 6px; box-shadow: var(--sh-1); }';
+      html += '.btn-act svg { width: 18px; height: 18px; }';
+      html += '.btn-act.primary { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); }';
+      html += '.btn-act.danger { color: var(--f-danger); }';
+      html += '.btn-act.full { grid-column: 1 / -1; }';
       
       html += '.controls { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; margin-bottom: 15px; }';
-      html += '.limit-select { padding: 8px 15px; border-radius: 10px; ';
-      html += 'border: none; font-family: inherit; font-weight: 600; ';
-      html += 'color: ' + brandColor + '; background: #fff; ';
-      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); ';
-      html += 'width: 85px; text-align: center; margin: 0; }';
-      html += '.pag-btn { background: #fff; border: none; padding: 8px 15px; ';
-      html += 'border-radius: 10px; font-weight: 600; color: ' + 
-              brandColor + '; ';
-      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
+      html += 'align-items: center; margin-bottom: 16px; }';
+      html += '.limit-select { padding: 8px 12px; border-radius: 10px; ';
+      html += 'border: 1px solid var(--f-border); font-family: inherit; ';
+      html += 'font-weight: 600; color: var(--f-text); background: #fff; ';
+      html += 'box-shadow: var(--sh-1); width: 80px; text-align: center; ';
+      html += 'margin: 0; }';
+      html += '.pag-btn { background: #fff; border: 1px solid var(--f-border); ';
+      html += 'padding: 8px 12px; border-radius: 10px; font-weight: 600; ';
+      html += 'color: var(--f-text); box-shadow: var(--sh-1); }';
+      html += '.img-preview { width: 120px; height: 120px; border-radius: 12px; ';
+      html += 'object-fit: cover; display: none; margin: 0 auto 16px auto; }';
       html += '</style></head><body>';
 
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse/inventory" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('inventory') + 'Выписка</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse/inventory" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Выписка</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<input type="file" id="photoInput" accept="image/*" ';
       html += 'style="display:none;" onchange="uploadPhoto()">';
+      
       html += '<div id="header-info" style="text-align:center; ';
-      html += 'margin-bottom:15px;"></div>';
+      html += 'margin-bottom:20px;"></div>';
 
       html += '<div class="actions" id="actions" style="display:none;">';
-      html += '<button class="btn-act btn-set-price" id="btnSetPrice" ';
+      html += '<button class="btn-act primary" id="btnSetPrice" ';
       html += 'style="display:none;" onclick="setRetailPrice()">';
       html += 'Задать цену</button>';
-      html += '<button class="btn-act btn-pin" id="btnPin" ';
-      html += 'onclick="togglePin()"><svg viewBox="0 0 24 24" fill="none" ';
-      html += 'stroke="currentColor" stroke-width="2">';
-      html += '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 ';
-      html += '18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 ';
-      html += '8.91 8.26 12 2"></polygon></svg> Закрепить</button>';
-      html += '<button class="btn-act btn-rename" onclick="renameItem()">';
-      html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ';
-      html += 'stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 ';
-      html += '20.5 2 22l1.5-5.5L17 3z"></path></svg> Имя</button>';
-      html += '<button class="btn-act btn-merge" onclick="mergeItem()">';
-      html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ';
-      html += 'stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 ';
-      html += '0 0 0-7.07-7.07l-1.72 1.71"></path>';
-      html += '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 ';
-      html += '7.07 7.07l1.71-1.71"></path></svg> Объединить</button>';
-      html += '<button class="btn-act btn-photo" ';
+      html += '<button class="btn-act" id="btnPin" ';
+      html += 'onclick="togglePin()">Закрепить</button>';
+      html += '<button class="btn-act" onclick="renameItem()">';
+      html += 'Переименовать</button>';
+      html += '<button class="btn-act" ';
       html += 'onclick="document.getElementById(\'photoInput\').click()">';
-      html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ';
-      html += 'stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 ';
-      html += '1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z">';
-      html += '</path><circle cx="12" cy="13" r="4"></circle></svg> Фото';
-      html += '</button>';
+      html += 'Загрузить фото</button>';
+      html += '<button class="btn-act danger full" ';
+      html += 'onclick="deleteItem()">Удалить товар</button>';
       html += '</div>';
 
       html += '<div class="controls" id="historyControls" style="display:none;">';
+      html += '<h3 style="margin:0; font-size:16px;">История операций</h3>';
       html += '<select class="limit-select" id="limitSelect" ';
       html += 'onchange="changeLimit(this.value)">';
-      html += '<option value="10">10 шт</option>';
-      html += '<option value="30">30 шт</option>';
-      html += '<option value="50">50 шт</option>';
-      html += '<option value="100">100 шт</option>';
+      html += '<option value="10">10</option>';
+      html += '<option value="30">30</option>';
+      html += '<option value="50">50</option>';
+      html += '<option value="100">100</option>';
       html += '</select>';
-      html += '<div style="display:flex; gap:10px; align-items:center;">';
+      html += '</div>';
+
+      html += '<div style="display:flex; justify-content:center; ';
+      html += 'gap:10px; align-items:center; margin-bottom:16px;">';
       html += '<button class="pag-btn" id="btnPrev" onclick="prevPage()" ';
       html += 'style="opacity:0.3;">←</button>';
       html += '<span id="pageInfo" style="font-weight:800; font-size:14px;">';
       html += '1 / 1</span>';
       html += '<button class="pag-btn" id="btnNext" onclick="nextPage()" ';
       html += 'style="opacity:0.3;">→</button>';
-      html += '</div></div>';
+      html += '</div>';
 
       html += '<div id="list">Загрузка...</div>';
       
-      html += '<div id="deleteArea" style="display:none; text-align:center; ';
-      html += 'padding-bottom:50px;">';
-      html += '<button class="btn-act btn-delete" onclick="deleteItem()">';
-      html += 'Удалить товар</button></div>';
-
       html += getUnifiedMenu('inventory');
 
       html += '<script>';
@@ -2059,26 +2167,40 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      itemName = d.item.name; itemUnit = d.item.unit || "шт";';
       html += '      isPinned = d.item.is_pinned === true;';
       html += '      itemPrice = parseFloat(d.item.retail_price) || 0;';
-      html += '      document.getElementById("actions").style.display = "flex";';
+      html += '      document.getElementById("actions").style.display = "grid";';
       html += '      document.getElementById("historyControls").style.display = "flex";';
-      html += '      document.getElementById("deleteArea").style.display = "block";';
       html += '      updatePinBtn();';
       html += '      if (itemPrice === 0) { ';
-      html += '        document.getElementById("btnSetPrice").style.display = "flex"; }';
+      html += '        var bsp = document.getElementById("btnSetPrice");';
+      html += '        bsp.style.display = "flex"; bsp.innerText = "Задать цену"; }';
+      html += '      else { ';
+      html += '        var bsp2 = document.getElementById("btnSetPrice");';
+      html += '        bsp2.style.display = "flex"; bsp2.innerText = "Изменить цену"; }';
+      
       html += '      var isPos = parseFloat(d.item.current_stock) > 0;';
-      html += '      var cl = isPos ? "' + successColor + '" : "';
-      html += dangerColor + '";';
+      html += '      var cl = isPos ? "var(--f-success)" : "var(--f-danger)";';
       html += '      var h2 = document.createElement("h2");';
       html += '      h2.style.margin = "0"; h2.style.fontSize = "24px";';
+      html += '      h2.style.fontWeight = "800";';
       html += '      h2.textContent = itemName; hi.appendChild(h2);';
       html += '      var stockDiv = document.createElement("div");';
       html += '      stockDiv.style.fontSize = "20px";';
       html += '      stockDiv.style.fontWeight = "800";';
       html += '      stockDiv.style.color = cl;';
-      html += '      stockDiv.style.marginTop = "5px";';
+      html += '      stockDiv.style.marginTop = "8px";';
       html += '      stockDiv.textContent = "Остаток: " + ';
       html += '      fmtNum(d.item.current_stock) + " " + itemUnit;';
       html += '      hi.appendChild(stockDiv);';
+      html += '      if (itemPrice > 0) {';
+      html += '        var prDiv = document.createElement("div");';
+      html += '        prDiv.style.fontSize = "16px";';
+      html += '        prDiv.style.fontWeight = "600";';
+      html += '        prDiv.style.color = "var(--f-brand)";';
+      html += '        prDiv.style.marginTop = "4px";';
+      html += '        prDiv.textContent = "Цена: " + ';
+      html += '        itemPrice.toLocaleString("ru-RU") + " ₽";';
+      html += '        hi.appendChild(prDiv);';
+      html += '      }';
       html += '    }';
       
       html += '    var maxP = Math.ceil(totalHistory / pageLimit) || 1;';
@@ -2098,6 +2220,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var ds = new Date(h.date).toLocaleString("ru-RU", { ';
       html += '      day: "2-digit", month: "2-digit", hour: "2-digit", ';
       html += '      minute: "2-digit" });';
+      
       html += '      var left = document.createElement("div");';
       html += '      left.className = "h-left";';
       html += '      var title = document.createElement("div");';
@@ -2105,6 +2228,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var meta = document.createElement("div");';
       html += '      meta.className = "h-meta";';
       html += '      meta.textContent = ds + " · " + (h.person || "Система");';
+      
       html += '      var right = document.createElement("div");';
       html += '      right.className = "h-right";';
       html += '      var amt = document.createElement("div");';
@@ -2129,7 +2253,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        Списание</span> №" + h.id;';
       html += '        meta.textContent += " · " + translateReason(h.reason);';
       html += '        amt.textContent = "-" + fmtNum(h.qty) + " " + itemUnit;';
-      html += '        amt.style.color = "' + dangerColor + '";';
+      html += '        amt.style.color = "var(--f-danger)";';
       html += '      } else {';
       html += '        a.className = "history-card receipt";';
       html += '        a.href = "/warehouse/documents/details?id=" + h.id + ';
@@ -2137,7 +2261,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        title.innerHTML = "<span class=\'h-badge badge-receipt\'>';
       html += '        Приход</span> №" + h.id;';
       html += '        amt.textContent = "+" + fmtNum(h.qty) + " " + itemUnit;';
-      html += '        amt.style.color = "' + successColor + '";';
+      html += '        amt.style.color = "var(--f-success)";';
       html += '      }';
 
       html += '      left.appendChild(title); left.appendChild(meta);';
@@ -2151,6 +2275,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
 
       html += 'loadHistory();';
+      
       html += 'function deleteItem() {';
       html += '  showConfirm("Удаление", "Вы уверены, что хотите удалить " + ';
       html += '  itemName + "? Если есть история, он будет скрыт.", ';
@@ -2169,7 +2294,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '}';
 
       html += 'function setRetailPrice() {';
-      html += '  showPrompt("Розничная цена", "Введите цену (₽)", "", ';
+      html += '  var def = itemPrice > 0 ? itemPrice : "";';
+      html += '  showPrompt("Розничная цена", "Введите цену (₽)", def, ';
       html += '  function(p) {';
       html += '    if (!p) return;';
       html += '    var num = parseFloat(String(p).replace(",", "."));';
@@ -2200,16 +2326,13 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += 'function updatePinBtn() {';
       html += '  var b = document.getElementById("btnPin");';
-      html += '  if (isPinned) { b.classList.add("active"); b.innerHTML = ';
-      html += '  "<svg viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' ';
-      html += '  stroke-width=\'2\'><polygon points=\'12 2 15.09 8.26 22 9.27 ';
-      html += '  17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 ';
-      html += '  8.91 8.26 12 2\'></polygon></svg> Открепить"; }';
-      html += '  else { b.classList.remove("active"); b.innerHTML = ';
-      html += '  "<svg viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' ';
-      html += '  stroke-width=\'2\'><polygon points=\'12 2 15.09 8.26 22 9.27 ';
-      html += '  17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 ';
-      html += '  8.91 8.26 12 2\'></polygon></svg> Закрепить"; }';
+      html += '  if (isPinned) { b.style.background = "#FFF3E0"; ';
+      html += '    b.style.color = "#E67E22"; b.style.borderColor = "#E67E22";';
+      html += '    b.innerText = "Открепить"; }';
+      html += '  else { b.style.background = "#fff"; ';
+      html += '    b.style.color = "var(--f-text)"; ';
+      html += '    b.style.borderColor = "var(--f-border)";';
+      html += '    b.innerText = "Закрепить"; }';
       html += '}';
 
       html += 'function renameItem() {';
@@ -2225,27 +2348,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      setTimeout(function() { location.reload(); }, 1000); ';
       html += '    } else showAlert("Ошибка", d.error, false); })';
       html += '    .catch(function() {});';
-      html += '  });';
-      html += '}';
-
-      html += 'function mergeItem() {';
-      html += '  showPrompt("Объединение", "Введите имя товара", "", ';
-      html += '  function(targetName) {';
-      html += '    if (!targetName) return;';
-      html += '    showConfirm("Объединение", ';
-      html += '    "Вы уверены? Этот товар будет удален, а данные перейдут в \'" + ';
-      html += '    targetName + "\'.", ';
-      html += '    function() {';
-      html += '      fetch("/api/warehouse/item/merge", { method: "POST", ';
-      html += '      headers: { "Content-Type": "application/json" }, ';
-      html += '      body: JSON.stringify({ source_id: itemId, ';
-      html += '      target_name: targetName }) })';
-      html += '      .then(function(r) { return r.json(); })';
-      html += '      .then(function(d) { if (d.ok) { window.location.href = ';
-      html += '      "/warehouse/inventory"; } ';
-      html += '      else showAlert("Ошибка", d.error, false); })';
-      html += '      .catch(function() {});';
-      html += '    }, true);';
       html += '  });';
       html += '}';
 
@@ -2298,15 +2400,14 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  }).catch(function() { showAlert("Ошибка", ';
       html += '  "Сбой при сохранении", false); });';
       html += '}';
+      
       html += '<\/script></body></html>';
       res.send(html);
     } catch(e) {
       console.error('Item page error:', e.message);
       res.status(500).send('Ошибка сервера');
     }
-  });
-
-  // ====== 16. ЭКРАН ПРОДАЖИ (КАССА) ======
+  });// ====== 11. ЭКРАН ПРОДАЖИ (КАССА) ======
   app.get('/warehouse/sale', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -2325,31 +2426,24 @@ function setupWarehouse(app, bot, s3ctx) {
         let errHtml = '<!DOCTYPE html><html><head>';
         errHtml += '<meta charset="UTF-8">';
         errHtml += '<meta name="viewport" content="width=device-width, ';
-        errHtml += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+        errHtml += 'initial-scale=1.0, maximum-scale=1.0, ';
+        errHtml += 'user-scalable=no, viewport-fit=cover">';
         errHtml += fontLink;
         errHtml += uiScript;
         errHtml += '<style>';
-        errHtml += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-        errHtml += 'padding: 15px; background: ' + bgGradient + '; ';
-        errHtml += 'color: ' + brandColor + '; display: flex; ';
-        errHtml += 'flex-direction: column; align-items: center; ';
-        errHtml += 'justify-content: center; height: 100vh; }';
-        errHtml += '.card { background: #fff; border-radius: 20px; ';
-        errHtml += 'padding: 40px 20px; text-align: center; ';
-        errHtml += 'max-width: 300px; width: 100%; ';
-        errHtml += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-        errHtml += 'h1 { font-size: 50px; margin: 0 0 10px 0; }';
-        errHtml += 'h2 { margin: 0 0 10px 0; }';
-        errHtml += 'p { color: #888; font-size: 14px; margin-bottom: 20px; }';
-        errHtml += '.btn { display: block; width: 100%; box-sizing: border-box; ';
-        errHtml += 'padding: 15px; background: ' + brandColor + '; color: #fff; ';
-        errHtml += 'text-decoration: none; border-radius: 12px; ';
-        errHtml += 'font-weight: 800; font-size: 16px; }';
+        errHtml += 'body { display: flex; flex-direction: column; ';
+        errHtml += 'align-items: center; justify-content: center; ';
+        errHtml += 'height: 100vh; padding: 20px; text-align: center; }';
+        errHtml += '.card { max-width: 340px; width: 100%; padding: 40px 24px; }';
         errHtml += '</style></head><body>';
-        errHtml += '<div class="card"><h1>⏱</h1>';
-        errHtml += '<h2>Смена не открыта</h2>';
-        errHtml += '<p>Для оформления продаж сначала откройте смену.</p>';
-        errHtml += '<a href="/warehouse/shift" class="btn">Открыть смену</a>';
+        errHtml += '<div class="card">';
+        errHtml += '<h1 style="font-size:48px; margin:0 0 16px 0;">⏱</h1>';
+        errHtml += '<h2 style="margin:0 0 8px 0; font-size:20px;">';
+        errHtml += 'Смена не открыта</h2>';
+        errHtml += '<p class="text-muted" style="margin-bottom:24px;">';
+        errHtml += 'Для оформления продаж сначала откройте смену.</p>';
+        errHtml += '<a href="/warehouse/shift" class="btn btn-primary">';
+        errHtml += 'Открыть смену</a>';
         errHtml += '</div></body></html>';
         return res.send(errHtml);
       }
@@ -2357,52 +2451,47 @@ function setupWarehouse(app, bot, s3ctx) {
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; overflow-x: hidden; width: 100%; }';
+      html += 'body { padding: 0 16px 80px 16px; }';
       
-      // Правка №12: Высокий z-index для хедера и бургера
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; ';
-      html += 'position: sticky; top: 0; background: #F5F8F8; ';
-      html += 'z-index: 1000; padding: 10px 0; }';
-      
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.search-wrapper { position: relative; margin-bottom: 15px; }';
-      html += '.search { width: 100%; padding: 15px; border: none; ';
-      html += 'border-radius: 12px; box-sizing: border-box; ';
-      html += 'font-family: inherit; font-size: 16px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.clear-search { position: absolute; right: 15px; ';
-      html += 'top: 50%; transform: translateY(-50%); font-size: 20px; ';
+      html += '.search-wrapper { position: relative; margin-bottom: 16px; }';
+      html += '.search { width: 100%; padding: 14px 16px 14px 44px; ';
+      html += 'border: 1px solid var(--f-border); border-radius: var(--r-md); ';
+      html += 'box-sizing: border-box; font-family: inherit; font-size: 16px; ';
+      html += 'box-shadow: var(--sh-1); }';
+      html += '.search-icon { position: absolute; left: 14px; top: 50%; ';
+      html += 'transform: translateY(-50%); width: 20px; height: 20px; ';
+      html += 'color: var(--f-text-2); pointer-events: none; }';
+      html += '.clear-search { position: absolute; right: 14px; ';
+      html += 'top: 50%; transform: translateY(-50%); font-size: 18px; ';
       html += 'color: #aaa; cursor: pointer; display: none; ';
       html += 'background: none; border: none; padding: 0; }';
+      
       html += '.h-scroll { display: flex; overflow-x: auto; gap: 8px; ';
-      html += 'margin-bottom: 15px; padding-bottom: 5px; }';
-      html += '.cat-btn { padding: 8px 15px; border: none; ';
+      html += 'margin-bottom: 16px; padding-bottom: 4px; }';
+      html += '.h-scroll::-webkit-scrollbar { display: none; }';
+      html += '.cat-btn { padding: 8px 16px; border: 1px solid var(--f-border); ';
       html += 'border-radius: 20px; background: #fff; cursor: pointer; ';
       html += 'font-size: 14px; white-space: nowrap; font-family: inherit; ';
-      html += 'color: ' + brandColor + '; font-weight: 600; ';
-      html += 'box-shadow: 0 2px 8px rgba(15,61,62,0.05); }';
-      html += '.cat-btn.active { background: ' + brandColor + '; color: #fff; }';
+      html += 'color: var(--f-text); font-weight: 600; }';
+      html += '.cat-btn.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); }';
       html += '.cat-btn.bouquets-btn { background: #FFF3E0; ';
-      html += 'color: ' + accentColor + '; font-weight: 700; }';
-      html += '.cat-btn.bouquets-btn.active { background: ';
-      html += accentColor + '; color: #fff; }';
+      html += 'color: var(--f-accent); font-weight: 700; border: none; }';
+      html += '.cat-btn.bouquets-btn.active { background: var(--f-accent); ';
+      html += 'color: #fff; }';
       
-      html += '.grid-controls { display: flex; gap: 5px; ';
-      html += 'margin-bottom: 15px; justify-content: flex-end; }';
-      html += '.grid-btn { background: #fff; border: 1px solid #ddd; ';
-      html += 'border-radius: 8px; padding: 4px 8px; font-size: 12px; ';
-      html += 'font-weight: 600; color: #666; cursor: pointer; }';
-      html += '.grid-btn.active { background: ' + brandColor + '; ';
-      html += 'color: #fff; border-color: ' + brandColor + '; }';
+      html += '.grid-controls { display: flex; gap: 6px; ';
+      html += 'margin-bottom: 12px; justify-content: flex-end; }';
+      html += '.grid-btn { background: #fff; border: 1px solid var(--f-border); ';
+      html += 'border-radius: 6px; padding: 4px 8px; font-size: 12px; ';
+      html += 'font-weight: 600; color: var(--f-text-2); cursor: pointer; }';
+      html += '.grid-btn.active { background: var(--f-brand); ';
+      html += 'color: #fff; border-color: var(--f-brand); }';
 
       html += '.grid { display: grid; gap: 8px; width: 100%; }';
       html += '.grid-3 { grid-template-columns: repeat(3, 1fr); }';
@@ -2412,51 +2501,50 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += '.card { background: #fff; padding: 8px; border-radius: 12px; ';
       html += 'text-align: center; cursor: pointer; position: relative; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.card img { width: 100%; height: 60px; object-fit: cover; ';
-      html += 'border-radius: 8px; margin-bottom: 4px; }';
-      html += '.card .ph { height: 60px; border-radius: 8px; ';
+      html += 'box-shadow: var(--sh-1); display: flex; flex-direction: column; }';
+      html += '.card img { width: 100%; aspect-ratio: 1; object-fit: cover; ';
+      html += 'border-radius: 8px; margin-bottom: 6px; }';
+      html += '.card .ph { width: 100%; aspect-ratio: 1; border-radius: 8px; ';
       html += 'background: #F0F4F4; display: flex; align-items: center; ';
-      html += 'justify-content: center; margin-bottom: 4px; }';
-      html += '.card .ph svg { width: 24px; height: 24px; }';
-      html += '.card .name { font-size: 11px; font-weight: 600; ';
-      html += 'margin-bottom: 2px; line-height: 1.2; word-break: break-word; }';
-      html += '.card .stock { font-size: 10px; font-weight: 800; ';
-      html += 'color: ' + successColor + '; }';
+      html += 'justify-content: center; margin-bottom: 6px; }';
+      html += '.card .ph svg { width: 24px; height: 24px; color: #A0B4B4; }';
+      html += '.card .name { font-size: 12px; font-weight: 600; ';
+      html += 'margin-bottom: 4px; line-height: 1.2; word-break: break-word; ';
+      html += 'display: -webkit-box; -webkit-line-clamp: 2; ';
+      html += '-webkit-box-orient: vertical; overflow: hidden; }';
+      html += '.card .stock { font-size: 11px; font-weight: 800; margin-top: auto; }';
+      html += '.card .stock.green { color: var(--f-success); }';
+      html += '.card .stock.red { color: var(--f-danger); }';
       html += '.card.bouquet { background: #FFF8F3; ';
-      html += 'border: 2px solid ' + accentColor + '; }';
+      html += 'border: 1px solid var(--f-accent); }';
       html += '.card .bouquet-tag { font-size: 10px; ';
-      html += 'color: ' + accentColor + '; font-weight: 800; }';
-      html += '.card.pinned { border: 2px solid #E67E22; }';
-      html += '.pin-badge { position: absolute; top: -5px; right: -5px; ';
-      html += 'background: #E67E22; color: #fff; font-size: 12px; ';
-      html += 'width: 24px; height: 24px; border-radius: 50%; ';
-      html += 'display: flex; align-items: center; justify-content: center; ';
-      html += 'box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10; }';
+      html += 'color: var(--f-accent); font-weight: 800; margin-top: auto; }';
+      html += '.card.pinned { border: 2px solid var(--f-accent); }';
+      html += '.pin-badge { position: absolute; top: 4px; right: 4px; ';
+      html += 'background: var(--f-accent); color: #fff; font-size: 10px; ';
+      html += 'width: 20px; height: 20px; border-radius: 50%; ';
+      html += 'display: flex; align-items: center; justify-content: center; }';
 
-      html += '.floating-cart { position: fixed; bottom: 20px; left: 15px; ';
-      html += 'right: 15px; background: ' + brandColor + '; color: #fff; ';
-      html += 'padding: 15px 20px; border-radius: 16px; display: none; ';
+      html += '.floating-cart { position: fixed; bottom: 20px; left: 16px; ';
+      html += 'right: 16px; background: var(--f-brand); color: #fff; ';
+      html += 'padding: 16px 20px; border-radius: 16px; display: none; ';
       html += 'justify-content: space-between; align-items: center; ';
-      html += 'box-shadow: 0 8px 25px rgba(15,61,62,0.3); z-index: 900; ';
-      html += 'cursor: pointer; font-weight: 800; font-size: 16px; ';
-      html += 'transition: background 0.3s, transform 0.3s; user-select: none; }';
+      html += 'box-shadow: var(--sh-3); z-index: 900; cursor: pointer; ';
+      html += 'font-weight: 800; font-size: 16px; transition: 0.3s; }';
       html += '.floating-cart.show { display: flex; }';
-      html += '.floating-cart.swiping { background: ' + dangerColor + '; }';
 
       html += '.sheet-overlay { position: fixed; top: 0; left: 0; ';
       html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.5); ';
-      html += 'display: none; z-index: 2000; }';
+      html += 'display: none; z-index: 2000; backdrop-filter: blur(2px); }';
       html += '.sheet-overlay.open { display: block; }';
       
       html += '.bottom-sheet { position: fixed; bottom: -100%; left: 0; ';
-      html += 'width: 100%; height: 92vh; background: #fafaf8; ';
+      html += 'width: 100%; height: 90vh; background: var(--f-bg); ';
       html += 'border-radius: 24px 24px 0 0; transition: bottom 0.3s ease; ';
       html += 'z-index: 2001; display: flex; flex-direction: column; }';
       html += '.bottom-sheet.open { bottom: 0; }';
-      html += '.sheet-header { padding: 10px 15px; display: flex; ';
-      html += 'justify-content: space-between; align-items: center; ';
-      html += 'flex-shrink: 0; }';
+      html += '.sheet-header { padding: 12px 16px; display: flex; ';
+      html += 'justify-content: space-between; align-items: center; }';
       html += '.sheet-handle { width: 40px; height: 5px; background: #ccc; ';
       html += 'border-radius: 5px; margin: 0 auto; }';
       html += '.close-sheet { background: none; border: none; font-size: 24px; ';
@@ -2464,73 +2552,73 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '.sheet-body { display: flex; flex-direction: row; flex: 1; ';
       html += 'overflow: hidden; }';
-      html += '.sheet-content { flex: 1.2; padding: 0 10px; ';
-      html += 'overflow-y: auto; border-right: 1px solid #eee; }';
-      html += '.calc-panel { flex: 1; padding: 10px; overflow-y: auto; ';
-      html += 'background: #fafaf8; min-width: 170px; }';
+      html += '.sheet-content { flex: 1.2; padding: 0 16px; ';
+      html += 'overflow-y: auto; border-right: 1px solid var(--f-border); }';
+      html += '.calc-panel { flex: 1; padding: 16px; overflow-y: auto; ';
+      html += 'background: var(--f-surface); min-width: 180px; }';
 
-      html += '.b-row { display: grid; grid-template-columns: 1fr 115px 20px; ';
-      html += 'gap: 4px; align-items: center; margin-bottom: 6px; ';
-      html += 'font-size: 12px; background: #fff; padding: 8px; ';
-      html += 'border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }';
+      html += '.b-row { display: grid; grid-template-columns: 1fr 110px 24px; ';
+      html += 'gap: 8px; align-items: center; margin-bottom: 8px; ';
+      html += 'font-size: 13px; background: #fff; padding: 10px; ';
+      html += 'border-radius: 12px; box-shadow: var(--sh-1); }';
       html += '.qty-btn { background: #F0F4F4; border: none; width: 28px; ';
       html += 'height: 28px; border-radius: 8px; font-weight: bold; ';
-      html += 'font-size: 14px; color: ' + brandColor + '; display: flex; ';
+      html += 'font-size: 14px; color: var(--f-text); display: flex; ';
       html += 'align-items: center; justify-content: center; }';
 
-      html += '.pay-input-row { display: flex; gap: 5px; margin-top: 10px; }';
+      html += '.pay-input-row { display: flex; gap: 6px; margin-top: 12px; }';
       html += '.pay-input-row input { font-size: 18px; font-weight: 800; ';
-      html += 'text-align: right; flex: 1; padding: 10px; ';
-      html += 'border: 1px solid #ddd; border-radius: 10px; ';
-      html += 'box-sizing: border-box; width: 100%; background: #fff; }';
-      html += '.pay-input-row button { background: ' + brandColor + '; ';
+      html += 'text-align: right; flex: 1; padding: 12px; margin: 0; ';
+      html += 'border: 1px solid var(--f-border); border-radius: 10px; }';
+      html += '.pay-input-row button { background: var(--f-brand); ';
       html += 'color: #fff; border: none; border-radius: 10px; ';
-      html += 'padding: 0 10px; font-size: 14px; font-weight: bold; ';
-      html += 'white-space: nowrap; flex-shrink: 0; }';
+      html += 'padding: 0 16px; font-size: 14px; font-weight: bold; }';
 
       html += '.numpad { display: grid; grid-template-columns: 1fr 1fr 1fr; ';
-      html += 'gap: 4px; margin-top: 5px; }';
-      html += '.numpad button { padding: 8px; font-size: 14px; border: none; ';
-      html += 'background: #fff; border-radius: 8px; font-family: inherit; ';
-      html += 'font-weight: 600; color: ' + brandColor + '; ';
-      html += 'box-shadow: 0 2px 4px rgba(0,0,0,0.05); }';
+      html += 'gap: 6px; margin-top: 12px; }';
+      html += '.numpad button { padding: 12px; font-size: 18px; border: none; ';
+      html += 'background: #fff; border-radius: 10px; font-family: inherit; ';
+      html += 'font-weight: 600; color: var(--f-text); box-shadow: var(--sh-1); }';
+      html += '.numpad button:active { background: #eee; }';
 
-      html += '.btn-submit { width: 100%; padding: 12px; font-size: 14px; ';
+      html += '.btn-submit { width: 100%; padding: 16px; font-size: 16px; ';
       html += 'font-weight: 800; color: #fff; background: #ccc; border: none; ';
-      html += 'border-radius: 12px; margin-top: 10px; }';
-      html += '.btn-submit.ready { background: ' + successColor + '; }';
+      html += 'border-radius: 12px; margin-top: 16px; }';
+      html += '.btn-submit.ready { background: var(--f-success); }';
       
-      html += '.total-inp { font-size: 18px; font-weight: 800; width: 100%; ';
-      html += 'border: none; background: #fff; padding: 10px; ';
-      html += 'border-radius: 10px; box-sizing: border-box; ';
-      html += 'box-shadow: 0 2px 8px rgba(0,0,0,0.05); }';
+      html += '.total-inp { font-size: 20px; font-weight: 800; width: 100%; ';
+      html += 'border: 1px solid var(--f-border); background: #fff; padding: 12px; ';
+      html += 'border-radius: 10px; box-sizing: border-box; text-align: right; }';
       
-      html += '.swipe-hint { text-align: center; font-size: 10px; ';
-      html += 'color: #aaa; margin-top: 5px; margin-bottom: 10px; ';
-      html += 'font-style: italic; }';
+      html += '.pay-btn { padding: 10px 4px; border: 1px solid var(--f-border); ';
+      html += 'border-radius: 10px; background: #fff; cursor: pointer; ';
+      html += 'flex: 1; display: flex; align-items: center; ';
+      html += 'justify-content: center; gap: 4px; font-weight: 600; ';
+      html += 'font-size: 13px; transition: 0.2s; color: var(--f-text-2); }';
+      html += '.pay-btn.active { background: #E0F2F1; ';
+      html += 'border-color: var(--f-brand); color: var(--f-brand); font-weight: 800; }';
       html += '</style></head><body>';
 
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('sale') + 'Касса</h2>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Касса</h2>';
       html += '</div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="search-wrapper">';
+      html += '<div class="search-icon">' + getIconSvg('search') + '</div>';
       html += '<input type="text" class="search" id="search" ';
-      html += 'placeholder="🔍 Поиск..." oninput="onSearchInput()" ';
-      html += 'autocomplete="off">';
+      html += 'placeholder="Поиск..." oninput="onSearchInput()" autocomplete="off">';
       html += '<button class="clear-search" id="clearSearch" ';
       html += 'onclick="clearSearchText()">✕</button>';
       html += '</div>';
 
       html += '<div class="grid-controls">';
-      html += '<button class="grid-btn active" id="btn-grid-3" ';
+      html += '<button class="grid-btn" id="btn-grid-3" ';
       html += 'onclick="setGridCols(3)">3</button>';
-      html += '<button class="grid-btn" id="btn-grid-4" ';
+      html += '<button class="grid-btn active" id="btn-grid-4" ';
       html += 'onclick="setGridCols(4)">4</button>';
       html += '<button class="grid-btn" id="btn-grid-5" ';
       html += 'onclick="setGridCols(5)">5</button>';
@@ -2542,10 +2630,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<button class="cat-btn active" id="cat-0" ';
       html += 'onclick="setCat(0)">Все</button>';
       html += '<button class="cat-btn bouquets-btn" id="cat-bouquets" ';
-      html += 'onclick="toggleBouquetsMode()">🎁 Букеты</button>';
+      html += 'onclick="toggleBouquetsMode()">Букеты</button>';
       html += '</div>';
 
-      html += '<div class="grid grid-3" id="itemsGrid"></div>';
+      html += '<div class="grid grid-4" id="itemsGrid"></div>';
 
       html += '<div class="floating-cart" id="floatingCart">';
       html += '<span id="fcCount">0 товаров</span>';
@@ -2555,7 +2643,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<div class="sheet-overlay" id="sheetOverlay" ';
       html += 'onclick="closeSheet()"></div>';
       html += '<div class="bottom-sheet" id="bottomSheet">';
-
       html += '<div class="sheet-header">';
       html += '<div class="sheet-handle"></div>';
       html += '<button class="close-sheet" onclick="closeSheet()">✕</button>';
@@ -2563,28 +2650,25 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += '<div class="sheet-body">';
       html += '<div class="sheet-content">';
-      html += '<div class="swipe-hint" id="swipeHint">';
-      html += '← Смахните влево, чтобы очистить</div>';
       html += '<div id="bList" class="swipeable-cart"></div>';
       html += '</div>';
 
       html += '<div class="calc-panel">';
-      html += '<div style="margin-bottom:10px;">';
-      html += '<label style="font-size:11px; font-weight:600; color:#666;">';
-      html += 'Сумма чека</label>';
+      html += '<div style="margin-bottom:12px;">';
+      html += '<label style="font-size:12px; font-weight:700; ';
+      html += 'color:var(--f-text-2);">Сумма чека</label>';
       html += '<input type="text" id="totalPrice" class="total-inp" ';
       html += 'value="0" inputmode="none" readonly ';
       html += 'onclick="setActiveInput(\'totalPrice\')">';
       html += '</div>';
 
-      html += '<div style="display:flex; gap:5px; margin-bottom:10px; ';
-      html += 'width:100%; box-sizing:border-box;">';
-      html += '<div class="pay-btn" id="btn-cash" ';
-      html += 'onclick="setPay(\'cash\')">' + getIconSvg('cash') + 'Нал</div>';
-      html += '<div class="pay-btn" id="btn-card" ';
-      html += 'onclick="setPay(\'card\')">' + getIconSvg('card') + 'Карта</div>';
-      html += '<div class="pay-btn" id="btn-qr" ';
-      html += 'onclick="setPay(\'qr\')">' + getIconSvg('qr') + 'QR</div>';
+      html += '<div style="display:flex; gap:6px; margin-bottom:12px;">';
+      html += '<div class="pay-btn" id="btn-cash" onclick="setPay(\'cash\')">';
+      html += getIconSvg('cash') + 'Нал</div>';
+      html += '<div class="pay-btn" id="btn-card" onclick="setPay(\'card\')">';
+      html += getIconSvg('card') + 'Карта</div>';
+      html += '<div class="pay-btn" id="btn-qr" onclick="setPay(\'qr\')">';
+      html += getIconSvg('qr') + 'QR</div>';
       html += '</div>';
 
       html += '<div class="pay-input-row">';
@@ -2609,90 +2693,93 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<button onclick="num(\'X\')">⌫</button>';
       html += '</div>';
 
-      html += '<div class="pay-list" id="payList" style="font-size:12px; ';
-      html += 'margin-top:10px;"></div>';
-      html += '<div style="text-align:center; margin-top:10px; ';
+      html += '<div class="pay-list" id="payList" style="font-size:13px; ';
+      html += 'margin-top:12px;"></div>';
+      html += '<div style="text-align:center; margin-top:12px; ';
       html += 'font-size:14px; font-weight:800;" id="remainTxt"></div>';
 
       html += '<button class="btn-submit" id="btnSubmit" ';
       html += 'onclick="openPrecheck()">Принять</button>';
-      html += '</div>';
-      html += '</div>';
-      html += '</div>';
+      html += '</div></div></div>';
 
       html += '<div class="sheet-overlay" id="precheckModal" ';
-      html += 'style="z-index:2000; align-items:center; ';
-      html += 'justify-content:center;">';
-      html += '<div style="background:#fff; padding:20px; ';
+      html += 'style="z-index:3000; align-items:center; justify-content:center;">';
+      html += '<div style="background:#fff; padding:24px; ';
       html += 'border-radius:24px; width:90%; max-width:400px; ';
-      html += 'max-height:80vh; display:flex; flex-direction:column;">';
-      html += '<h2 style="margin:0 0 15px 0; text-align:center;">';
-      html += 'Проверьте чек</h2>';
+      html += 'max-height:80vh; display:flex; flex-direction:column; ';
+      html += 'box-shadow:var(--sh-3);">';
+      html += '<h2 style="margin:0 0 16px 0; text-align:center; ';
+      html += 'font-size:20px; font-weight:800;">Проверьте чек</h2>';
       html += '<div id="precheckList" style="overflow-y:auto; flex:1; ';
-      html += 'margin-bottom:15px; border-top:1px solid #eee; ';
-      html += 'border-bottom:1px solid #eee; padding:10px 0;"></div>';
+      html += 'margin-bottom:16px; border-top:1px solid #eee; ';
+      html += 'border-bottom:1px solid #eee; padding:12px 0;"></div>';
+      
       html += '<div id="precheckChangeBlock" style="display:none; ';
-      html += 'margin-bottom:15px; text-align:center;">';
-      html += '<div style="font-size:14px; color:#888; ';
-      html += 'margin-bottom:5px;">Сдача:</div>';
-      html += '<div style="font-size:24px; font-weight:800; color:';
-      html += brandColor + ';" id="precheckChangeAmt">0 ₽</div>';
-      html += '<div style="font-size:12px; color:#888; ';
-      html += 'margin-top:10px; margin-bottom:5px;">Куда выдать?</div>';
-      html += '<div style="display:flex; gap:5px;">';
+      html += 'margin-bottom:16px; text-align:center;">';
+      html += '<div style="font-size:14px; color:#888; margin-bottom:4px;">';
+      html += 'Сдача:</div>';
+      html += '<div style="font-size:24px; font-weight:800; ';
+      html += 'color:var(--f-brand);" id="precheckChangeAmt">0 ₽</div>';
+      html += '<div style="font-size:12px; color:#888; margin-top:10px; ';
+      html += 'margin-bottom:6px;">Куда выдать?</div>';
+      html += '<div style="display:flex; gap:6px;">';
       html += '<div class="pay-btn active" id="pcm-cash" ';
-      html += 'onclick="setPrecheckChangeMethod(\'cash\')">' + 
-              getIconSvg('cash') + 'Нал</div>';
+      html += 'onclick="setPrecheckChangeMethod(\'cash\')">Нал</div>';
       html += '<div class="pay-btn" id="pcm-card" ';
-      html += 'onclick="setPrecheckChangeMethod(\'card\')">' + 
-              getIconSvg('card') + 'Карта</div>';
+      html += 'onclick="setPrecheckChangeMethod(\'card\')">Карта</div>';
       html += '<div class="pay-btn" id="pcm-qr" ';
-      html += 'onclick="setPrecheckChangeMethod(\'qr\')">' + 
-              getIconSvg('qr') + 'QR</div>';
+      html += 'onclick="setPrecheckChangeMethod(\'qr\')">QR</div>';
       html += '</div></div>';
+      
       html += '<div style="display:flex; justify-content:space-between; ';
-      html += 'font-weight:800; font-size:18px; margin-bottom:15px;">';
+      html += 'font-weight:800; font-size:18px; margin-bottom:16px;">';
       html += '<span>Итого:</span><span id="precheckTotal">0 ₽</span></div>';
-      html += '<div style="display:flex; gap:10px;">';
-      html += '<button onclick="closePrecheck()" style="flex:1; padding:15px; ';
+      html += '<div style="display:flex; gap:12px;">';
+      html += '<button onclick="closePrecheck()" style="flex:1; padding:14px; ';
       html += 'border:none; border-radius:12px; font-weight:800; font-size:16px; ';
-      html += 'background:#eee; color:#333;">Вернуться</button>';
-      html += '<button onclick="saveSale()" style="flex:2; padding:15px; ';
+      html += 'background:#F0F4F4; color:var(--f-text);">Вернуться</button>';
+      html += '<button onclick="saveSale()" style="flex:2; padding:14px; ';
       html += 'border:none; border-radius:12px; font-weight:800; font-size:16px; ';
-      html += 'background:' + successColor + '; color:#fff;">Подтвердить</button>';
+      html += 'background:var(--f-success); color:#fff;">Подтвердить</button>';
       html += '</div></div></div>';
 
       html += '<div class="sheet-overlay" id="successModal" ';
-      html += 'style="z-index:2000; align-items:center; ';
-      html += 'justify-content:center;">';
-      html += '<div style="background:#fff; padding:30px; ';
-      html += 'border-radius:24px; width:85%; max-width:350px; ';
-      html += 'text-align:center;">';
-      html += '<h1 style="color:' + successColor + '; font-size:24px; ';
-      html += 'margin:0 0 10px 0;">🎉 Готово!</h1>';
-      html += '<div style="font-size:16px; margin-bottom:10px;">';
-      html += 'Продажа оформлена</div>';
+      html += 'style="z-index:3000; align-items:center; justify-content:center;">';
+      html += '<div style="background:#fff; padding:32px 24px; ';
+      html += 'border-radius:24px; width:85%; max-width:340px; ';
+      html += 'text-align:center; box-shadow:var(--sh-3);">';
+      html += '<div style="width:64px; height:64px; background:#E8F5E9; ';
+      html += 'color:var(--f-success); border-radius:50%; margin:0 auto 16px; ';
+      html += 'display:flex; align-items:center; justify-content:center;">';
+      html += '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" ';
+      html += 'stroke="currentColor" stroke-width="3" stroke-linecap="round" ';
+      html += 'stroke-linejoin="round"><polyline points="20 6 9 17 4 12">';
+      html += '</polyline></svg></div>';
+      html += '<h1 style="color:var(--f-text); font-size:24px; ';
+      html += 'margin:0 0 8px 0;">Готово!</h1>';
+      html += '<div style="font-size:16px; margin-bottom:16px; ';
+      html += 'color:var(--f-text-2);">Продажа оформлена</div>';
       html += '<div id="changeBlock" style="display:none;">';
-      html += '<div style="font-size:14px; color:#888; ';
-      html += 'margin-top:15px;">СДАЧА:</div>';
-      html += '<div style="font-size:36px; font-weight:800; color:';
-      html += brandColor + ';" id="changeAmount">0</div></div>';
+      html += '<div style="font-size:14px; color:#888; margin-top:16px;">';
+      html += 'СДАЧА:</div>';
+      html += '<div style="font-size:36px; font-weight:800; ';
+      html += 'color:var(--f-brand);" id="changeAmount">0</div></div>';
       html += '<button onclick="closeSuccess()" style="width:100%; ';
-      html += 'padding:15px; border:none; border-radius:12px; ';
+      html += 'padding:14px; border:none; border-radius:12px; ';
       html += 'font-size:16px; font-weight:800; color:#fff; ';
-      html += 'background:' + successColor + '; margin-top:15px;">';
+      html += 'background:var(--f-success); margin-top:20px;">';
       html += 'Готово</button></div></div>';
+
       html += '<script>';
-      
       html += 'var allItems = []; var currentCat = 0; ';
       html += 'var bouquetsMode = false; var bouquetsList = [];';
       html += 'var cart = []; var payMethod = ""; var payments = []; ';
-      html += 'var precheckChangeMethod = "cash"; var gridCols = 3; ';
+      html += 'var precheckChangeMethod = "cash"; var gridCols = 4; ';
       html += 'var currentIdempotencyKey = null;';
       html += 'var activeInputId = "payAmount"; var isFirstInput = true; ';
       html += 'var isPayAmountEdited = false; var isTotalPriceEdited = false;';
       
-      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4">';
+      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="currentColor">';
       html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
       html += 'L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3';
       html += 'C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5';
@@ -2795,7 +2882,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      while(g.firstChild) g.removeChild(g.firstChild);';
       html += '      var er = document.createElement("div"); ';
       html += '      er.style = "grid-column:1/-1; text-align:center; ';
-      html += '      padding:20px; color:#e74c3c;"; er.innerText = "Ошибка";';
+      html += '      padding:20px; color:red;"; er.innerText = "Ошибка";';
       html += '      g.appendChild(er); return; }';
       html += '    bouquetsList = d.bouquets; renderBouquets(bouquetsList);';
       html += '  }).catch(function() {});';
@@ -2814,7 +2901,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  list.forEach(function(b) {';
       html += '    var d = document.createElement("div"); ';
       html += '    d.className = "card bouquet";';
-      
       html += '    if (b.photo_url) { ';
       html += '      var img = document.createElement("img"); ';
       html += '      img.src = b.photo_url; d.appendChild(img); } ';
@@ -2822,18 +2908,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var ph = document.createElement("div"); ';
       html += '      ph.className = "ph"; ph.innerHTML = svgPh; ';
       html += '      d.appendChild(ph); }';
-      
       html += '    var nm = document.createElement("div"); ';
       html += '    nm.className = "name"; nm.textContent = b.name; ';
       html += '    d.appendChild(nm);';
-      
       html += '    var tag = document.createElement("div"); ';
       html += '    tag.className = "bouquet-tag";';
       html += '    var ok = b.all_in_stock !== false;';
       html += '    tag.textContent = ok ? "✓ в наличии" : "⚠ нет ингр.";';
-      html += '    if (!ok) tag.style.color = "#e74c3c";';
+      html += '    if (!ok) tag.style.color = "red";';
       html += '    d.appendChild(tag);';
-      
       html += '    d.onclick = function() { addBouquetToCart(b); };';
       html += '    g.appendChild(d);';
       html += '  });';
@@ -2893,13 +2976,16 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  items.forEach(function(item) {';
       html += '    var d = document.createElement("div");';
       html += '    d.className = item.is_pinned ? "card pinned" : "card";';
-      
       html += '    if (item.is_pinned) {';
       html += '      var pin = document.createElement("div"); ';
-      html += '      pin.className = "pin-badge"; pin.textContent = "🔥"; ';
+      html += '      pin.className = "pin-badge"; ';
+      html += '      pin.innerHTML = \'<svg viewBox="0 0 24 24" fill="none" \';';
+      html += '      + \'stroke="currentColor" stroke-width="2" width="12" \';';
+      html += '      + \'height="12"><path d="M12 2L15.09 8.26L22 9.27L17 \';';
+      html += '      + \'14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 \';';
+      html += '      + \'9.27L8.91 8.26L12 2Z"></path></svg>\';';
       html += '      d.appendChild(pin);';
       html += '    }';
-
       html += '    if (item.photo_url) { ';
       html += '      var img = document.createElement("img"); ';
       html += '      img.src = item.photo_url; d.appendChild(img); } ';
@@ -2907,19 +2993,16 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var ph = document.createElement("div"); ';
       html += '      ph.className = "ph"; ph.innerHTML = svgPh; ';
       html += '      d.appendChild(ph); }';
-      
       html += '    var nm = document.createElement("div"); ';
       html += '    nm.className = "name"; nm.textContent = item.name; ';
       html += '    d.appendChild(nm);';
-      
       html += '    var st = document.createElement("div"); ';
-      html += '    st.className = "stock";';
-      html += '    st.textContent = "Ост: " + fmtNum(item.current_stock) ';
+      html += '    var stockVal = parseFloat(item.current_stock) || 0;';
+      html += '    st.className = "stock " + (stockVal > 0 ? "green" : "red");';
+      html += '    st.textContent = "Ост: " + fmtNum(stockVal) ';
       html += '    + " " + (item.unit || "шт");';
       html += '    d.appendChild(st);';
-      
       html += '    d.onclick = function() { addToCart(item); };';
-
       html += '    var pressTimer;';
       html += '    d.addEventListener("touchstart", function() {';
       html += '      pressTimer = setTimeout(function() { ';
@@ -2929,7 +3012,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      clearTimeout(pressTimer); });';
       html += '    d.addEventListener("touchmove", function() { ';
       html += '      clearTimeout(pressTimer); });';
-
       html += '    g.appendChild(d);';
       html += '  });';
       html += '}';
@@ -2943,7 +3025,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  .then(function(d) {';
       html += '    if (d.ok) {';
       html += '      item.is_pinned = newVal;';
-      html += '      showAlert("Готово", newVal ? "Закреплено 🔥" : ';
+      html += '      showAlert("Готово", newVal ? "Закреплено" : ';
       html += '      "Откреплено", true);';
       html += '      allItems.sort(function(a,b){ ';
       html += '        if(a.is_pinned && !b.is_pinned) return -1; ';
@@ -2981,7 +3063,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var cartList = document.getElementById("bList");';
       
       html += 'cartList.addEventListener("touchstart", function(e) {';
-      // Правка №11: Блокируем свайп, если есть оплата
       html += '  if (payments.length > 0) return;';
       html += '  startX = e.touches[0].clientX; isSwiping = true;';
       html += '  cartList.style.transition = "none";';
@@ -3052,7 +3133,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  if (cart.length === 0) { ';
       html += '    fc.classList.remove("show"); ';
       html += '    while(b.firstChild) b.removeChild(b.firstChild); ';
-      // Правка №11: Автоматический сброс оплат при пустой корзине
       html += '    payments = []; isPayAmountEdited = false; ';
       html += '    isTotalPriceEdited = false;';
       html += '    document.getElementById("totalPrice").value = "0";';
@@ -3070,7 +3150,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var div = document.createElement("div"); ';
       html += '    div.className = "b-row";';
       html += '    var name = document.createElement("div"); ';
-      html += '    name.textContent = item.name;';
+      html += '    name.textContent = item.name; name.style.fontWeight = "600";';
       html += '    var ctrl = document.createElement("div"); ';
       html += '    ctrl.style = "display:flex; justify-content:space-between; ';
       html += '    align-items:center; gap:4px;";';
@@ -3083,6 +3163,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    vl.type = "number"; vl.className = "qty-input"; ';
       html += '    vl.value = item.qty; vl.readOnly = true; ';
       html += '    vl.id = "qty_" + idx;';
+      html += '    vl.style = "width:40px; height:28px; text-align:center; ';
+      html += '    border:none; background:#F0F4F4; border-radius:6px; ';
+      html += '    font-weight:bold; padding:0; margin:0;"';
       html += '    vl.onclick = function() { setActiveInput(this.id); };';
       
       html += '    var pl = document.createElement("button"); ';
@@ -3094,8 +3177,8 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '    var del = document.createElement("span"); ';
       html += '    del.innerText = "✕";';
-      html += '    del.style = "color:red; cursor:pointer; font-size:20px; ';
-      html += '    text-align:center;";';
+      html += '    del.style = "color:var(--f-danger); cursor:pointer; ';
+      html += '    font-size:18px; text-align:center;";';
       
       html += '    del.onclick = function() { ';
       html += '      showConfirm("Удаление", "Убрать " + item.name + "?", ';
@@ -3169,7 +3252,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'function num(v) {';
       html += '  var inp = document.getElementById(activeInputId);';
       html += '  if (!inp) return;';
-      
       html += '  if (v === "C") { inp.value = ""; isFirstInput = false; }';
       html += '  else if (v === "X") { ';
       html += '    inp.value = inp.value.slice(0, -1); ';
@@ -3178,12 +3260,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    if (isFirstInput) { inp.value = ""; isFirstInput = false; }';
       html += '    inp.value += v;';
       html += '  }';
-
       html += '  if (activeInputId === "payAmount") { ';
       html += '    isPayAmountEdited = true; ';
       html += '    renderPayments(); }';
       
-      // Правка №9: Умный пересчет при изменении суммы чека
       html += '  if (activeInputId === "totalPrice") { ';
       html += '    isTotalPriceEdited = true; ';
       html += '    var nt = parseFloat(inp.value) || 0; ';
@@ -3210,12 +3290,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  if (!payMethod) { ';
       html += '    showAlert("Внимание", "Выберите способ оплаты", false); ';
       html += '    return; }';
-      
       html += '  var val = parseFloat(';
       html += '  document.getElementById("payAmount").value);';
       html += '  if (!val || val <= 0) { ';
       html += '    showAlert("Внимание", "Введите сумму", false); return; }';
-      
       html += '  payments.push({ method: payMethod, amount: val });';
       html += '  document.getElementById("payAmount").value = "";';
       html += '  isPayAmountEdited = false;';
@@ -3229,18 +3307,16 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var paid = 0; ';
       html += '  var pl = document.getElementById("payList"); ';
       html += '  while(pl.firstChild) pl.removeChild(pl.firstChild);';
-      
       html += '  payments.forEach(function(p, i) {';
       html += '    paid += p.amount;';
       html += '    var mn = p.method === "cash" ? "Нал" : ';
       html += '    (p.method === "card" ? "Карта" : "QR");';
       html += '    var row = document.createElement("div");';
       html += '    row.style = "display:flex; justify-content:space-between; ';
-      html += '    align-items:center; color:' + successColor + '; ';
-      html += '    font-weight:bold; margin-bottom:5px;";';
+      html += '    align-items:center; color:var(--f-success); ';
+      html += '    font-weight:bold; margin-bottom:6px;";';
       html += '    var txt = document.createElement("span"); ';
       html += '    txt.textContent = mn + " " + p.amount + " ₽";';
-      
       html += '    var delBtn = document.createElement("span"); ';
       html += '    delBtn.textContent = " ✕";';
       html += '    delBtn.style = "color:red; cursor:pointer; ';
@@ -3249,34 +3325,30 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      payments.splice(i, 1); ';
       html += '      isPayAmountEdited = false; ';
       html += '      renderBasket(); };';
-      
       html += '    row.appendChild(txt); row.appendChild(delBtn); ';
       html += '    pl.appendChild(row);';
       html += '  });';
-      
       html += '  var typed = parseFloat(';
       html += '  document.getElementById("payAmount").value) || 0;';
       html += '  var remain = total - paid;';
       html += '  var rTxt = document.getElementById("remainTxt"); ';
       html += '  var btn = document.getElementById("btnSubmit");';
-      
       html += '  if (total <= 0) { ';
       html += '    rTxt.innerText = "Укажите сумму"; ';
-      html += '    rTxt.style.color = "' + dangerColor + '"; ';
+      html += '    rTxt.style.color = "var(--f-danger)"; ';
       html += '    btn.classList.remove("ready"); return; }';
-      
       html += '  if (remain > 0) { ';
       html += '    rTxt.innerText = "Осталось: " + remain + " ₽"; ';
-      html += '    rTxt.style.color = "' + dangerColor + '"; ';
+      html += '    rTxt.style.color = "var(--f-danger)"; ';
       html += '    btn.classList.remove("ready"); ';
       html += '  } else if (remain === 0) {';
       html += '    if (payments.length === 0 && typed > 0) { ';
       html += '      rTxt.innerText = "Нажмите Внести"; ';
-      html += '      rTxt.style.color = "' + accentColor + '"; ';
+      html += '      rTxt.style.color = "var(--f-accent)"; ';
       html += '      btn.classList.remove("ready"); ';
       html += '    } else { ';
       html += '      rTxt.innerText = "Оплачено"; ';
-      html += '      rTxt.style.color = "' + successColor + '"; ';
+      html += '      rTxt.style.color = "var(--f-success)"; ';
       html += '      btn.classList.add("ready"); }';
       html += '  } else { ';
       html += '    rTxt.innerText = "Сдача: " + Math.abs(remain) + " ₽"; ';
@@ -3295,17 +3367,14 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  if (!btn.classList.contains("ready")) { ';
       html += '    showAlert("Внимание", "Оплата не завершена", false); ';
       html += '    return; }';
-      
       html += '  if (!currentIdempotencyKey) {';
       html += '    currentIdempotencyKey = Math.random().toString(36)';
       html += '    .substring(2) + Date.now().toString(36);';
       html += '  }';
-      
       html += '  var total = parseFloat(';
       html += '  document.getElementById("totalPrice").value);';
       html += '  var typed = parseFloat(';
       html += '  document.getElementById("payAmount").value) || 0;';
-      
       html += '  if (typed > 0) { ';
       html += '    if (!payMethod) { ';
       html += '      showAlert("Внимание", "Выберите способ", false); ';
@@ -3313,13 +3382,12 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    payments.push({ method: payMethod, amount: typed }); ';
       html += '    document.getElementById("payAmount").value = ""; ';
       html += '    renderPayments(); }';
-      
       html += '  var list = document.getElementById("precheckList"); ';
       html += '  while(list.firstChild) list.removeChild(list.firstChild);';
       html += '  cart.forEach(function(item) {';
       html += '    var row = document.createElement("div");';
       html += '    row.style = "display:flex; justify-content:space-between; ';
-      html += '    margin-bottom:5px; font-size:14px;";';
+      html += '    margin-bottom:6px; font-size:14px;";';
       html += '    var n = document.createElement("span"); ';
       html += '    n.textContent = item.name + " x" + fmtNum(item.qty);';
       html += '    var p = document.createElement("span"); ';
@@ -3327,8 +3395,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    row.appendChild(n); row.appendChild(p); ';
       html += '    list.appendChild(row);';
       html += '  });';
-
-      // Правка №10: Детализация оплат в предчеке
       html += '  if (payments.length > 0) {';
       html += '    var hr = document.createElement("hr");';
       html += '    hr.style = "border:none; border-top:1px dashed #ccc; ';
@@ -3348,11 +3414,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      list.appendChild(pr);';
       html += '    });';
       html += '  }';
-
       html += '  var paid = 0; ';
       html += '  payments.forEach(function(p) { paid += p.amount; });';
       html += '  var change = paid - total;';
-      
       html += '  var changeBlock = document.getElementById(';
       html += '  "precheckChangeBlock");';
       html += '  if (change > 0) { ';
@@ -3362,7 +3426,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    precheckChangeMethod = "cash"; ';
       html += '    setPrecheckChangeMethod("cash"); ';
       html += '  } else { changeBlock.style.display = "none"; }';
-      
       html += '  document.getElementById("precheckTotal")';
       html += '  .innerText = total + " ₽";';
       html += '  document.getElementById("precheckModal")';
@@ -3379,12 +3442,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  btn.disabled = true; btn.innerText = "Отправка...";';
       html += '  var total = parseFloat(';
       html += '  document.getElementById("totalPrice").value);';
-      
       html += '  var paid = 0; ';
       html += '  payments.forEach(function(p) { paid += p.amount; });';
       html += '  var change = paid - total; ';
       html += '  var finalPayments = JSON.parse(JSON.stringify(payments));';
-      
       html += '  if (change > 0) {';
       html += '    var remChange = change;';
       html += '    for (var i = 0; i < finalPayments.length; i++) {';
@@ -3395,16 +3456,13 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        else { remChange -= p.amount; p.amount = 0; }';
       html += '      }';
       html += '    }';
-      
       html += '    if (remChange > 0) {';
       html += '      finalPayments.push({ method: precheckChangeMethod, ';
       html += '      amount: -remChange });';
       html += '    }';
       html += '  }';
-      
       html += '  finalPayments = finalPayments.filter(function(p) { ';
       html += '    return p.amount !== 0; });';
-      
       html += '  var payload = { real_price: total, ';
       html += '  payments: finalPayments, items: cart, ';
       html += '  idempotency_key: currentIdempotencyKey };';
@@ -3442,8 +3500,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 17. API ПРОДАЖИ (С ЗАЩИТОЙ ОТ ДВОЙНОГО ТАПА) ======
+  // ====== 12. API ПРОДАЖИ (ЗАЩИТА ОТ ДВОЙНОГО ТАПА) ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -3456,7 +3513,9 @@ function setupWarehouse(app, bot, s3ctx) {
       const shopId = auth.shopId;
       const chatId = auth.chatId;
 
-      const real_price = parseFloat(String(req.body.real_price).replace(',', '.'));
+      const real_price = parseFloat(
+        String(req.body.real_price).replace(',', '.')
+      );
       if (!real_price || real_price <= 0) {
         client.release(); 
         return res.json({ ok: false, error: 'Сумма > 0' });
@@ -3548,7 +3607,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-  // ====== 18. API БУКЕТОВ ДЛЯ КАССЫ ======
+
+  // ====== 13. API БУКЕТОВ ДЛЯ КАССЫ ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3589,7 +3649,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 19. API РАСКРЫТИЯ БУКЕТА ======
+  // ====== 14. API РАСКРЫТИЯ БУКЕТА ======
   app.post('/api/warehouse/bouquet/expand', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3638,7 +3698,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 20. ЭКРАН СПИСКА НАКЛАДНЫХ ======
+  // ====== 15. ЭКРАН СПИСКА НАКЛАДНЫХ ======
   app.get('/warehouse/receipts', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3647,68 +3707,68 @@ function setupWarehouse(app, bot, s3ctx) {
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.btn-new { display: block; width: 100%; padding: 15px; ';
-      html += 'background: ' + brandColor + '; color: #fff; ';
-      html += 'text-align: center; text-decoration: none; ';
-      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
-      html += 'margin-bottom: 15px; box-sizing: border-box; }';
-      html += '.doc { background: #fff; border-radius: 12px; padding: 15px; ';
-      html += 'margin-bottom: 10px; text-decoration: none; color: ' + 
-              brandColor + '; display: flex; justify-content: space-between; ';
-      html += 'align-items: center; box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
-      html += 'user-select: none; -webkit-user-select: none; ';
-      html += '-webkit-tap-highlight-color: transparent; }';
-      html += '.doc.completed { border-left: 4px solid ' + successColor + '; }';
-      html += '.doc.draft { border-left: 4px solid #E67E22; }';
-      html += '.meta { font-size: 12px; color: #888; margin-top: 4px; }';
-      html += '.meta-edited { font-size: 11px; color: ' + accentColor + '; ';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.btn-new { display: flex; align-items: center; ';
+      html += 'justify-content: center; width: 100%; padding: 16px; ';
+      html += 'background: var(--f-brand); color: #fff; ';
+      html += 'text-decoration: none; border-radius: var(--r-md); ';
+      html += 'font-size: 16px; font-weight: 800; margin-bottom: 20px; ';
+      html += 'box-sizing: border-box; box-shadow: 0 4px 12px rgba(6,76,73,0.2); }';
+      
+      html += '.doc { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 16px; margin-bottom: 12px; text-decoration: none; ';
+      html += 'color: var(--f-text); display: flex; justify-content: space-between; ';
+      html += 'align-items: center; box-shadow: var(--sh-1); ';
+      html += 'border-left: 4px solid transparent; }';
+      html += '.doc.completed { border-left-color: var(--f-success); }';
+      html += '.doc.draft { border-left-color: var(--f-warn); }';
+      
+      html += '.doc-left { display: flex; flex-direction: column; gap: 4px; }';
+      html += '.doc-title { font-weight: 700; font-size: 16px; }';
+      html += '.meta { font-size: 13px; color: var(--f-text-2); }';
+      html += '.meta-edited { font-size: 12px; color: var(--f-accent); ';
       html += 'font-weight: 600; margin-top: 2px; }';
-      html += '.amount { font-weight: 800; font-size: 16px; }';
-      html += '.del-btn { font-size: 20px; color: ' + dangerColor + '; ';
-      html += 'margin-left: 10px; cursor: pointer; }';
+      html += '.amount { font-weight: 800; font-size: 18px; text-align: right; }';
+      
+      html += '.del-btn { font-size: 20px; color: var(--f-danger); ';
+      html += 'margin-left: 12px; cursor: pointer; padding: 8px; }';
       
       html += '#docPreviewModal .custom-modal { ';
-      html += 'text-align: left; padding: 20px; }';
+      html += 'text-align: left; padding: 24px; }';
       html += '.dp-row { display: flex; justify-content: space-between; ';
       html += 'margin-bottom: 8px; font-size: 14px; }';
-      html += '.dp-total { font-weight: 800; font-size: 16px; ';
-      html += 'margin-top: 10px; text-align: right; }';
+      html += '.dp-total { font-weight: 800; font-size: 18px; ';
+      html += 'margin-top: 12px; text-align: right; }';
       html += '</style></head><body>';
 
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('receipt') + 'Приходы</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Приходы</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<a href="/warehouse/receipt/new" class="btn-new">';
       html += '+ Создать накладную</a>';
       html += '<div id="list">Загрузка...</div>';
 
-      // Модалка быстрого просмотра
       html += '<div class="custom-modal-overlay" id="docPreviewModal">';
       html += '<div class="custom-modal">';
-      html += '<h3 id="docPreviewTitle" style="margin:0 0 15px 0; ';
+      html += '<h3 id="docPreviewTitle" style="margin:0 0 16px 0; ';
       html += 'text-align:center;">Загрузка...</h3>';
       html += '<div id="docPreviewList" style="max-height:50vh; ';
       html += 'overflow-y:auto; border-top:1px solid #eee; ';
-      html += 'border-bottom:1px solid #eee; padding:10px 0;"></div>';
+      html += 'border-bottom:1px solid #eee; padding:12px 0;"></div>';
       html += '<div id="docPreviewTotal" class="dp-total"></div>';
-      html += '<button class="btn-cancel" style="margin-top:15px; width:100%;" ';
+      html += '<button class="btn-cancel" style="margin-top:16px; width:100%; ';
+      html += 'padding:14px; border:none; border-radius:12px; font-weight:700; ';
+      html += 'background:#F0F4F4; color:var(--f-text);" ';
       html += 'onclick="closeDocPreview()">Закрыть</button>';
       html += '</div></div>';
 
@@ -3742,40 +3802,48 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    }';
       html += '    var ds = new Date(doc.date).toLocaleString("ru-RU");';
       html += '    var author = doc.author || "Флорист";';
-      html += '    var statusTxt = st === "draft" ? "⚠️ Черновик" : "Накладная";';
-      html += '    var div = document.createElement("div");';
-      html += '    var bTitle = document.createElement("b");';
-      html += '    bTitle.textContent = statusTxt + " №" + doc.id;';
-      html += '    div.appendChild(bTitle);';
+      html += '    var statusTxt = st === "draft" ? "Черновик" : "Накладная";';
+      
+      html += '    var left = document.createElement("div");';
+      html += '    left.className = "doc-left";';
+      html += '    var title = document.createElement("div");';
+      html += '    title.className = "doc-title";';
+      html += '    title.textContent = statusTxt + " №" + doc.id;';
+      html += '    left.appendChild(title);';
       html += '    var meta = document.createElement("div");';
       html += '    meta.className = "meta";';
       html += '    meta.textContent = ds + " · " + author;';
-      html += '    div.appendChild(meta);';
+      html += '    left.appendChild(meta);';
+      
       html += '    if (doc.updated_at && doc.updated_at !== doc.date) {';
-      html += '      var upd = new Date(doc.updated_at).toLocaleString("ru-RU");';
+      html += '      var upd = new Date(doc.updated_at)';
+      html += '      .toLocaleString("ru-RU");';
       html += '      var metaEd = document.createElement("div");';
       html += '      metaEd.className = "meta-edited";';
       html += '      metaEd.textContent = "Изменено: " + upd;';
-      html += '      div.appendChild(metaEd);';
+      html += '      left.appendChild(metaEd);';
       html += '    }';
+      
+      html += '    var right = document.createElement("div");';
+      html += '    right.style.display = "flex";';
+      html += '    right.style.alignItems = "center";';
       html += '    var amt = document.createElement("div");';
       html += '    amt.className = "amount";';
       html += '    amt.textContent = parseFloat(doc.total_sum)';
       html += '.toLocaleString("ru-RU") + " ₽";';
-      html += '    div.appendChild(amt);';
-      html += '    a.appendChild(div);';
+      html += '    right.appendChild(amt);';
+      
       html += '    if (st === "draft") {';
       html += '      var del = document.createElement("span");';
-      html += '      del.innerText = "🗑";';
+      html += '      del.innerHTML = \'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>\';';
       html += '      del.className = "del-btn";';
       html += '      del.onclick = function(e) {';
       html += '        e.preventDefault(); e.stopPropagation();';
       html += '        deleteDraft(doc.id);';
       html += '      };';
-      html += '      a.appendChild(del);';
+      html += '      right.appendChild(del);';
       html += '    }';
-
-      // Логика долгого нажатия (Правки 1 и 2)
+      
       html += '    var pressTimer;';
       html += '    a.addEventListener("touchstart", function() {';
       html += '      pressTimer = setTimeout(function() { ';
@@ -3797,14 +3865,14 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        e.preventDefault(); a.dataset.longpress = "false";';
       html += '      }';
       html += '    });';
-
+      
+      html += '    a.appendChild(left); a.appendChild(right);';
       html += '    b.appendChild(a);';
       html += '  });';
       html += '}).catch(function() {';
       html += '  document.getElementById("list").textContent = "Ошибка";';
       html += '});';
 
-      // Функция открытия модалки
       html += 'function showDocPreview(id) {';
       html += '  var ov = document.getElementById("docPreviewModal");';
       html += '  var title = document.getElementById("docPreviewTitle");';
@@ -3813,7 +3881,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  title.textContent = "Загрузка...";';
       html += '  list.innerHTML = ""; total.textContent = "";';
       html += '  ov.style.display = "flex";';
-      
       html += '  fetch("/api/warehouse/documents/details?id=" + id + ';
       html += '  "&type=receipts")';
       html += '  .then(function(r){return r.json();})';
@@ -3858,8 +3925,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 21. API СПИСКА НАКЛАДНЫХ ======
+  // ====== 16. API СПИСКА НАКЛАДНЫХ ======
   app.get('/api/warehouse/receipts', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3878,7 +3944,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 22. API УДАЛЕНИЯ ЧЕРНОВИКА ======
+  // ====== 17. API УДАЛЕНИЯ ЧЕРНОВИКА ======
   app.post('/api/warehouse/receipt/delete', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3911,7 +3977,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-  // ====== 23. СОЗДАНИЕ ЧЕРНОВИКА ======
+
+  // ====== 18. СОЗДАНИЕ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/new', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3928,7 +3995,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 24. ЭКРАН РЕДАКТИРОВАНИЯ ЧЕРНОВИКА ======
+  // ====== 19. ЭКРАН РЕДАКТИРОВАНИЯ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/edit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -3952,73 +4019,67 @@ function setupWarehouse(app, bot, s3ctx) {
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.card { background: #fff; border-radius: 20px; ';
-      html += 'padding: 20px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += 'label { display: block; font-size: 13px; color: #666; ';
-      html += 'margin-bottom: 5px; font-weight: 600; }';
-      html += '.btn-add { width: 100%; background: ' + brandColor + '; ';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.card { padding: 20px; border-radius: var(--r-lg); ';
+      html += 'margin-bottom: 16px; }';
+      html += 'label { display: block; font-size: 13px; ';
+      html += 'color: var(--f-text-2); margin-bottom: 6px; font-weight: 600; }';
+      
+      html += '.btn-add { width: 100%; background: var(--f-brand); ';
       html += 'color: #fff; border: none; padding: 16px; ';
-      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
-      html += 'margin-bottom: 15px; }';
-      html += '.basket { background: #fff; border-radius: 12px; ';
-      html += 'padding: 15px; margin-bottom: 15px; ';
-      html += 'border: 2px solid ' + brandColor + '; display: none; }';
+      html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
+      html += 'margin-bottom: 20px; box-shadow: 0 4px 12px rgba(6,76,73,0.2); }';
+      
+      html += '.basket { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 16px; margin-bottom: 16px; ';
+      html += 'border: 2px solid var(--f-brand); display: none; }';
       
       html += '.b-row { display: flex; flex-direction: column; ';
-      html += 'margin-bottom: 15px; padding-bottom: 15px; ';
-      html += 'border-bottom: 1px solid #eee; }';
+      html += 'margin-bottom: 16px; padding-bottom: 16px; ';
+      html += 'border-bottom: 1px solid var(--f-border); }';
       html += '.b-top { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 8px; font-weight: 700; }';
       html += '.b-controls { display: grid; grid-template-columns: 1fr 1fr 1fr; ';
       html += 'gap: 8px; align-items: end; }';
-      html += '.b-controls label { font-size: 11px; margin-bottom: 2px; }';
+      html += '.b-controls label { font-size: 11px; margin-bottom: 4px; }';
       html += '.b-controls input { font-size: 14px; padding: 8px; ';
       html += 'text-align: center; margin-bottom: 0; }';
       
-      html += '.btn-save { width: 100%; background: ' + successColor + '; ';
+      html += '.btn-save { width: 100%; background: var(--f-success); ';
       html += 'color: #fff; border: none; padding: 16px; ';
-      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; }';
-      html += '.img-preview { width: 60px; height: 60px; border-radius: 8px; ';
-      html += 'object-fit: cover; display: none; margin-bottom: 10px; }';
+      html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; }';
+      html += '.img-preview { width: 80px; height: 80px; border-radius: 12px; ';
+      html += 'object-fit: cover; display: none; margin-bottom: 12px; }';
       
       html += '.dropdown-wrap { position: relative; }';
       html += '.dropdown-list { position: absolute; top: 100%; left: 0; ';
-      html += 'right: 0; background: #fff; border: 1px solid #eee; ';
-      html += 'border-radius: 12px; margin-top: -10px; z-index: 100; ';
-      html += 'box-shadow: 0 4px 15px rgba(0,0,0,0.1); ';
-      html += 'max-height: 220px; overflow-y: auto; display: none; }';
-      html += '.dd-item { padding: 12px 15px; border-bottom: 1px solid #eee; ';
-      html += 'cursor: pointer; display: flex; justify-content: space-between; ';
-      html += 'align-items: center; }';
+      html += 'right: 0; background: #fff; border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); margin-top: -8px; z-index: 100; ';
+      html += 'box-shadow: var(--sh-2); max-height: 220px; ';
+      html += 'overflow-y: auto; display: none; }';
+      html += '.dd-item { padding: 12px 16px; ';
+      html += 'border-bottom: 1px solid var(--f-border); cursor: pointer; ';
+      html += 'display: flex; justify-content: space-between; align-items: center; }';
       html += '.dd-item:last-child { border-bottom: none; }';
-      html += '.dd-name { font-weight: 600; font-size: 14px; ';
-      html += 'color: ' + brandColor + '; }';
+      html += '.dd-name { font-weight: 600; font-size: 14px; }';
       html += '.dd-stock { font-size: 12px; font-weight: 800; }';
       
-      html += '.clear-search { position: absolute; right: 15px; top: 22px; ';
-      html += 'font-size: 20px; color: #aaa; cursor: pointer; ';
+      html += '.clear-search { position: absolute; right: 14px; top: 14px; ';
+      html += 'font-size: 18px; color: #aaa; cursor: pointer; ';
       html += 'display: none; background: none; border: none; padding: 0; }';
       html += '</style></head><body>';
 
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse/receipts" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('receipt') + 'Накладная</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse/receipts" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Накладная</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="card">';
@@ -4045,7 +4106,7 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += '<label>Фото товара (для нового)</label>';
       html += '<input type="file" id="itemPhoto" accept="image/*" ';
-      html += 'onchange="previewPhoto()" style="margin-bottom:5px;">';
+      html += 'onchange="previewPhoto()" style="margin-bottom:8px;">';
       html += '<img id="photoPreview" class="img-preview">';
 
       html += '<label>Количество</label>';
@@ -4055,7 +4116,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<input type="number" id="itemPrice" ';
       html += 'inputmode="decimal" oninput="calcCostDiff()">';
       html += '<div id="costDiff" class="hint-cost" ';
-      html += 'style="font-size:12px;margin-top:-10px;margin-bottom:10px;';
+      html += 'style="font-size:12px; margin-top:-8px; margin-bottom:12px; ';
       html += 'font-weight:600;"></div>';
 
       html += '<label>Розничная цена (необязательно)</label>';
@@ -4066,14 +4127,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'onclick="addToBasket()">+ Добавить в накладную</button>';
 
       html += '<div class="basket" id="basket">';
-      html += '<h3 style="margin-top:0; font-size:16px;">В накладной:</h3>';
+      html += '<h3 style="margin-top:0; font-size:18px; font-weight:800; ';
+      html += 'margin-bottom:16px;">В накладной:</h3>';
       html += '<div id="bList"></div>';
       html += '<div style="display:flex; justify-content:space-between; ';
-      html += 'margin-top:15px; border-top:2px solid ' + brandColor + '; ';
-      html += 'padding-top:10px; font-size:18px; font-weight:800;">';
+      html += 'margin-top:16px; border-top:2px solid var(--f-brand); ';
+      html += 'padding-top:12px; font-size:20px; font-weight:800;">';
       html += '<span>Итого:</span><span id="totalSum">0 ₽</span></div>';
       html += '<button class="btn-save" id="btnSaveReceipt" ';
-      html += 'style="margin-top:15px;" ';
+      html += 'style="margin-top:20px;" ';
       html += 'onclick="saveReceipt()">Провести накладную</button>';
       html += '</div>';
 
@@ -4106,19 +4168,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var dd = document.getElementById("ddList");';
       html += '  var btn = document.getElementById("clearSearch");';
       html += '  while(dd.firstChild) dd.removeChild(dd.firstChild);';
-      
       html += '  if (val.length > 0) { btn.style.display = "block"; }';
       html += '  else { btn.style.display = "none"; }';
       html += '  if (!val || val.length < 1) { ';
       html += '    dd.style.display = "none"; return; }';
-      
       html += '  var found = itemsCatalog.filter(function(i) { ';
       html += '    return i.name.toLowerCase().includes(val.toLowerCase()); ';
       html += '  }).slice(0, 20);';
-
       html += '  if (found.length === 0) { ';
       html += '    dd.style.display = "none"; return; }';
-
       html += '  found.forEach(function(i) {';
       html += '    var row = document.createElement("div"); ';
       html += '    row.className = "dd-item";';
@@ -4128,8 +4186,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    st.className = "dd-stock"; ';
       html += '    var s = parseFloat(i.current_stock) || 0;';
       html += '    st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
-      html += '    st.style.color = s > 0 ? "' + successColor + '" : "';
-      html += dangerColor + '";';
+      html += '    st.style.color = s > 0 ? "var(--f-success)" : ';
+      html += '    "var(--f-danger)";';
       html += '    row.appendChild(nm); row.appendChild(st);';
       html += '    row.onclick = function() {';
       html += '      document.getElementById("itemName").value = i.name;';
@@ -4170,8 +4228,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  if (currentLastCost > 0 && currentPrice > 0) {';
       html += '    var diff = currentPrice - currentLastCost;';
       html += '    var sign = diff > 0 ? "+" : "";';
-      html += '    var color = diff > 0 ? "' + dangerColor + '" : "';
-      html += successColor + '";';
+      html += '    var color = diff > 0 ? "var(--f-danger)" : ';
+      html += '    "var(--f-success)";';
       html += '    hint.innerText = "Прошлая закупка: " + currentLastCost + ';
       html += '    " ₽ (" + sign + diff + " ₽)";';
       html += '    hint.style.color = color;';
@@ -4229,11 +4287,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  "none") { unit = unitEl.value; }';
       html += '  if (!name || !qty || !price) { ';
       html += '    showAlert("Внимание", "Заполните поля", false); return; }';
-
       html += '  var btn = document.getElementById("btnAdd");';
       html += '  if (btn.disabled) return;';
       html += '  btn.disabled = true; btn.innerText = "Добавление...";';
-
       html += '  var f = document.getElementById("itemPhoto").files[0];';
       html += '  var finish = function(url) {';
       html += '    fetch("/api/warehouse/receipt/item/add", { ';
@@ -4263,7 +4319,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    btn.innerText = "+ Добавить в накладную"; ';
       html += '    showAlert("Ошибка", "Сбой сети. Повторите.", false); });';
       html += '  };';
-
       html += '  if (f) {';
       html += '    var rd = new FileReader();';
       html += '    rd.onload = function(e) {';
@@ -4299,16 +4354,13 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  b.style.display = "block"; ';
       html += '  while(list.firstChild) list.removeChild(list.firstChild);';
       html += '  var totalSum = 0;';
-      
       html += '  receiptItems.forEach(function(item, idx) {';
       html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
       html += '    var p = parseFloat(String(item.unit_cost).replace(",", ".")) || 0;';
       html += '    var rowSum = Math.round(q * p * 100) / 100;';
       html += '    totalSum += rowSum;';
-      
       html += '    var div = document.createElement("div"); ';
       html += '    div.className = "b-row";';
-      
       html += '    var top = document.createElement("div"); ';
       html += '    top.className = "b-top";';
       html += '    var n = document.createElement("div"); ';
@@ -4324,10 +4376,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    };';
       html += '    top.appendChild(n); top.appendChild(del); ';
       html += '    div.appendChild(top);';
-      
       html += '    var ctrl = document.createElement("div"); ';
       html += '    ctrl.className = "b-controls";';
-      
       html += '    var c1 = document.createElement("div");';
       html += '    c1.innerHTML = "<label>Количество</label>";';
       html += '    var inpQ = document.createElement("input"); ';
@@ -4339,7 +4389,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      else { this.value = fmtNum(item.qty); }';
       html += '    };';
       html += '    c1.appendChild(inpQ);';
-      
       html += '    var c2 = document.createElement("div");';
       html += '    c2.innerHTML = "<label>Закупка (₽)</label>";';
       html += '    var inpP = document.createElement("input"); ';
@@ -4351,7 +4400,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      else { this.value = fmtNum(item.unit_cost); }';
       html += '    };';
       html += '    c2.appendChild(inpP);';
-      
       html += '    var c3 = document.createElement("div");';
       html += '    c3.innerHTML = "<label>Розница (₽)</label>";';
       html += '    var inpR = document.createElement("input"); ';
@@ -4362,7 +4410,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      receiptItems[idx].retail_price = v; ';
       html += '    };';
       html += '    c3.appendChild(inpR);';
-      
       html += '    ctrl.appendChild(c1); ctrl.appendChild(c2); ';
       html += '    ctrl.appendChild(c3);';
       html += '    div.appendChild(ctrl); list.appendChild(div);';
@@ -4374,12 +4421,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'function saveReceipt() {';
       html += '  if (receiptItems.length === 0) { ';
       html += '    showAlert("Ошибка", "Накладная пуста.", false); return; }';
-
       html += '  var noPriceCount = 0;';
       html += '  receiptItems.forEach(function(it) {';
       html += '    if (parseFloat(it.retail_price) === 0) { noPriceCount++; }';
       html += '  });';
-      
       html += '  if (noPriceCount > 0) {';
       html += '    showConfirm("Внимание", "Товаров без цены: " + ';
       html += '    noPriceCount + ". Они не появятся в Кассе. ", ';
@@ -4417,8 +4462,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 25. API ПОЛУЧЕНИЯ ПОЗИЦИЙ НАКЛАДНОЙ ======
+  // ====== 20. API ПОЛУЧЕНИЯ ПОЗИЦИЙ НАКЛАДНОЙ ======
   app.get('/api/warehouse/receipt/items', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4442,7 +4486,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-  // ====== 26. API ДОБАВЛЕНИЯ ПОЗИЦИИ В НАКЛАДНУЮ ======
+
+  // ====== 21. API ДОБАВЛЕНИЯ ПОЗИЦИИ В НАКЛАДНУЮ ======
   app.post('/api/warehouse/receipt/item/add', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4573,7 +4618,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 27. API СОХРАНЕНИЯ И ПРОВЕДЕНИЯ НАКЛАДНОЙ ======
+  // ====== 22. API СОХРАНЕНИЯ И ПРОВЕДЕНИЯ НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/save-all', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -4687,7 +4732,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 28. ЭКРАН СПИСАНИЯ ======
+  // ====== 23. ЭКРАН СПИСАНИЯ ======
   app.get('/warehouse/writeoff', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -4696,112 +4741,112 @@ function setupWarehouse(app, bot, s3ctx) {
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
       
-      html += '.search-wrap { position: relative; margin-bottom: 15px; }';
-      html += '.search { width: 100%; padding: 15px; border: none; ';
-      html += 'border-radius: 12px; box-sizing: border-box; ';
-      html += 'font-family: inherit; font-size: 16px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.clear-search { position: absolute; right: 15px; ';
-      html += 'top: 50%; transform: translateY(-50%); font-size: 20px; ';
+      html += '.search-wrap { position: relative; margin-bottom: 16px; }';
+      html += '.search { width: 100%; padding: 14px 16px 14px 44px; ';
+      html += 'border: 1px solid var(--f-border); border-radius: var(--r-md); ';
+      html += 'box-sizing: border-box; font-family: inherit; font-size: 16px; ';
+      html += 'box-shadow: var(--sh-1); }';
+      html += '.search-icon { position: absolute; left: 14px; top: 50%; ';
+      html += 'transform: translateY(-50%); width: 20px; height: 20px; ';
+      html += 'color: var(--f-text-2); pointer-events: none; }';
+      html += '.clear-search { position: absolute; right: 14px; ';
+      html += 'top: 50%; transform: translateY(-50%); font-size: 18px; ';
       html += 'color: #aaa; cursor: pointer; display: none; ';
       html += 'background: none; border: none; padding: 0; }';
       
       html += '.dropdown-list { position: absolute; top: 100%; left: 0; ';
-      html += 'right: 0; background: #fff; border: 1px solid #eee; ';
-      html += 'border-radius: 12px; margin-top: 5px; z-index: 100; ';
-      html += 'box-shadow: 0 4px 15px rgba(0,0,0,0.1); ';
-      html += 'max-height: 250px; overflow-y: auto; display: none; }';
-      html += '.dd-item { padding: 12px 15px; border-bottom: 1px solid #eee; ';
-      html += 'cursor: pointer; display: flex; justify-content: space-between; ';
-      html += 'align-items: center; }';
+      html += 'right: 0; background: #fff; border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); margin-top: 4px; z-index: 100; ';
+      html += 'box-shadow: var(--sh-2); max-height: 250px; ';
+      html += 'overflow-y: auto; display: none; }';
+      html += '.dd-item { padding: 12px 16px; ';
+      html += 'border-bottom: 1px solid var(--f-border); cursor: pointer; ';
+      html += 'display: flex; justify-content: space-between; align-items: center; }';
       html += '.dd-item:last-child { border-bottom: none; }';
       html += '.dd-name { font-weight: 600; font-size: 14px; }';
       html += '.dd-stock { font-size: 12px; font-weight: 800; }';
 
       html += '.grid { display: grid; grid-template-columns: ';
-      html += 'repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; ';
-      html += 'margin-bottom: 15px; }';
+      html += 'repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; ';
+      html += 'margin-bottom: 16px; }';
       html += '.card { background: #fff; padding: 10px; ';
-      html += 'border-radius: 16px; text-align: center; cursor: pointer; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.card img { width: 100%; height: 80px; object-fit: cover; ';
-      html += 'border-radius: 12px; margin-bottom: 5px; }';
-      html += '.card .ph { height: 80px; border-radius: 12px; ';
+      html += 'border-radius: var(--r-lg); text-align: center; cursor: pointer; ';
+      html += 'box-shadow: var(--sh-1); }';
+      html += '.card img { width: 100%; aspect-ratio: 1; object-fit: cover; ';
+      html += 'border-radius: var(--r-md); margin-bottom: 8px; }';
+      html += '.card .ph { width: 100%; aspect-ratio: 1; border-radius: var(--r-md); ';
       html += 'background: #F0F4F4; display: flex; align-items: center; ';
-      html += 'justify-content: center; margin-bottom: 5px; }';
-      html += '.card .ph svg { width: 32px; height: 32px; }';
+      html += 'justify-content: center; margin-bottom: 8px; }';
+      html += '.card .ph svg { width: 32px; height: 32px; color: #A0B4B4; }';
       html += '.card .name { font-size: 13px; font-weight: 600; ';
-      html += 'margin-bottom: 4px; }';
-      html += '.card .stock { font-size: 12px; font-weight: 800; ';
-      html += 'color: ' + successColor + '; }';
+      html += 'margin-bottom: 4px; line-height: 1.2; display: -webkit-box; ';
+      html += '-webkit-line-clamp: 2; -webkit-box-orient: vertical; ';
+      html += 'overflow: hidden; }';
+      html += '.card .stock { font-size: 12px; font-weight: 800; }';
+      html += '.card .stock.green { color: var(--f-success); }';
+      html += '.card .stock.red { color: var(--f-danger); }';
       
-      html += '.basket { background: #fff; border-radius: 16px; ';
-      html += 'padding: 15px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
-      html += 'display: none; border-left: 4px solid ';
-      html += accentColor + '; }';
+      html += '.basket { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 16px; margin-bottom: 16px; ';
+      html += 'box-shadow: var(--sh-1); display: none; ';
+      html += 'border-left: 4px solid var(--f-accent); }';
       
       html += '.b-row { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 8px; ';
       html += 'font-size: 14px; padding-bottom: 8px; ';
-      html += 'border-bottom: 1px solid #eee; }';
-      html += '.b-controls { display: flex; gap: 5px; align-items: center; }';
-      html += '.qty-btn { background: #F0F4F4; border: none; width: 26px; ';
-      html += 'height: 26px; border-radius: 6px; font-weight: bold; ';
-      html += 'font-size: 14px; color: ' + brandColor + '; }';
-      html += '.qty-input { width: 60px !important; height: 26px; ';
+      html += 'border-bottom: 1px solid var(--f-border); }';
+      html += '.b-controls { display: flex; gap: 6px; align-items: center; }';
+      html += '.qty-btn { background: #F0F4F4; border: none; width: 28px; ';
+      html += 'height: 28px; border-radius: 8px; font-weight: bold; ';
+      html += 'font-size: 14px; color: var(--f-text); }';
+      html += '.qty-input { width: 50px !important; height: 28px; ';
       html += 'font-size: 14px; margin: 0; padding: 0; text-align: center; }';
       
-      html += '.btn-checkout { width: 100%; padding: 15px; ';
-      html += 'background: ' + accentColor + '; color: #fff; ';
-      html += 'border: none; border-radius: 12px; font-size: 16px; ';
-      html += 'font-weight: 800; margin-top: 10px; display: none; }';
+      html += '.btn-checkout { width: 100%; padding: 16px; ';
+      html += 'background: var(--f-accent); color: #fff; ';
+      html += 'border: none; border-radius: var(--r-md); font-size: 16px; ';
+      html += 'font-weight: 800; margin-top: 12px; display: none; }';
 
       html += '.form-block { display: none; background: #fff; ';
-      html += 'border-radius: 16px; padding: 15px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += 'border-radius: var(--r-lg); padding: 16px; margin-bottom: 16px; ';
+      html += 'box-shadow: var(--sh-1); }';
       html += '.reasons { display: grid; grid-template-columns: 1fr 1fr; ';
-      html += 'gap: 10px; margin-bottom: 15px; }';
-      html += '.reason { padding: 12px; border-radius: 12px; ';
-      html += 'border: 1px solid #ddd; background: #fff; text-align: center; ';
-      html += 'cursor: pointer; font-size: 14px; font-weight: 600; }';
-      html += '.reason.active { border-color: ' + accentColor + '; ';
-      html += 'color: ' + accentColor + '; background: #FFF3E0; }';
+      html += 'gap: 10px; margin-bottom: 16px; }';
+      html += '.reason { padding: 12px; border-radius: var(--r-md); ';
+      html += 'border: 1px solid var(--f-border); background: #fff; ';
+      html += 'text-align: center; cursor: pointer; font-size: 14px; ';
+      html += 'font-weight: 600; color: var(--f-text); }';
+      html += '.reason.active { border-color: var(--f-accent); ';
+      html += 'color: var(--f-accent); background: #FFF3E0; }';
       html += '.btn-save { width: 100%; padding: 16px; ';
-      html += 'background: ' + dangerColor + '; color: #fff; ';
-      html += 'border: none; border-radius: 12px; font-size: 16px; ';
+      html += 'background: var(--f-danger); color: #fff; ';
+      html += 'border: none; border-radius: var(--r-md); font-size: 16px; ';
       html += 'font-weight: 800; }';
       
-      html += '.totals-box { margin-top: 15px; padding-top: 15px; ';
-      html += 'border-top: 2px solid ' + brandColor + '; ';
+      html += '.totals-box { margin-top: 16px; padding-top: 16px; ';
+      html += 'border-top: 2px solid var(--f-brand); ';
       html += 'display: flex; justify-content: space-between; ';
-      html += 'font-size: 16px; font-weight: 800; }';
+      html += 'font-size: 18px; font-weight: 800; }';
       html += '</style></head><body>';
 
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('writeoff') + 'Списание</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Списание</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="search-wrap">';
+      html += '<div class="search-icon">' + getIconSvg('search') + '</div>';
       html += '<input type="text" class="search" id="search" ';
-      html += 'placeholder="🔍 Поиск..." oninput="onSearchInput()" ';
+      html += 'placeholder="Поиск..." oninput="onSearchInput()" ';
       html += 'autocomplete="off">';
       html += '<button class="clear-search" id="clearSearch" ';
       html += 'onclick="clearSearchText()">✕</button>';
@@ -4809,7 +4854,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '</div>';
 
       html += '<div class="basket" id="basket">';
-      html += '<h3 style="margin-top:0; font-size:16px;">К списанию:</h3>';
+      html += '<h3 style="margin-top:0; font-size:16px; font-weight:800; ';
+      html += 'margin-bottom:12px;">К списанию:</h3>';
       html += '<div id="bList"></div>';
       html += '<div class="totals-box">';
       html += '<span id="totQty">Всего: 0 шт</span>';
@@ -4821,7 +4867,7 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += '<div class="form-block" id="formBlock">';
       html += '<label style="display:block; font-size:13px; font-weight:600; ';
-      html += 'color:#666; margin-bottom:5px;">Причина списания</label>';
+      html += 'color:var(--f-text-2); margin-bottom:8px;">Причина списания</label>';
       html += '<div class="reasons">';
       html += '<div class="reason active" ';
       html += 'onclick="setR(this, \'spoilage\')">Порча</div>';
@@ -4834,16 +4880,17 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '</div>';
       
       html += '<label style="font-size:13px; font-weight:600; ';
-      html += 'color:#666;">Комментарий</label>';
+      html += 'color:var(--f-text-2);">Комментарий</label>';
       html += '<textarea id="comment" style="width:100%; padding:12px; ';
-      html += 'border-radius:12px; border:none; margin-bottom:15px; ';
-      html += 'font-family:inherit; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06);"></textarea>';
+      html += 'border-radius:var(--r-md); border:1px solid var(--f-border); ';
+      html += 'margin-bottom:16px; font-family:inherit; ';
+      html += 'box-shadow: var(--sh-1);"></textarea>';
       
       html += '<label style="font-size:13px; font-weight:600; ';
-      html += 'color:#666;">Фото (необязательно)</label>';
+      html += 'color:var(--f-text-2);">Фото (необязательно)</label>';
       html += '<input type="file" id="wPhoto" accept="image/*" ';
-      html += 'style="margin-bottom:15px; box-shadow: none; padding: 0;">';
+      html += 'style="margin-bottom:16px; box-shadow: none; ';
+      html += 'padding: 8px; border: 1px dashed var(--f-border);">';
       
       html += '<button class="btn-save" id="btnSaveWriteoff" ';
       html += 'onclick="saveWriteoff()">Списать всё</button>';
@@ -4857,7 +4904,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var allItems = []; var cart = []; ';
       html += 'var selReason = "spoilage";';
       
-      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4">';
+      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="currentColor">';
       html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
       html += 'L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3';
       html += 'C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5';
@@ -4908,8 +4955,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        st.className = "dd-stock"; ';
       html += '        var s = parseFloat(i.current_stock);';
       html += '        st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
-      html += '        st.style.color = s > 0 ? "' + successColor + '" : "';
-      html += dangerColor + '";';
+      html += '        st.style.color = s > 0 ? "var(--f-success)" : ';
+      html += '        "var(--f-danger)";';
       html += '        row.appendChild(nm); row.appendChild(st);';
       html += '        row.onclick = function() { ';
       html += '          document.getElementById("search").value = "";';
@@ -4954,9 +5001,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var nm = document.createElement("div");';
       html += '    nm.className = "name"; nm.textContent = i.name;';
       html += '    var st = document.createElement("div");';
-      html += '    st.className = "stock";';
+      html += '    var stockVal = parseFloat(i.current_stock) || 0;';
+      html += '    st.className = "stock " + (stockVal > 0 ? "green" : "red");';
       html += '    st.textContent = "Ост: " + ';
-      html += '    fmtNum(i.current_stock) + " " + (i.unit || "шт");';
+      html += '    fmtNum(stockVal) + " " + (i.unit || "шт");';
       html += '    d.appendChild(nm); d.appendChild(st);';
       html += '    d.onclick = function() { addToBasket(i); };';
       html += '    g.appendChild(d);';
@@ -4992,7 +5040,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
       html += '    var c = parseFloat(String(item.avg_cost).replace(",", ".")) || 0;';
       html += '    totQty += q; totSum += q * c;';
-      
       html += '    var div = document.createElement("div");';
       html += '    div.className = "b-row";';
       html += '    var n = document.createElement("div"); ';
@@ -5005,7 +5052,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var inp = document.createElement("input"); ';
       html += '    inp.type = "number"; inp.className = "qty-input"; ';
       html += '    inp.value = item.qty; inp.inputMode = "decimal";';
-      
       html += '    inp.onfocus = function() { this.value = ""; };';
       html += '    inp.onblur = function() { ';
       html += '      if (this.value === "") this.value = item.qty; ';
@@ -5015,7 +5061,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      if (v > 0) { cart[idx].qty = v; renderBasket(); } ';
       html += '      else { this.value = item.qty; }';
       html += '    };';
-
       html += '    var pl = document.createElement("button"); ';
       html += '    pl.textContent = "+"; pl.className = "qty-btn"; ';
       html += '    pl.onclick = function() { changeQty(idx, 1); };';
@@ -5032,7 +5077,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    div.appendChild(n); div.appendChild(ctrl); ';
       html += '    list.appendChild(div);';
       html += '  });';
-      
       html += '  document.getElementById("totQty").textContent = ';
       html += '  "Всего: " + fmtNum(totQty) + " шт";';
       html += '  document.getElementById("totSum").textContent = ';
@@ -5104,8 +5148,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 29. API СПИСАНИЯ ======
+  // ====== 24. API СПИСАНИЯ ======
   app.post('/api/warehouse/writeoff', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -5120,12 +5163,14 @@ function setupWarehouse(app, bot, s3ctx) {
 
       const items = req.body.items;
       if (!Array.isArray(items) || items.length === 0) {
-        client.release(); return res.json({ ok: false, error: 'Список пуст' });
+        client.release(); 
+        return res.json({ ok: false, error: 'Список пуст' });
       }
 
       await client.query('BEGIN');
       let totalLoss = 0;
-      const docId = 'WO_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      const docId = 'WO_' + Date.now() + '_' + 
+        Math.floor(Math.random() * 1000);
 
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -5179,7 +5224,9 @@ function setupWarehouse(app, bot, s3ctx) {
       client.release(); 
       res.status(500).json({ ok: false, error: e.message });
     }
-  });// ====== 30. API ЗАГРУЗКИ ФОТО (S3) ======
+  });
+
+  // ====== 25. API ЗАГРУЗКИ ФОТО (S3) ======
   app.post('/api/warehouse/upload', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5236,7 +5283,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 31. API ДОКУМЕНТОВ ======
+  // ====== 26. API ДОКУМЕНТОВ ======
   app.get('/api/warehouse/documents', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5275,8 +5322,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
-
-  // ====== 32. ЭКРАН ДОКУМЕНТОВ ======
+  // ====== 27. ЭКРАН ДОКУМЕНТОВ ======
   app.get('/warehouse/documents', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5284,48 +5330,49 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.tabs { display: flex; gap: 10px; margin-bottom: 15px; } ';
-      html += '.tab { flex: 1; padding: 12px; border: 1px solid #ddd; ';
-      html += 'border-radius: 12px; background: #fff; text-align: center; ';
-      html += 'cursor: pointer; text-decoration: none; font-weight: 600; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.tab.active { background: ' + brandColor + '; color: #fff; } ';
-      html += '.doc { background: #fff; border-radius: 12px; padding: 15px; ';
-      html += 'margin-bottom: 10px; text-decoration: none; color: ' + 
-              brandColor + '; display: flex; justify-content: space-between; ';
-      html += 'align-items: center; box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
-      html += 'user-select: none; -webkit-user-select: none; }';
-      html += '.doc.receipt { border-left: 4px solid #3C7A89; } ';
-      html += '.doc.writeoff { border-left: 4px solid ' + accentColor + '; } ';
-      html += '.meta { font-size: 12px; color: #888; margin-top: 4px; } ';
-      html += '.amount { font-weight: 800; font-size: 16px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.tabs { display: flex; gap: 8px; margin-bottom: 16px; } ';
+      html += '.tab { flex: 1; padding: 12px; border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); background: #fff; ';
+      html += 'text-align: center; cursor: pointer; text-decoration: none; ';
+      html += 'font-weight: 600; font-size: 14px; color: var(--f-text); }';
+      html += '.tab.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); } ';
+      
+      html += '.doc { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 16px; margin-bottom: 12px; text-decoration: none; ';
+      html += 'color: var(--f-text); display: flex; justify-content: space-between; ';
+      html += 'align-items: center; box-shadow: var(--sh-1); ';
+      html += 'border-left: 4px solid transparent; }';
+      html += '.doc.receipt { border-left-color: #3C7A89; } ';
+      html += '.doc.writeoff { border-left-color: var(--f-accent); } ';
+      
+      html += '.doc-left { display: flex; flex-direction: column; gap: 4px; }';
+      html += '.doc-title { font-weight: 700; font-size: 16px; }';
+      html += '.meta { font-size: 13px; color: var(--f-text-2); } ';
+      html += '.amount { font-weight: 800; font-size: 18px; text-align: right; }';
       
       html += '#docPreviewModal .custom-modal { ';
-      html += 'text-align: left; padding: 20px; }';
+      html += 'text-align: left; padding: 24px; }';
       html += '.dp-row { display: flex; justify-content: space-between; ';
       html += 'margin-bottom: 8px; font-size: 14px; }';
-      html += '.dp-total { font-weight: 800; font-size: 16px; ';
-      html += 'margin-top: 10px; text-align: right; }';
+      html += '.dp-total { font-weight: 800; font-size: 18px; ';
+      html += 'margin-top: 12px; text-align: right; }';
       html += '</style></head><body>';
       
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">' + 
-              getIconSvg('docs') + 'Документы</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Документы</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
-      html += '<div class="tabs"><a href="/warehouse/documents?type=receipts" ';
+      html += '<div class="tabs">';
+      html += '<a href="/warehouse/documents?type=receipts" ';
       html += 'class="tab" id="tab-receipts">Приходы</a>';
       html += '<a href="/warehouse/documents?type=writeoffs" class="tab" ';
       html += 'id="tab-writeoffs">Списания</a></div><div id="list">';
@@ -5333,13 +5380,15 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += '<div class="custom-modal-overlay" id="docPreviewModal">';
       html += '<div class="custom-modal">';
-      html += '<h3 id="docPreviewTitle" style="margin:0 0 15px 0; ';
+      html += '<h3 id="docPreviewTitle" style="margin:0 0 16px 0; ';
       html += 'text-align:center;">Загрузка...</h3>';
       html += '<div id="docPreviewList" style="max-height:50vh; ';
       html += 'overflow-y:auto; border-top:1px solid #eee; ';
-      html += 'border-bottom:1px solid #eee; padding:10px 0;"></div>';
+      html += 'border-bottom:1px solid #eee; padding:12px 0;"></div>';
       html += '<div id="docPreviewTotal" class="dp-total"></div>';
-      html += '<button class="btn-cancel" style="margin-top:15px; width:100%;" ';
+      html += '<button class="btn-cancel" style="margin-top:16px; width:100%; ';
+      html += 'padding:14px; border:none; border-radius:12px; font-weight:700; ';
+      html += 'background:#F0F4F4; color:var(--f-text);" ';
       html += 'onclick="closeDocPreview()">Закрыть</button>';
       html += '</div></div>';
 
@@ -5350,7 +5399,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var map = { spoilage: "Порча", loss: "Потеря", ';
       html += 'markdown: "Уценка", sorting: "Пересорт" }; ';
       html += 'return map[r] || r; }';
-      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'function fmtNum(n) { ';
+      html += 'var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
@@ -5367,7 +5417,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  while(b.firstChild) b.removeChild(b.firstChild); ';
       html += '  if (!d.ok) { b.textContent = "Ошибка"; return; } ';
       html += '  if (d.docs.length === 0) { ';
-      html += '  b.textContent = "Документов нет"; return; }';
+      html += '  b.innerHTML = "<div class=\'empty-state\'>" + ';
+      html += '  "<div class=\'empty-state-title\'>Документов нет</div></div>"; ';
+      html += '  return; }';
       
       html += '  d.docs.forEach(function(doc){ ';
       html += '    var a = document.createElement("a"); ';
@@ -5377,11 +5429,16 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    "&type=" + currentType;';
       html += '    var ds = new Date(doc.date).toLocaleString("ru-RU"); ';
       html += '    var author = doc.author || "Система"; ';
+      
       html += '    var left = document.createElement("div"); ';
-      html += '    var title = document.createElement("b"); ';
+      html += '    left.className = "doc-left"; ';
+      html += '    var title = document.createElement("div"); ';
+      html += '    title.className = "doc-title"; ';
       html += '    var meta = document.createElement("div"); ';
+      html += '    meta.className = "meta"; ';
       html += '    var amount = document.createElement("div"); ';
-      html += '    meta.className = "meta"; amount.className = "amount";';
+      html += '    amount.className = "amount";';
+      
       html += '    if (currentType === "receipts") { ';
       html += '      title.textContent = "Накладная №" + doc.id; ';
       html += '      meta.textContent = ds + " · " + author; ';
@@ -5395,7 +5452,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      meta.textContent = ds + " · " + author + " (" + ';
       html += '      itm + " / " + reason + ")"; ';
       html += '      amount.textContent = "-" + fmtNum(doc.amount) + " шт"; ';
-      html += '      amount.style.color = "' + accentColor + '"; }';
+      html += '      amount.style.color = "var(--f-accent)"; }';
+      
       html += '    left.appendChild(title); left.appendChild(meta); ';
       html += '    a.appendChild(left); a.appendChild(amount); ';
 
@@ -5433,7 +5491,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  title.textContent = "Загрузка...";';
       html += '  list.innerHTML = ""; total.textContent = "";';
       html += '  ov.style.display = "flex";';
-      
       html += '  fetch("/api/warehouse/documents/details?id=" + id + ';
       html += '  "&type=" + type)';
       html += '  .then(function(r){return r.json();})';
@@ -5469,7 +5526,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 33. API ДЕТАЛЕЙ ДОКУМЕНТА ======
+  // ====== 28. API ДЕТАЛЕЙ ДОКУМЕНТА ======
   app.get('/api/warehouse/documents/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5542,7 +5599,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 34. ЭКРАН ДЕТАЛЕЙ ДОКУМЕНТА ======
+  // ====== 29. ЭКРАН ДЕТАЛЕЙ ДОКУМЕНТА ======
   app.get('/warehouse/documents/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5550,42 +5607,36 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 20px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.card { padding: 20px; border-radius: var(--r-lg); ';
+      html += 'margin-bottom: 16px; }';
       html += '.item-row { display: flex; justify-content: space-between; ';
-      html += 'padding: 12px 0; border-bottom: 1px solid #eee; ';
-      html += 'text-decoration: none; color: ' + brandColor + '; } ';
+      html += 'padding: 12px 0; border-bottom: 1px solid var(--f-border); ';
+      html += 'text-decoration: none; color: var(--f-text); } ';
       html += '.item-row:last-child { border-bottom: none; } ';
-      html += '.item-name { font-weight: 600; } ';
+      html += '.item-name { font-weight: 600; font-size: 15px; } ';
       html += '.item-qty { text-align: right; font-weight: 800; }';
-      html += '.total-row { margin-top: 15px; padding-top: 15px; ';
-      html += 'border-top: 2px solid ' + brandColor + '; display: flex; ';
-      html += 'justify-content: space-between; font-size: 18px; ';
+      html += '.total-row { margin-top: 16px; padding-top: 16px; ';
+      html += 'border-top: 2px solid var(--f-brand); display: flex; ';
+      html += 'justify-content: space-between; font-size: 20px; ';
       html += 'font-weight: 800; }';
-      html += '.btn-cancel-doc { width: 100%; padding: 15px; ';
-      html += 'background: #fff; border: 2px solid ' + dangerColor + '; ';
-      html += 'color: ' + dangerColor + '; border-radius: 12px; ';
-      html += 'font-weight: 800; font-size: 16px; margin-top: 20px; ';
+      html += '.btn-cancel-doc { width: 100%; padding: 16px; ';
+      html += 'background: #fff; border: 2px solid var(--f-danger); ';
+      html += 'color: var(--f-danger); border-radius: var(--r-md); ';
+      html += 'font-weight: 800; font-size: 16px; margin-top: 24px; ';
       html += 'cursor: pointer; }';
       html += '</style></head><body>';
       
-      html += '<div class="header"><div class="header-left">';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
       html += '<a href="#" onclick="history.back(); return false;" ';
-      html += 'class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('docs') + 'Документ</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += 'class="back-btn">←</a>';
+      html += '<h2 class="page-title">Документ</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<div class="card" id="content">Загрузка...</div>';
@@ -5597,10 +5648,12 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var map = { spoilage: "Порча", loss: "Потеря", ';
       html += 'markdown: "Уценка", sorting: "Пересорт" }; ';
       html += 'return map[r] || r; }';
-      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'function fmtNum(n) { ';
+      html += 'var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
+      
       html += 'var urlParams = new URLSearchParams(window.location.search); ';
       html += 'var docId = urlParams.get("id") || ""; ';
       html += 'var docType = urlParams.get("type") || "receipts";';
@@ -5608,47 +5661,63 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '"&type=" + docType).then(function(r){return r.json();})';
       html += '.then(function(d){';
       html += '  var content = document.getElementById("content"); ';
-      html += '  while(content.firstChild) content.removeChild(content.firstChild); ';
-      html += '  if (!d.ok) { content.textContent = "Ошибка: " + d.error; return; }';
+      html += '  while(content.firstChild) ';
+      html += '  content.removeChild(content.firstChild); ';
+      html += '  if (!d.ok) { ';
+      html += '    content.textContent = "Ошибка: " + d.error; return; }';
       html += '  var h = d.header; ';
       html += '  var ds = new Date(h.date).toLocaleString("ru-RU"); ';
       html += '  var titleTxt = docType === "receipts" ? ';
       html += '  "Приходная накладная №" : "Акт списания №";';
+      
       html += '  var title = document.createElement("div"); ';
       html += '  title.style = "font-size:20px; font-weight:800;"; ';
-      html += '  title.textContent = titleTxt + h.id; content.appendChild(title);';
+      html += '  title.textContent = titleTxt + h.id; ';
+      html += '  content.appendChild(title);';
+      
       html += '  var meta = document.createElement("div"); ';
-      html += '  meta.style = "font-size:13px; color:#666; margin-bottom:15px;"; ';
-      html += '  meta.textContent = ds + " · Сделал: " + (h.author || "Неизвестно"); ';
+      html += '  meta.style = "font-size:13px; color:var(--f-text-2); ';
+      html += '  margin-bottom:16px;"; ';
+      html += '  meta.textContent = ds + " · Сделал: " + ';
+      html += '  (h.author || "Неизвестно"); ';
       html += '  content.appendChild(meta);';
+      
       html += '  d.items.forEach(function(i){ ';
       html += '    var a = document.createElement("a"); ';
-      html += '    a.href = "/warehouse/item?id=" + (parseInt(i.shop_item_id) || 0); ';
+      html += '    a.href = "/warehouse/item?id=" + ';
+      html += '    (parseInt(i.shop_item_id) || 0); ';
       html += '    a.className = "item-row"; ';
       html += '    var left = document.createElement("div"); ';
       html += '    var nm = document.createElement("div"); ';
       html += '    nm.className = "item-name"; nm.textContent = i.name; ';
       html += '    left.appendChild(nm);';
+      
       html += '    if (docType === "receipts") { ';
       html += '      var cost = document.createElement("div"); ';
-      html += '      cost.style = "font-size:12px; color:#888;"; ';
+      html += '      cost.style = "font-size:12px; color:var(--f-text-2);"; ';
       html += '      cost.textContent = parseFloat(i.unit_cost)';
-      html += '      .toLocaleString("ru-RU") + " ₽/шт"; left.appendChild(cost); ';
+      html += '      .toLocaleString("ru-RU") + " ₽/шт"; ';
+      html += '      left.appendChild(cost); ';
       html += '    } else { ';
       html += '      var rsn = document.createElement("div"); ';
-      html += '      rsn.style = "font-size:12px; color:#888;"; ';
-      html += '      rsn.textContent = "Причина: " + translateReason(h.reason); ';
+      html += '      rsn.style = "font-size:12px; color:var(--f-text-2);"; ';
+      html += '      rsn.textContent = "Причина: " + ';
+      html += '      translateReason(h.reason); ';
       html += '      left.appendChild(rsn); }';
+      
       html += '    var right = document.createElement("div"); ';
       html += '    right.className = "item-qty"; ';
       html += '    right.textContent = fmtNum(i.qty) + " шт";';
       html += '    if (docType === "receipts") { ';
       html += '      var sum = document.createElement("div"); ';
-      html += '      sum.style = "font-size:12px; color:#888; font-weight:400;"; ';
+      html += '      sum.style = "font-size:12px; ';
+      html += '      color:var(--f-text-2); font-weight:400;"; ';
       html += '      sum.textContent = parseFloat(i.sum)';
-      html += '      .toLocaleString("ru-RU") + " ₽"; right.appendChild(sum); }';
+      html += '      .toLocaleString("ru-RU") + " ₽"; ';
+      html += '      right.appendChild(sum); }';
       html += '    a.appendChild(left); a.appendChild(right); ';
       html += '    content.appendChild(a); });';
+      
       html += '  var total = document.createElement("div"); ';
       html += '  total.className = "total-row";';
       html += '  var totalTxt = docType === "receipts" ? ';
@@ -5656,13 +5725,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  fmtNum(h.total_sum) + " шт";';
       html += '  total.innerHTML = "<span>Итого:</span><span>" + ';
       html += '  totalTxt + "</span>"; content.appendChild(total);';
+      
       html += '  if (docType === "receipts" && h.status === "completed") {';
       html += '    var cancelBtn = document.createElement("button"); ';
       html += '    cancelBtn.className = "btn-cancel-doc"; ';
       html += '    cancelBtn.innerText = "Отменить проведение";';
       html += '    cancelBtn.onclick = function() { ';
       html += '      showConfirm("Отмена", "Вы уверены? Товары спишутся ';
-      html += '      со склада, накладная станет черновиком.", function() {';
+      html += '      со склада, накладная станет черновиком.", ';
+      html += '      function() {';
       html += '        fetch("/api/warehouse/receipt/cancel", { ';
       html += '        method: "POST", headers: { "Content-Type": ';
       html += '        "application/json" }, body: JSON.stringify({ ';
@@ -5688,7 +5759,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 35. API ОТМЕНЫ ПРОВЕДЕНИЯ НАКЛАДНОЙ ======
+  // ====== 30. API ОТМЕНЫ ПРОВЕДЕНИЯ НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -5752,7 +5823,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-// ====== 36. API ОТЧЁТОВ ======
+  // ====== 31. API ОТЧЁТОВ ======
   app.get('/api/warehouse/reports', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5893,7 +5964,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 37. ЭКРАН ОТЧЁТОВ ======
+  // ====== 32. ЭКРАН ОТЧЁТОВ ======
   app.get('/warehouse/reports', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -5901,74 +5972,85 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
       
-      html += '.date-row { display: flex; gap: 10px; margin-bottom: 15px; }';
+      html += '.date-row { display: flex; gap: 8px; margin-bottom: 12px; }';
       html += '.date-row input { flex: 1; padding: 10px; border: none; ';
-      html += 'border-radius: 10px; font-family: inherit; font-size: 14px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.quick-dates { display: flex; gap: 8px; margin-bottom: 15px; }';
-      html += '.q-btn { flex: 1; padding: 8px; border: 1px solid #ddd; ';
-      html += 'border-radius: 10px; background: #fff; text-align: center; ';
-      html += 'font-size: 12px; font-weight: 600; cursor: pointer; }';
-      html += '.q-btn.active { background: ' + brandColor + '; color: #fff; }';
+      html += 'border-radius: var(--r-md); font-family: inherit; ';
+      html += 'font-size: 14px; box-shadow: var(--sh-1); margin: 0; }';
+      
+      html += '.quick-dates { display: flex; gap: 6px; margin-bottom: 16px; }';
+      html += '.q-btn { flex: 1; padding: 10px; ';
+      html += 'border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); background: #fff; ';
+      html += 'text-align: center; font-size: 13px; font-weight: 600; ';
+      html += 'cursor: pointer; color: var(--f-text); }';
+      html += '.q-btn.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); }';
 
-      html += '.tabs { display: flex; gap: 5px; margin-bottom: 15px; ';
-      html += 'overflow-x: auto; padding-bottom: 5px; }';
-      html += '.tab { padding: 8px 15px; border-radius: 20px; background: #fff; ';
-      html += 'border: 1px solid #ddd; font-size: 13px; font-weight: 600; ';
-      html += 'white-space: nowrap; cursor: pointer; color: ' + brandColor + '; }';
-      html += '.tab.active { background: ' + brandColor + '; color: #fff; }';
+      html += '.tabs { display: flex; gap: 6px; margin-bottom: 16px; ';
+      html += 'overflow-x: auto; padding-bottom: 4px; }';
+      html += '.tabs::-webkit-scrollbar { display: none; }';
+      html += '.tab { padding: 10px 16px; border-radius: 20px; ';
+      html += 'background: #fff; border: 1px solid var(--f-border); ';
+      html += 'font-size: 14px; font-weight: 600; white-space: nowrap; ';
+      html += 'cursor: pointer; color: var(--f-text); }';
+      html += '.tab.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); }';
 
-      html += '.card { background: #fff; border-radius: 16px; padding: 20px; ';
-      html += 'margin-bottom: 15px; text-align: center; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.val { font-size: 28px; font-weight: 800; }';
-      html += '.blue { color: #3C7A89; } .green { color: ' + successColor + '; } ';
-      html += '.red { color: ' + accentColor + '; }';
+      html += '.card { padding: 20px; border-radius: var(--r-lg); ';
+      html += 'margin-bottom: 16px; text-align: center; }';
+      html += '.val { font-size: 28px; font-weight: 800; margin-bottom: 4px; }';
+      html += '.val.blue { color: #3C7A89; } ';
+      html += '.val.green { color: var(--f-success); } ';
+      html += '.val.red { color: var(--f-danger); }';
+      html += '.lbl { font-size: 14px; color: var(--f-text-2); }';
+      
       html += '.list-item { display: flex; justify-content: space-between; ';
-      html += 'padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px; }';
+      html += 'padding: 12px 0; border-bottom: 1px solid var(--f-border); ';
+      html += 'font-size: 15px; }';
       html += '.list-item:last-child { border-bottom: none; }';
       
       html += '.chart-container { margin-top: 20px; overflow-x: auto; ';
-      html += 'padding-bottom: 10px; -webkit-overflow-scrolling: touch; }';
+      html += 'padding-bottom: 12px; -webkit-overflow-scrolling: touch; }';
       html += '.chart-wrap { display: flex; align-items: flex-end; ';
-      html += 'height: 140px; gap: 6px; min-width: 100%; width: max-content; }';
-      html += '.bar-col { width: 40px; display: flex; flex-direction: column; ';
+      html += 'height: 140px; gap: 8px; min-width: 100%; width: max-content; }';
+      html += '.bar-col { width: 44px; display: flex; flex-direction: column; ';
       html += 'justify-content: flex-end; align-items: center; height: 100%; }';
-      html += '.bar { width: 100%; background: #E0F2F1; border-radius: 6px 6px 0 0; ';
-      html += 'transition: background 0.2s; cursor: pointer; min-height: 4px; }';
-      html += '.bar.active { background: ' + brandColor + '; }';
-      html += '.bar-lbl { font-size: 10px; color: #888; margin-top: 5px; }';
-      html += '.chart-info { font-size: 13px; font-weight: 700; ';
-      html += 'margin-top: 10px; color: ' + brandColor + '; height: 20px; }';
+      html += '.bar { width: 100%; background: #E0F2F1; ';
+      html += 'border-radius: 6px 6px 0 0; transition: background 0.2s; ';
+      html += 'cursor: pointer; min-height: 4px; }';
+      html += '.bar.active { background: var(--f-brand); }';
+      html += '.bar-lbl { font-size: 11px; color: var(--f-text-2); ';
+      html += 'margin-top: 6px; font-weight: 600; }';
+      html += '.chart-info { font-size: 14px; font-weight: 700; ';
+      html += 'margin-top: 12px; color: var(--f-brand); height: 20px; }';
       html += '</style></head><body>';
 
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('reports') + 'Отчёты</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Отчёты</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="date-row">';
       html += '<input type="date" id="dateStart" onchange="setCustom()">';
       html += '<input type="date" id="dateEnd" onchange="setCustom()">';
       html += '</div>';
+      
       html += '<div class="quick-dates">';
-      html += '<div class="q-btn" onclick="setQuick(\'today\')">Сегодня</div>';
-      html += '<div class="q-btn" onclick="setQuick(\'week\')">Неделя</div>';
-      html += '<div class="q-btn" onclick="setQuick(\'month\')">Месяц</div>';
-      html += '<div class="q-btn" onclick="setQuick(\'all\')">Всё</div>';
+      html += '<div class="q-btn" onclick="setQuick(\'today\')">';
+      html += 'Сегодня</div>';
+      html += '<div class="q-btn" onclick="setQuick(\'week\')">';
+      html += 'Неделя</div>';
+      html += '<div class="q-btn" onclick="setQuick(\'month\')">';
+      html += 'Месяц</div>';
+      html += '<div class="q-btn" onclick="setQuick(\'all\')">';
+      html += 'Всё</div>';
       html += '</div>';
 
       html += '<div class="tabs">';
@@ -5988,10 +6070,10 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += '<script>';
       html += 'var currentTab = "fin"; var reportData = null;';
-      
       html += 'function fmtMoney(v) { ';
       html += 'return Math.round(v).toLocaleString("ru-RU") + " ₽"; }';
-      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'function fmtNum(n) { ';
+      html += 'var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
@@ -6005,6 +6087,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'function setQuick(type) {';
       html += '  document.querySelectorAll(".q-btn").forEach(function(b){';
       html += '    b.classList.remove("active");});';
+      html += '  document.getElementById("q-" + type).classList.add("active");';
       html += '  var d = new Date(); var start = ""; var end = "";';
       html += '  var y = d.getFullYear(); ';
       html += '  var m = String(d.getMonth() + 1).padStart(2, "0");';
@@ -6025,7 +6108,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  else if (type === "all") { start = ""; end = ""; }';
       
       html += '  document.getElementById("dateStart").value = start;';
-      html += 'document.getElementById("dateEnd").value = end;';
+      html += '  document.getElementById("dateEnd").value = end;';
       html += '  loadData();';
       html += '}';
 
@@ -6042,10 +6125,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var en = document.getElementById("dateEnd").value;';
       html += '  var url = "/api/warehouse/reports";';
       html += '  if (st && en) { url += "?start=" + st + "&end=" + en; }';
-      
       html += '  var c = document.getElementById("content");';
       html += '  c.textContent = "Загрузка...";';
-      
       html += '  fetch(url).then(function(r){return r.json();})';
       html += '  .then(function(d){';
       html += '    if (d.ok) { reportData = d; renderTab(); }';
@@ -6074,7 +6155,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    v1.className = "val blue"; ';
       html += '    v1.textContent = fmtMoney(f.revenue);';
       html += '    var lbl1 = document.createElement("div"); ';
-      html += '    lbl1.style = "font-size:14px;color:#666;"; ';
+      html += '    lbl1.className = "lbl"; ';
       html += '    lbl1.textContent = "Выручка (чеков: " + f.count + ")";';
       html += '    card1.appendChild(v1); card1.appendChild(lbl1); ';
       html += '    c.appendChild(card1);';
@@ -6085,7 +6166,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    v2.className = "val green"; ';
       html += '    v2.textContent = fmtMoney(f.profit);';
       html += '    var lbl2 = document.createElement("div"); ';
-      html += '    lbl2.style = "font-size:14px;color:#666;"; ';
+      html += '    lbl2.className = "lbl"; ';
       html += '    lbl2.textContent = "Прибыль (Себест: " + ';
       html += '    fmtMoney(f.cost) + ") · Маржа: " + f.margin_pct + "%";';
       html += '    card2.appendChild(v2); card2.appendChild(lbl2); ';
@@ -6094,7 +6175,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var card3 = document.createElement("div"); ';
       html += '    card3.className = "card";';
       html += '    var v3 = document.createElement("div"); ';
-      html += '    v3.className = "val"; v3.style = "font-size:20px;";';
+      html += '    v3.className = "val"; v3.style.fontSize = "18px";';
       html += '    v3.textContent = "Нал: " + fmtMoney(f.cash) + ';
       html += '    " | Карта: " + fmtMoney(f.card) + ';
       html += '    " | QR: " + fmtMoney(f.qr);';
@@ -6104,7 +6185,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var chartCard = document.createElement("div");';
       html += '      chartCard.className = "card";';
       html += '      var title = document.createElement("div");';
-      html += '      title.style = "font-weight:800; margin-bottom:5px;";';
+      html += '      title.style = "font-weight:800; text-align:left; ';
+      html += '      margin-bottom:8px;";';
       html += '      title.textContent = "Выручка по дням";';
       html += '      chartCard.appendChild(title);';
       
@@ -6115,7 +6197,7 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '      var maxLbl = document.createElement("div");';
       html += '      maxLbl.style = "font-size:12px; color:#888; ';
-      html += '      margin-bottom:15px;";';
+      html += '      text-align:left; margin-bottom:16px;";';
       html += '      maxLbl.textContent = "Макс: " + fmtMoney(maxVal);';
       html += '      chartCard.appendChild(maxLbl);';
       
@@ -6132,15 +6214,14 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        var hPct = maxVal > 0 ? ';
       html += '        (parseFloat(d.total)/maxVal)*100 : 0;';
       html += '        bar.style.height = hPct + "%";';
-      
       html += '        var parts = String(d.day).split("-");';
       html += '        var dayStr = parts.length === 3 ? ';
-      html += '        parseInt(parts[2]) + "." + parseInt(parts[1]) : d.day;';
-      
+      html += '        parseInt(parts[2]) + "." + ';
+      html += '        parseInt(parts[1]) : d.day;';
       html += '        bar.onclick = (function(dateStr, sum, el) { ';
-      html += '          return function() { showBarInfo(el, dateStr, sum); };';
+      html += '          return function() { ';
+      html += '            showBarInfo(el, dateStr, sum); };';
       html += '        })(dayStr, d.total, bar);';
-      
       html += '        col.appendChild(bar);';
       html += '        var lbl = document.createElement("div");';
       html += '        lbl.className = "bar-lbl";';
@@ -6151,25 +6232,23 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '      cont.appendChild(wrap);';
       html += '      chartCard.appendChild(cont);';
-      
       html += '      var info = document.createElement("div");';
       html += '      info.id = "chartInfo";';
       html += '      info.className = "chart-info";';
       html += '      info.textContent = "Нажмите на столбик";';
       html += '      chartCard.appendChild(info);';
-      
       html += '      c.appendChild(chartCard);';
       html += '    }';
 
       html += '  } else if (currentTab === "loss") {';
       html += '    var cardL = document.createElement("div"); ';
       html += '    cardL.className = "card"; ';
-      html += '    cardL.style.border = "2px solid ' + accentColor + '";';
+      html += '    cardL.style.border = "2px solid var(--f-accent)";';
       html += '    var vL = document.createElement("div"); ';
       html += '    vL.className = "val red"; ';
       html += '    vL.textContent = fmtMoney(l.total);';
       html += '    var lblL = document.createElement("div"); ';
-      html += '    lblL.style = "font-size:14px;color:#666;"; ';
+      html += '    lblL.className = "lbl"; ';
       html += '    lblL.textContent = "Потери (" + l.percent + ';
       html += '    "% от закупок)";';
       html += '    cardL.appendChild(vL); cardL.appendChild(lblL); ';
@@ -6179,6 +6258,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    markdown: "Уценка", sorting: "Пересорт" };';
       html += '    var listCard = document.createElement("div"); ';
       html += '    listCard.className = "card";';
+      html += '    listCard.style.textAlign = "left";';
       html += '    for (var key in reasons) {';
       html += '      var amt = l.reasons[key] || 0;';
       html += '      if (amt > 0) {';
@@ -6187,7 +6267,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        var n = document.createElement("span"); ';
       html += '        n.textContent = reasons[key];';
       html += '        var v = document.createElement("span"); ';
-      html += '        v.style = "font-weight:800; color:' + dangerColor + ';";';
+      html += '        v.style = "font-weight:800; color:var(--f-danger);";';
       html += '        v.textContent = fmtMoney(amt);';
       html += '        row.appendChild(n); row.appendChild(v); ';
       html += '        listCard.appendChild(row);';
@@ -6198,20 +6278,22 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  } else if (currentTab === "top") {';
       html += '    var topCard = document.createElement("div"); ';
       html += '    topCard.className = "card";';
+      html += '    topCard.style.textAlign = "left";';
       html += '    if (reportData.top.length === 0) {';
       html += '      topCard.textContent = "Нет продаж";';
+      html += '      topCard.style.textAlign = "center";';
       html += '    } else {';
       html += '      reportData.top.forEach(function(t, idx) {';
       html += '        var row = document.createElement("a"); ';
       html += '        row.className = "list-item";';
       html += '        row.style.textDecoration = "none"; ';
-      html += '        row.style.color = "' + brandColor + '";';
+      html += '        row.style.color = "var(--f-text)";';
       html += '        row.href = "/warehouse/item?id=" + t.shop_item_id;';
       html += '        var n = document.createElement("span"); ';
       html += '        n.textContent = (idx+1) + ". " + t.name + ';
       html += '        " (" + fmtNum(t.total_qty) + " шт) →";';
       html += '        var v = document.createElement("span"); ';
-      html += '        v.style = "font-weight:800; color:' + successColor + ';";';
+      html += '        v.style = "font-weight:800; color:var(--f-success);";';
       html += '        v.textContent = fmtMoney(t.total_rev);';
       html += '        row.appendChild(n); row.appendChild(v); ';
       html += '        topCard.appendChild(row);';
@@ -6223,10 +6305,11 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var m = reportData.movement;';
       html += '    var mCard = document.createElement("div"); ';
       html += '    mCard.className = "card";';
+      html += '    mCard.style.textAlign = "left";';
       html += '    var r1 = document.createElement("div"); ';
       html += '    r1.className = "list-item";';
       html += '    r1.innerHTML = "<span>Приход (закупка)</span><span ';
-      html += '    style=\'color:' + successColor + ';font-weight:800;\'>" + ';
+      html += '    style=\'color:var(--f-success);font-weight:800;\'>" + ';
       html += '    fmtMoney(m.receipts) + "</span>"; mCard.appendChild(r1);';
       html += '    var r2 = document.createElement("div"); ';
       html += '    r2.className = "list-item";';
@@ -6236,8 +6319,9 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var r3 = document.createElement("div"); ';
       html += '    r3.className = "list-item";';
       html += '    r3.innerHTML = "<span>Списания (потери)</span><span ';
-      html += '    style=\'color:' + dangerColor + ';font-weight:800;\'>-" + ';
-      html += '    fmtMoney(m.writeoffs) + "</span>"; mCard.appendChild(r3);';
+      html += '    style=\'color:var(--f-danger);font-weight:800;\'>-" + ';
+      html += '    fmtMoney(m.writeoffs) + "</span>"; ';
+      html += '    mCard.appendChild(r3);';
       html += '    c.appendChild(mCard);';
       html += '  }';
       html += '}';
@@ -6249,8 +6333,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 38. API СМЕН ДЛЯ ОТЧЕТА ======
+  // ====== 33. API СМЕН ДЛЯ ОТЧЕТА ======
   app.get('/api/warehouse/shifts/report', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6285,7 +6368,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false }); 
     }
   });
-  // ====== 39. ЭКРАН СМЕНЫ ======
+
+  // ====== 34. ЭКРАН СМЕНЫ ======
   app.get('/warehouse/shift', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6303,52 +6387,37 @@ function setupWarehouse(app, bot, s3ctx) {
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
-      html += '.card { background: #fff; border-radius: 20px; padding: 20px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.btn { width: 100%; padding: 15px; color: #fff; ';
-      html += 'border: none; border-radius: 12px; font-size: 16px; ';
-      html += 'font-weight: 800; margin-top: 15px; font-family: inherit; }';
-      html += '.btn-green { background: ' + successColor + '; }';
-      html += '.btn-red { background: ' + dangerColor + '; }';
-      html += 'input { width: 100%; padding: 15px; font-size: 20px; ';
-      html += 'border: none; border-radius: 12px; margin-top: 5px; ';
-      html += 'box-sizing: border-box; font-family: inherit; }';
-      html += 'label { display: block; margin-top: 15px; ';
-      html += 'font-weight: 600; font-size: 14px; }';
-      html += '.stats { margin-top: 15px; font-size: 14px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      html += '.card { padding: 24px; border-radius: var(--r-lg); }';
+      html += '.stats { margin-top: 16px; font-size: 15px; }';
       html += '.stats div { display: flex; justify-content: space-between; ';
-      html += 'margin-bottom: 8px; }';
-      html += '.total-rev { font-size: 18px; font-weight: 800; ';
-      html += 'margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }';
+      html += 'margin-bottom: 12px; font-weight: 500; }';
+      html += '.total-rev { font-size: 20px; font-weight: 800; ';
+      html += 'margin-top: 16px; padding-top: 16px; ';
+      html += 'border-top: 1px solid var(--f-border); }';
       html += '</style></head><body>';
 
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('shift') + 'Смена</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Смена</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       if (shiftRes.rows.length === 0) {
         html += '<div class="card">';
-        html += '<h3 style="margin-top:0;">Открытие смены</h3>';
-        html += '<p style="color:#666; font-size:14px;">';
+        html += '<h3 style="margin-top:0; font-size:20px; font-weight:800; ';
+        html += 'margin-bottom:8px;">Открытие смены</h3>';
+        html += '<p class="text-muted" style="margin-bottom:20px;">';
         html += 'Укажите сумму наличных в кассе на начало дня.</p>';
         html += '<label>Наличные в кассе (₽)</label>';
         html += '<input type="number" id="startCash" placeholder="0">';
-        html += '<button class="btn btn-green" ';
+        html += '<button class="btn btn-primary" style="width:100%;" ';
         html += 'onclick="openShift()">Открыть смену</button></div>';
       } else {
         const shift = shiftRes.rows[0];
@@ -6366,7 +6435,8 @@ function setupWarehouse(app, bot, s3ctx) {
         const start = parseFloat(shift.start_cash);
 
         html += '<div class="card">';
-        html += '<h3 style="margin-top:0;">Смена открыта</h3>';
+        html += '<h3 style="margin-top:0; font-size:20px; font-weight:800; ';
+        html += 'margin-bottom:16px;">Смена открыта</h3>';
         html += '<div class="stats">';
         html += '<div><span>Наличные:</span> <b>' + cash + ' ₽</b></div>';
         html += '<div><span>Карта:</span> <b>' + card + ' ₽</b></div>';
@@ -6374,12 +6444,15 @@ function setupWarehouse(app, bot, s3ctx) {
         html += '<div class="total-rev"><span>Выручка:</span> ';
         html += '<span>' + total + ' ₽</span></div>';
         html += '</div>';
-        html += '<label>Фактически наличных в кассе (₽)</label>';
+        html += '<label style="margin-top:20px;">Фактически наличных ';
+        html += 'в кассе (₽)</label>';
         html += '<input type="number" id="endCash" ';
         html += 'placeholder="' + (start + cash) + '">';
-        html += '<p style="font-size:12px; color:#888;">';
-        html += 'Ожидается: ' + (start + cash) + ' ₽ (Остаток + Нал)</p>';
-        html += '<button class="btn btn-red" ';
+        html += '<p style="font-size:12px; color:var(--f-text-2); ';
+        html += 'margin-top:-8px; margin-bottom:16px;">';
+        html += 'Ожидается: ' + (start + cash) + ' ₽ ';
+        html += '(Остаток + Нал)</p>';
+        html += '<button class="btn btn-danger" style="width:100%;" ';
         html += 'onclick="closeShift()">Закрыть смену</button></div>';
       }
 
@@ -6389,8 +6462,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'function openShift() {';
       html += '  var v = document.getElementById("startCash").value || 0;';
       html += '  fetch("/api/warehouse/shift", { method: "POST", ';
-      html += 'headers: { "Content-Type": "application/json" }, ';
-      html += 'body: JSON.stringify({ action: "open", val: v }) })';
+      html += '  headers: { "Content-Type": "application/json" }, ';
+      html += '  body: JSON.stringify({ action: "open", val: v }) })';
       html += '  .then(function(r) { return r.json(); })';
       html += '  .then(function(d) {';
       html += '    if (d.ok) window.location.href = "/warehouse/sale";';
@@ -6403,16 +6476,18 @@ function setupWarehouse(app, bot, s3ctx) {
 
       html += 'function closeShift() {';
       html += '  var v = document.getElementById("endCash").value;';
-      html += '  if (!v) { showAlert("Внимание", "Введите сумму", false); return; }';
+      html += '  if (!v) { ';
+      html += '    showAlert("Внимание", "Введите сумму", false); ';
+      html += '    return; }';
       html += '  fetch("/api/warehouse/shift", { method: "POST", ';
-      html += 'headers: { "Content-Type": "application/json" }, ';
-      html += 'body: JSON.stringify({ action: "close", val: v }) })';
+      html += '  headers: { "Content-Type": "application/json" }, ';
+      html += '  body: JSON.stringify({ action: "close", val: v }) })';
       html += '  .then(function(r) { return r.json(); })';
       html += '  .then(function(d) {';
       html += '    if (d.ok) { ';
-      html += 'showAlert("Готово", "Смена закрыта", true); ';
+      html += '      showAlert("Готово", "Смена закрыта", true); ';
       html += '      setTimeout(function() { ';
-      html += 'window.location.href = "/warehouse-app"; }, 1500); ';
+      html += '        window.location.href = "/warehouse-app"; }, 1500); ';
       html += '    } else showAlert("Ошибка", d.error, false);';
       html += '  })';
       html += '  .catch(function() {';
@@ -6426,7 +6501,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 40. API СМЕНЫ ======
+  // ====== 35. API СМЕНЫ ======
   app.post('/api/warehouse/shift', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6497,7 +6572,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 41. API ФЛОРИСТОВ И ВЛАДЕЛЬЦА ======
+  // ====== 36. API ФЛОРИСТОВ И ВЛАДЕЛЬЦА ======
   app.get('/api/warehouse/staff', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6539,7 +6614,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 42. ЭКРАН ФЛОРИСТОВ ======
+  // ====== 37. ЭКРАН ФЛОРИСТОВ ======
   app.get('/warehouse/staff', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6547,47 +6622,41 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
-      html += '.btn-invite { width: 100%; background: ' + successColor + '; ';
-      html += 'color: #fff; border: none; padding: 15px; ';
-      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
-      html += 'margin-bottom: 15px; display: flex; align-items: center; ';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.btn-invite { width: 100%; background: var(--f-success); ';
+      html += 'color: #fff; border: none; padding: 16px; ';
+      html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
+      html += 'margin-bottom: 20px; display: flex; align-items: center; ';
       html += 'justify-content: center; gap: 8px; }';
-      html += '.card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 15px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); } ';
-      html += '.name { font-size: 18px; font-weight: 800; } ';
-      html += '.sales { font-size: 16px; color: ' + successColor + '; ';
-      html += 'margin-top: 5px; font-weight: 600; }';
+      html += '.card { padding: 16px; border-radius: var(--r-lg); } ';
+      html += '.name { font-size: 18px; font-weight: 800; margin-bottom: 4px; } ';
+      html += '.sales { font-size: 15px; color: var(--f-success); ';
+      html += 'font-weight: 600; }';
       html += '.row { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; margin-top: 10px; ';
-      html += 'border-top: 1px solid #eee; padding-top: 10px; } ';
-      html += '.row span { flex: 1; }';
+      html += 'align-items: center; margin-top: 12px; ';
+      html += 'border-top: 1px solid var(--f-border); padding-top: 12px; } ';
+      html += '.row span { flex: 1; font-weight: 500; }';
       html += '.row input[type="checkbox"] { width: 24px; height: 24px; ';
-      html += 'margin: 0; transform: none; accent-color: ' + brandColor + '; }';
-      html += '.btn-pin { margin-top:10px; padding:8px 15px; ';
-      html += 'border-radius:10px; border:none; background:' + brandColor + '; ';
-      html += 'color:#fff; font-weight:600; font-family:inherit; } ';
-      html += '.btn-del { margin-top:10px; padding:8px 15px; ';
-      html += 'border-radius:10px; border:none; background:' + dangerColor + '; ';
-      html += 'color:#fff; font-weight:600; font-family:inherit; ';
-      html += 'margin-left: 10px; } ';
+      html += 'margin: 0; transform: none; accent-color: var(--f-brand); }';
+      html += '.btn-pin { margin-top: 16px; padding: 10px 16px; ';
+      html += 'border-radius: var(--r-md); border: 1px solid var(--f-border); ';
+      html += 'background: #fff; color: var(--f-text); font-weight: 600; ';
+      html += 'font-family: inherit; } ';
+      html += '.btn-del { margin-top: 16px; padding: 10px 16px; ';
+      html += 'border-radius: var(--r-md); border: 1px solid var(--f-danger); ';
+      html += 'background: #fff; color: var(--f-danger); font-weight: 600; ';
+      html += 'font-family: inherit; margin-left: 8px; } ';
       html += '</style></head><body>';
       
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('staff') + 'Флористы</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Флористы</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<button class="btn-invite" id="btnInvite" ';
@@ -6604,16 +6673,16 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.then(function(r){return r.json();}).then(function(d){ ';
       html += '  var b = document.getElementById("list"); ';
       html += '  if (!d.ok) { b.textContent = "Доступ запрещен"; return; } ';
-      
       html += '  if (d.inviteCode) { ';
       html += '    globalInvite = "https://t.me/flowind_rus_bot?start=inv_" + ';
       html += '    d.inviteCode; ';
       html += '    document.getElementById("btnInvite").style.display = "flex"; ';
       html += '  }';
-
       html += '  if (d.staff.length === 0) { ';
-      html += '  b.innerHTML = "<div style=\'text-align:center;color:#888;\'>"';
-      html += '  + "Нет флористов</div>"; return; }';
+      html += '    b.innerHTML = "<div class=\'empty-state\'>" + ';
+      html += '    "<div class=\'empty-state-title\'>Нет флористов</div>" + ';
+      html += '    "<div class=\'empty-state-text\'>Отправьте приглашение</div></div>"; ';
+      html += '    return; }';
       
       html += '  d.staff.forEach(function(f){ ';
       html += '    var c = document.createElement("div"); c.className = "card"; ';
@@ -6626,7 +6695,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    sDiv.className = "sales"; sDiv.textContent = "Продано: " + ';
       html += '    sum + " ₽"; c.appendChild(sDiv);';
       html += '    var pDiv = document.createElement("div"); ';
-      html += '    pDiv.style = "font-size:12px;color:#888;"; ';
+      html += '    pDiv.style = "font-size:13px;color:var(--f-text-2); ';
+      html += '    margin-top:8px;"; ';
       html += '    pDiv.textContent = "PIN: " + (f.warehouse_pin || "нет"); ';
       html += '    c.appendChild(pDiv);';
       
@@ -6635,7 +6705,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    btn.innerText = "Задать PIN"; btn.className = "btn-pin"; ';
       html += '    btn.onclick = function(){setPin(f.chat_id);}; ';
       html += '    btnWrap.appendChild(btn);';
-
       html += '    var delBtn = document.createElement("button"); ';
       html += '    delBtn.innerText = "Удалить"; delBtn.className = "btn-del"; ';
       html += '    delBtn.onclick = function(){delStaff(f.chat_id);}; ';
@@ -6710,15 +6779,15 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 43. API ПРАВ И УДАЛЕНИЯ ФЛОРИСТОВ ======
+  // ====== 38. API ПРАВ И УДАЛЕНИЯ ФЛОРИСТОВ ======
   app.post('/api/warehouse/florist/pin', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
       const ownerCheck = await pool.query(
-        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
+        'SELECT role FROM admins WHERE chat_id = $1 ' +
+        'AND shop_id = $2 LIMIT 1', 
         [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
@@ -6740,7 +6809,8 @@ function setupWarehouse(app, bot, s3ctx) {
       if (!auth) return res.status(401).json({ ok: false });
       
       const ownerCheck = await pool.query(
-        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
+        'SELECT role FROM admins WHERE chat_id = $1 ' +
+        'AND shop_id = $2 LIMIT 1', 
         [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
@@ -6767,7 +6837,8 @@ function setupWarehouse(app, bot, s3ctx) {
       if (!auth) return res.status(401).json({ ok: false });
       
       const ownerCheck = await pool.query(
-        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
+        'SELECT role FROM admins WHERE chat_id = $1 ' +
+        'AND shop_id = $2 LIMIT 1', 
         [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
@@ -6783,7 +6854,7 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 44. API НАСТРОЕК ======
+  // ====== 39. API НАСТРОЕК ======
   app.get('/api/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6828,7 +6899,8 @@ function setupWarehouse(app, bot, s3ctx) {
       if (!auth) return res.status(401).json({ ok: false });
       
       const ownerCheck = await pool.query(
-        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1', 
+        'SELECT role FROM admins WHERE chat_id = $1 ' +
+        'AND shop_id = $2 LIMIT 1', 
         [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
@@ -6858,7 +6930,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 45. ЭКРАН НАСТРОЕК ======
+  // ====== 40. ЭКРАН НАСТРОЕК ======
   app.get('/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -6866,59 +6938,63 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
-      html += '.card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 20px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.card { padding: 20px; border-radius: var(--r-lg); }';
+      html += 'h3 { margin-top: 0; font-size: 18px; font-weight: 800; ';
+      html += 'margin-bottom: 8px; }';
+      html += '.hint { font-size: 13px; color: var(--f-text-2); ';
+      html += 'margin-bottom: 16px; }';
+      
       html += '.row { display: flex; justify-content: space-between; ';
-      html += 'margin-top: 10px; border-top: 1px solid #eee; ';
-      html += 'padding-top: 10px; } ';
-      html += 'input[type="checkbox"] { transform: scale(1.3); ';
-      html += 'accent-color: ' + brandColor + '; } ';
-      html += 'input[type="radio"] { transform: scale(1.3); ';
-      html += 'accent-color: ' + brandColor + '; margin-right: 10px; } ';
-      html += 'label { display: flex; align-items: center; margin-top: 10px; } ';
-      html += '.btn-save { background: ' + brandColor + '; color: #fff; ';
-      html += 'border: none; padding: 10px 15px; border-radius: 8px; ';
-      html += 'font-weight: 600; font-family: inherit; margin-top: 10px; }';
+      html += 'align-items: center; margin-top: 12px; ';
+      html += 'border-top: 1px solid var(--f-border); padding-top: 12px; } ';
+      html += '.row span { font-weight: 500; font-size: 15px; }';
+      html += 'input[type="checkbox"] { width: 24px; height: 24px; ';
+      html += 'accent-color: var(--f-brand); margin: 0; } ';
+      html += 'input[type="radio"] { width: 20px; height: 20px; ';
+      html += 'accent-color: var(--f-brand); margin-right: 12px; } ';
+      html += 'label.radio-lbl { display: flex; align-items: center; ';
+      html += 'margin-top: 12px; font-size: 15px; font-weight: 500; } ';
+      html += '.btn-save { background: var(--f-brand); color: #fff; ';
+      html += 'border: none; padding: 12px 20px; border-radius: var(--r-md); ';
+      html += 'font-weight: 700; font-family: inherit; margin-top: 16px; ';
+      html += 'width: 100%; }';
       html += '</style></head><body>';
       
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('settings') + 'Настройки</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Настройки</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
-      html += '<div class="card"><h3 style="margin-top:0;">Безопасность (Владелец)</h3>';
-      html += '<p style="font-size:12px;color:#666;">Задайте логин и пароль, чтобы входить в склад с компьютера или планшета.</p>';
+      html += '<div class="card" style="margin-bottom:16px;">';
+      html += '<h3>Безопасность (Владелец)</h3>';
+      html += '<p class="hint">Задайте логин и пароль, чтобы входить ';
+      html += 'в склад с компьютера.</p>';
       html += '<label>Логин</label>';
-      html += '<input type="text" id="ownerLogin" placeholder="Например: admin" style="margin-bottom:10px;">';
+      html += '<input type="text" id="ownerLogin" placeholder="admin">';
       html += '<label>Новый пароль</label>';
-      html += '<input type="password" id="ownerPassword" placeholder="Минимум 4 символа" style="margin-bottom:10px;">';
-      html += '<button class="btn-save" onclick="saveOwnerPassword()">Сохранить пароль</button>';
+      html += '<input type="password" id="ownerPassword" ';
+      html += 'placeholder="Минимум 4 символа">';
+      html += '<button class="btn-save" onclick="saveOwnerPassword()">';
+      html += 'Сохранить пароль</button>';
       html += '</div>';
 
-      html += '<div class="card"><h3 style="margin-top:0;">Уведомления';
-      html += '</h3><div id="notifs"></div></div>';
-      html += '<div class="card"><h3 style="margin-top:0;">Отображение';
-      html += '</h3><div id="views"></div></div>';
-      html += '<div class="card"><h3 style="margin-top:0;">Списания</h3>';
-      html += '<label style="font-size:13px; font-weight:600; color:#666;">';
-      html += 'Порог уведомления (₽)</label>';
+      html += '<div class="card" style="margin-bottom:16px;">';
+      html += '<h3>Уведомления</h3><div id="notifs"></div></div>';
+      
+      html += '<div class="card" style="margin-bottom:16px;">';
+      html += '<h3>Отображение</h3><div id="views"></div></div>';
+      
+      html += '<div class="card">';
+      html += '<h3>Списания</h3>';
+      html += '<p class="hint">Порог уведомления (₽)</p>';
       html += '<input type="number" id="writeoffThreshold" ';
-      html += 'style="width:100%; padding:10px; border:none; ';
-      html += 'border-radius:8px; margin-top:5px; box-sizing:border-box; ';
-      html += 'font-family:inherit; box-shadow: 0 4px 12px rgba(15,61,62,0.06);" ';
       html += 'placeholder="1000">';
       html += '<button class="btn-save" onclick="saveThreshold()">';
       html += 'Сохранить</button></div>';
@@ -6944,6 +7020,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    cb.checked = s[o.k] !== false; ';
       html += '    cb.onchange = function(){saveSet(o.k, cb.checked);}; ';
       html += '    r.appendChild(cb); nb.appendChild(r); });';
+      
       html += '  var vOpts = [{v:"all",t:"Все товары (включая нулевые)"},';
       html += '  {v:"nonzero",t:"Только ненулевые"},';
       html += '  {v:"pos",t:"Только в наличии"}]; ';
@@ -6951,6 +7028,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var vb = document.getElementById("views");';
       html += '  vOpts.forEach(function(o){ ';
       html += '    var lb = document.createElement("label"); ';
+      html += '    lb.className = "radio-lbl";';
       html += '    var rb = document.createElement("input"); rb.type = "radio"; ';
       html += '    rb.name = "inv_view"; rb.value = o.v; ';
       html += '    rb.checked = (currentV === o.v); ';
@@ -6958,6 +7036,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    lb.appendChild(rb); ';
       html += '    lb.appendChild(document.createTextNode(o.t)); ';
       html += '    vb.appendChild(lb); });';
+      
       html += '  document.getElementById("writeoffThreshold").value = ';
       html += '  s.writeoff_threshold || "";';
       html += '}).catch(function(){});';
@@ -6965,7 +7044,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'function saveOwnerPassword() {';
       html += '  var l = document.getElementById("ownerLogin").value;';
       html += '  var p = document.getElementById("ownerPassword").value;';
-      html += '  if (!l || !p) { showAlert("Ошибка", "Заполните поля", false); return; }';
+      html += '  if (!l || !p) { ';
+      html += '    showAlert("Ошибка", "Заполните поля", false); return; }';
       html += '  fetch("/api/warehouse/owner/set-password", { method: "POST", ';
       html += '  headers: { "Content-Type": "application/json" }, ';
       html += '  body: JSON.stringify({ login: l, password: p }) })';
@@ -6981,6 +7061,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'headers: { "Content-Type": "application/json" }, ';
       html += 'body: JSON.stringify({ key: k, val: v }) })';
       html += '.catch(function(){}); }';
+      
       html += 'function saveThreshold() { ';
       html += 'var v = document.getElementById("writeoffThreshold").value; ';
       html += 'saveSet("writeoff_threshold", v); ';
@@ -6991,7 +7072,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-  // ====== 46. API ИСТОРИИ ======
+
+  // ====== 41. API ИСТОРИИ ======
   app.get('/api/warehouse/history', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7082,7 +7164,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 47. ЭКРАН ИСТОРИИ ======
+  // ====== 42. ЭКРАН ИСТОРИИ ======
   app.get('/warehouse/history', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7099,64 +7181,59 @@ function setupWarehouse(app, bot, s3ctx) {
 
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
-      html += '.calendar { display: flex; overflow-x: auto; gap: 10px; ';
-      html += 'margin-bottom: 15px; } ';
-      html += '.day-btn { background: #fff; border: 1px solid #ddd; ';
-      html += 'border-radius: 10px; padding: 10px; text-align: center; ';
-      html += 'min-width: 60px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; font-weight: 600; }';
-      html += '.day-btn.active { background: ' + brandColor + '; ';
-      html += 'color: #fff; } ';
-      html += '.totals-banner { background: #fff; padding: 15px; ';
-      html += 'border-radius: 12px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
-      html += 'display: flex; justify-content: space-between; ';
-      html += 'font-weight: 800; flex-wrap: wrap; gap: 10px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
       
-      html += '.filters-box { background: #fff; border-radius: 12px; ';
-      html += 'padding: 15px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += '.calendar { display: flex; overflow-x: auto; gap: 8px; ';
+      html += 'margin-bottom: 16px; padding-bottom: 4px; } ';
+      html += '.calendar::-webkit-scrollbar { display: none; }';
+      html += '.day-btn { background: #fff; border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); padding: 10px; text-align: center; ';
+      html += 'min-width: 60px; text-decoration: none; ';
+      html += 'color: var(--f-text); font-weight: 600; flex-shrink: 0; }';
+      html += '.day-btn.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); } ';
+      
+      html += '.totals-banner { background: #fff; padding: 16px; ';
+      html += 'border-radius: var(--r-md); margin-bottom: 16px; ';
+      html += 'box-shadow: var(--sh-1); display: flex; justify-content: space-between; ';
+      html += 'font-weight: 800; flex-wrap: wrap; gap: 12px; }';
+      
+      html += '.filters-box { background: #fff; border-radius: var(--r-md); ';
+      html += 'padding: 16px; margin-bottom: 16px; box-shadow: var(--sh-1); }';
       html += '.filter-row { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; margin-bottom: 10px; }';
+      html += 'align-items: center; margin-bottom: 12px; }';
       html += '.filter-row:last-child { margin-bottom: 0; }';
-      html += '.pill-group { display: flex; gap: 5px; }';
-      html += '.pill { padding: 4px 10px; border-radius: 15px; ';
-      html += 'background: #F0F4F4; font-size: 12px; font-weight: 600; ';
+      html += '.pill-group { display: flex; gap: 6px; }';
+      html += '.pill { padding: 6px 12px; border-radius: 15px; ';
+      html += 'background: #F0F4F4; font-size: 13px; font-weight: 600; ';
       html += 'cursor: pointer; border: 1px solid transparent; }';
-      html += '.pill.active { background: #E0F2F1; color: ' + brandColor + '; ';
-      html += 'border-color: ' + brandColor + '; }';
+      html += '.pill.active { background: #E0F2F1; color: var(--f-brand); ';
+      html += 'border-color: var(--f-brand); }';
       html += '.switch-label { display: flex; align-items: center; gap: 8px; ';
-      html += 'font-size: 13px; font-weight: 600; cursor: pointer; }';
-      html += '.switch-label input { width: 18px; height: 18px; margin: 0; }';
+      html += 'font-size: 14px; font-weight: 600; cursor: pointer; }';
+      html += '.switch-label input { width: 20px; height: 20px; margin: 0; }';
 
-      html += '.item { background: #fff; border-radius: 12px; padding: 15px; ';
+      html += '.item { background: #fff; border-radius: var(--r-md); padding: 16px; ';
       html += 'margin-bottom: 10px; display: flex; justify-content: space-between; ';
       html += 'align-items: flex-start; cursor: pointer; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); } ';
-      html += '.item.sale { border-left: 4px solid #3C7A89; } ';
-      html += '.item.writeoff { border-left: 4px solid ' + accentColor + '; } ';
-      html += '.item.receipt { border-left: 4px solid ' + successColor + '; }';
-      html += '.date { font-size: 11px; color: #888; margin-top: 5px; } ';
+      html += 'box-shadow: var(--sh-1); border-left: 4px solid transparent; } ';
+      html += '.item.sale { border-left-color: #3C7A89; } ';
+      html += '.item.writeoff { border-left-color: var(--f-accent); } ';
+      html += '.item.receipt { border-left-color: var(--f-success); }';
+      html += '.date { font-size: 12px; color: var(--f-text-2); margin-top: 4px; } ';
       html += '.amount { font-weight: 800; font-size: 16px; text-align: right; } ';
-      html += '.items-list { font-size: 13px; color: #555; margin-top: 4px; ';
-      html += 'font-style: italic; } ';
+      html += '.items-list { font-size: 13px; color: var(--f-text-2); ';
+      html += 'margin-top: 6px; font-style: italic; } ';
       html += '</style></head><body>';
       
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">' + 
-              getIconSvg('history') + 'История смены</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">История смены</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<div class="calendar" id="calendar"></div>';
@@ -7164,8 +7241,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<div class="filters-box">';
       html += '<div class="filter-row">';
       html += '<select id="staffFilter" onchange="loadHistory()" ';
-      html += 'style="padding:8px; border:none; border-radius:8px; ';
-      html += 'font-family:inherit; font-weight:600; ';
+      html += 'style="padding:10px; border:1px solid var(--f-border); ';
+      html += 'border-radius:var(--r-md); font-family:inherit; font-weight:600; ';
       html += 'background:#F0F4F4; flex:1; margin:0;">';
       html += '<option value="">Все сотрудники</option>';
       staffList.forEach(function(s) {
@@ -7282,8 +7359,11 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  });';
       
       html += '  if (filtered.length === 0) { ';
-      html += '    listEl.textContent = "Нет операций по фильтрам"; ';
-      html += '    document.getElementById("totalsBanner").style.display = "none";';
+      html += '    listEl.innerHTML = "<div class=\'empty-state\'>" + ';
+      html += '    "<div class=\'empty-state-title\'>Нет операций</div>" + ';
+      html += '    "<div class=\'empty-state-text\'>По выбранным фильтрам</div></div>"; ';
+      html += '    document.getElementById("totalsBanner")';
+      html += '    .style.display = "none";';
       html += '    return; }';
       
       html += '  var totSales = 0; var totCount = 0; var totLoss = 0;';
@@ -7313,7 +7393,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      "/warehouse/sale/details?id=" + saleId; };';
       html += '      var left = document.createElement("div"); ';
       html += '      var title = document.createElement("b"); ';
-      html += '      title.textContent = "💰 Продажа (" + seller + ")"; ';
+      html += '      title.textContent = "Продажа (" + seller + ")"; ';
       html += '      var dateDiv = document.createElement("div"); ';
       html += '      dateDiv.className = "date"; dateDiv.textContent = ds; ';
       html += '      var itemsDiv = document.createElement("div"); ';
@@ -7337,7 +7417,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      "&type=receipts"; }; ';
       html += '      var left = document.createElement("div"); ';
       html += '      var title = document.createElement("b"); ';
-      html += '      title.textContent = "📥 Приход (" + seller + ")"; ';
+      html += '      title.textContent = "Приход (" + seller + ")"; ';
       html += '      var dateDiv = document.createElement("div"); ';
       html += '      dateDiv.className = "date"; dateDiv.textContent = ds; ';
       html += '      var itemsDiv = document.createElement("div"); ';
@@ -7348,7 +7428,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var right = document.createElement("div"); ';
       html += '      var amtDiv = document.createElement("div"); ';
       html += '      amtDiv.className = "amount"; ';
-      html += '      amtDiv.style.color = "' + successColor + '"; ';
+      html += '      amtDiv.style.color = "var(--f-success)"; ';
       html += '      amtDiv.textContent = "+" + ';
       html += '      parseFloat(h.amount).toLocaleString("ru-RU") + " ₽"; ';
       html += '      right.appendChild(amtDiv);';
@@ -7362,7 +7442,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      "&type=writeoffs"; }; ';
       html += '      var left = document.createElement("div"); ';
       html += '      var title = document.createElement("b"); ';
-      html += '      title.textContent = "🗑 Списание (" + seller + ")"; ';
+      html += '      title.textContent = "Списание (" + seller + ")"; ';
       html += '      var dateDiv = document.createElement("div"); ';
       html += '      dateDiv.className = "date"; dateDiv.textContent = ds; ';
       html += '      var itemsDiv = document.createElement("div"); ';
@@ -7374,7 +7454,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      var right = document.createElement("div"); ';
       html += '      var amtDiv = document.createElement("div"); ';
       html += '      amtDiv.className = "amount"; ';
-      html += '      amtDiv.style.color = "' + accentColor + '"; ';
+      html += '      amtDiv.style.color = "var(--f-accent)"; ';
       html += '      amtDiv.textContent = "-" + fmtNum(h.amount) + " шт"; ';
       html += '      right.appendChild(amtDiv);';
       html += '      div.appendChild(left); div.appendChild(right);';
@@ -7389,8 +7469,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 48. API ДЕТАЛЕЙ ПРОДАЖИ ======
+  // ====== 43. API ДЕТАЛЕЙ ПРОДАЖИ ======
   app.get('/api/warehouse/sale/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7426,7 +7505,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 49. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
+  // ====== 44. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
   app.get('/warehouse/sale/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7434,38 +7513,34 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
-      html += '.card { background: #fff; border-radius: 16px; padding: 20px; ';
-      html += 'margin-bottom: 15px; box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.total { font-size: 28px; font-weight: 800; ';
-      html += 'color: ' + successColor + '; margin-bottom: 10px; } ';
-      html += '.meta { font-size: 13px; color: #666; margin-bottom: 20px; } ';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.card { padding: 24px; border-radius: var(--r-lg); }';
+      html += '.total { font-size: 32px; font-weight: 800; ';
+      html += 'color: var(--f-success); margin-bottom: 8px; } ';
+      html += '.meta { font-size: 14px; color: var(--f-text-2); ';
+      html += 'margin-bottom: 24px; } ';
       html += '.item-row { display: flex; justify-content: space-between; ';
-      html += 'padding: 15px 0; border-bottom: 1px solid #eee; ';
-      html += 'text-decoration: none; color: ' + brandColor + '; } ';
+      html += 'padding: 16px 0; border-bottom: 1px solid var(--f-border); ';
+      html += 'text-decoration: none; color: var(--f-text); } ';
       html += '.item-row:last-child { border-bottom: none; } ';
       html += '.item-name { font-weight: 600; font-size: 16px; } ';
-      html += '.item-qty { color: ' + dangerColor + '; font-weight: 800; }';
-      html += '.btn-cancel-sale { width: 100%; padding: 15px; ';
-      html += 'background: #fff; border: 2px solid ' + dangerColor + '; ';
-      html += 'color: ' + dangerColor + '; border-radius: 12px; ';
-      html += 'font-weight: 800; font-size: 16px; margin-top: 20px; ';
+      html += '.item-qty { color: var(--f-danger); font-weight: 800; }';
+      html += '.btn-cancel-sale { width: 100%; padding: 16px; ';
+      html += 'background: #fff; border: 2px solid var(--f-danger); ';
+      html += 'color: var(--f-danger); border-radius: var(--r-md); ';
+      html += 'font-weight: 800; font-size: 16px; margin-top: 24px; ';
       html += 'cursor: pointer; }';
       html += '</style></head><body>';
       
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse/history" class="back">←</a>';
-      html += '<h2 style="margin:0;">🧾 Чек</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse/history" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Чек</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<div class="card" id="content">Загрузка...</div>';
@@ -7473,27 +7548,33 @@ function setupWarehouse(app, bot, s3ctx) {
       html += getUnifiedMenu('history');
 
       html += '<script>';
-      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'function fmtNum(n) { ';
+      html += 'var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
+      
       html += 'var saleId = parseInt(new URLSearchParams(window.location.search)';
       html += '.get("id")) || 0;';
       html += 'fetch("/api/warehouse/sale/details?id=" + saleId)';
       html += '.then(function(r){return r.json();}).then(function(d){';
       html += '  var content = document.getElementById("content"); ';
-      html += '  while(content.firstChild) content.removeChild(content.firstChild); ';
+      html += '  while(content.firstChild) ';
+      html += '  content.removeChild(content.firstChild); ';
       html += '  if (!d.ok) { content.textContent = "Ошибка"; return; }';
       html += '  var s = d.sale; ';
       html += '  var ds = new Date(s.date).toLocaleString("ru-RU");';
+      
       html += '  var tot = document.createElement("div"); ';
       html += '  tot.className = "total"; ';
       html += '  tot.textContent = parseFloat(s.real_price)';
       html += '  .toLocaleString("ru-RU") + " ₽"; content.appendChild(tot);';
+      
       html += '  var meta = document.createElement("div"); ';
       html += '  meta.className = "meta"; ';
       html += '  meta.textContent = "Продал: " + (s.seller || "Неизвестно") + ';
       html += '  " · Дата: " + ds; content.appendChild(meta);';
+      
       html += '  d.items.forEach(function(i){ ';
       html += '    var a = document.createElement("a"); ';
       html += '    a.href = "/warehouse/item?id=" + ';
@@ -7503,7 +7584,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var n = document.createElement("div"); ';
       html += '    n.className = "item-name"; n.textContent = i.name; ';
       html += '    var c = document.createElement("div"); ';
-      html += '    c.style = "font-size:12px;color:#888;"; ';
+      html += '    c.style = "font-size:12px;color:var(--f-text-2);"; ';
       html += '    c.textContent = "Себестоимость: " + ';
       html += '    parseFloat(i.cost_at_sale) + " ₽/шт"; ';
       html += '    left.appendChild(n); left.appendChild(c); ';
@@ -7540,7 +7621,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 50. API ОТМЕНЫ ПРОДАЖИ ======
+  // ====== 45. API ОТМЕНЫ ПРОДАЖИ ======
   app.post('/api/warehouse/sale/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -7613,7 +7694,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-  // ====== 51. API ВСЕХ БУКЕТОВ ======
+
+  // ====== 46. API ВСЕХ БУКЕТОВ ======
   app.get('/api/warehouse/bouquets/all', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7650,11 +7732,12 @@ function setupWarehouse(app, bot, s3ctx) {
       
       res.json({ ok: true, bouquets: result });
     } catch (e) { 
-      res.status(500).json({ ok: false }); 
+      console.error('Bouquets/all error:', e.message);
+      res.status(500).json({ ok: false, error: e.message }); 
     }
   });
 
-  // ====== 52. ЭКРАН УПРАВЛЕНИЯ БУКЕТАМИ ======
+  // ====== 47. ЭКРАН УПРАВЛЕНИЯ БУКЕТАМИ ======
   app.get('/warehouse/bouquets', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -7662,72 +7745,76 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
+      html += 'body { padding: 0 16px 32px 16px; }';
       
-      html += '.search { width: 100%; padding: 15px; border: none; ';
-      html += 'border-radius: 12px; margin-bottom: 15px; ';
+      html += '.btn-add { width: 100%; background: var(--f-brand); ';
+      html += 'color: #fff; border: none; padding: 16px; ';
+      html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
+      html += 'margin-bottom: 20px; box-shadow: 0 4px 12px rgba(6,76,73,0.2); }';
+      
+      html += '.search { width: 100%; padding: 14px 16px; border: none; ';
+      html += 'border-radius: var(--r-md); margin-bottom: 16px; ';
       html += 'box-sizing: border-box; font-family: inherit; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
+      html += 'box-shadow: var(--sh-1); }';
 
       html += '.controls { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; margin-bottom: 15px; gap: 10px; }';
+      html += 'align-items: center; margin-bottom: 16px; gap: 8px; }';
       html += '.view-toggles { display: flex; gap: 4px; ';
       html += 'background: #e0e0e0; padding: 4px; border-radius: 10px; }';
-      html += '.view-btn { border: none; background: none; padding: 6px; ';
+      html += '.view-btn { border: none; background: none; padding: 8px; ';
       html += 'border-radius: 8px; cursor: pointer; color: #666; ';
       html += 'display: flex; }';
       html += '.view-btn.active { background: #fff; ';
-      html += 'box-shadow: 0 2px 5px rgba(0,0,0,0.1); }';
+      html += 'box-shadow: var(--sh-1); color: var(--f-brand); }';
       html += '.view-btn svg { width: 20px; height: 20px; }';
       
-      html += '.filters { display: flex; gap: 8px; margin-bottom: 15px; ';
-      html += 'overflow-x: auto; padding-bottom: 5px; }';
-      html += '.f-btn { padding: 8px 15px; border-radius: 20px; ';
-      html += 'background: #fff; border: 1px solid #ddd; font-size: 13px; ';
-      html += 'font-weight: 600; cursor: pointer; color: ' + brandColor + '; ';
-      html += 'white-space: nowrap; }';
-      html += '.f-btn.active { background: ' + brandColor + '; color: #fff; }';
+      html += '.filters { display: flex; gap: 8px; margin-bottom: 16px; ';
+      html += 'overflow-x: auto; padding-bottom: 4px; }';
+      html += '.filters::-webkit-scrollbar { display: none; }';
+      html += '.f-btn { padding: 8px 16px; border-radius: 20px; ';
+      html += 'background: #fff; border: 1px solid var(--f-border); ';
+      html += 'font-size: 14px; font-weight: 600; cursor: pointer; ';
+      html += 'color: var(--f-text); white-space: nowrap; }';
+      html += '.f-btn.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); }';
 
       html += '.b-grid { display: grid; grid-template-columns: 1fr 1fr; ';
-      html += 'gap: 10px; align-items: stretch; }';
-      html += '.b-card-grid { background: #fff; border-radius: 16px; ';
-      html += 'padding: 10px; display: flex; flex-direction: column; ';
-      html += 'height: 100%; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.b-img-grid { width: 100%; height: 100px; border-radius: 12px; ';
-      html += 'object-fit: cover; background: #F0F4F4; margin-bottom: 8px; }';
-      html += '.b-ph-grid { width: 100%; height: 100px; border-radius: 12px; ';
-      html += 'background: #F0F4F4; display: flex; align-items: center; ';
-      html += 'justify-content: center; margin-bottom: 8px; }';
-      html += '.b-ph-grid svg { width: 32px; height: 32px; }';
+      html += 'gap: 12px; align-items: stretch; }';
+      html += '.b-card-grid { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 12px; display: flex; flex-direction: column; ';
+      html += 'height: 100%; box-shadow: var(--sh-1); }';
+      html += '.b-img-grid { width: 100%; aspect-ratio: 1; ';
+      html += 'border-radius: var(--r-md); object-fit: cover; ';
+      html += 'background: #F0F4F4; margin-bottom: 8px; }';
+      html += '.b-ph-grid { width: 100%; aspect-ratio: 1; ';
+      html += 'border-radius: var(--r-md); background: #F0F4F4; ';
+      html += 'display: flex; align-items: center; justify-content: center; ';
+      html += 'margin-bottom: 8px; }';
+      html += '.b-ph-grid svg { width: 32px; height: 32px; color: #A0B4B4; }';
       
       html += '.b-list { display: flex; flex-direction: column; gap: 10px; }';
-      html += '.b-card-list { background: #fff; border-radius: 16px; ';
-      html += 'padding: 15px; display: flex; align-items: flex-start; gap: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.b-img-list { width: 64px; height: 64px; border-radius: 12px; ';
-      html += 'object-fit: cover; background: #F0F4F4; flex-shrink: 0; }';
-      html += '.b-ph-list { width: 64px; height: 64px; border-radius: 12px; ';
-      html += 'background: #F0F4F4; display: flex; align-items: center; ';
-      html += 'justify-content: center; flex-shrink: 0; }';
-      html += '.b-ph-list svg { width: 32px; height: 32px; }';
+      html += '.b-card-list { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 16px; display: flex; align-items: flex-start; gap: 16px; ';
+      html += 'box-shadow: var(--sh-1); }';
+      html += '.b-img-list { width: 72px; height: 72px; ';
+      html += 'border-radius: var(--r-md); object-fit: cover; ';
+      html += 'background: #F0F4F4; flex-shrink: 0; }';
+      html += '.b-ph-list { width: 72px; height: 72px; ';
+      html += 'border-radius: var(--r-md); background: #F0F4F4; ';
+      html += 'display: flex; align-items: center; justify-content: center; ';
+      html += 'flex-shrink: 0; }';
+      html += '.b-ph-list svg { width: 32px; height: 32px; color: #A0B4B4; }';
       
       html += '.b-info { flex: 1; min-width: 0; display: flex; ';
       html += 'flex-direction: column; }';
       html += '.b-name { font-size: 15px; font-weight: 800; ';
       html += 'margin-bottom: 4px; word-break: break-word; }';
-      html += '.b-price { font-size: 13px; color: ' + successColor + '; ';
+      html += '.b-price { font-size: 14px; color: var(--f-success); ';
       html += 'font-weight: 600; margin-bottom: 8px; }';
-      html += '.b-recipe { font-size: 11px; color: #777; ';
+      html += '.b-recipe { font-size: 12px; color: var(--f-text-2); ';
       html += 'margin-bottom: 8px; line-height: 1.3; }';
       
       html += '.switch { position: relative; display: inline-block; ';
@@ -7739,33 +7826,32 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '.slider:before { position: absolute; content: ""; ';
       html += 'height: 18px; width: 18px; left: 3px; bottom: 3px; ';
       html += 'background-color: white; transition: .3s; ';
-      html += 'border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }';
-      html += 'input:checked + .slider { background-color: ' + successColor + '; }';
-      html += 'input:checked + .slider:before { transform: translateX(20px); }';
+      html += 'border-radius: 50%; box-shadow: var(--sh-1); }';
+      html += 'input:checked + .slider { ';
+      html += 'background-color: var(--f-success); }';
+      html += 'input:checked + .slider:before { ';
+      html += 'transform: translateX(20px); }';
       
-      html += '.btn-setup { background: #F0F4F4; color: ' + brandColor + '; ';
-      html += 'border: none; padding: 8px 12px; border-radius: 8px; ';
-      html += 'font-weight: 600; font-family: inherit; ';
-      html += 'font-size: 12px; width: 100%; margin-top: auto; }';
-      html += '.btn-add { width: 100%; background: ' + brandColor + '; ';
-      html += 'color: #fff; border: none; padding: 15px; ';
-      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
-      html += 'margin-bottom: 15px; }';
+      html += '.btn-setup { background: #F0F4F4; color: var(--f-text); ';
+      html += 'border: none; padding: 10px 12px; border-radius: var(--r-sm); ';
+      html += 'font-weight: 600; font-family: inherit; font-size: 13px; ';
+      html += 'margin-top: auto; display: flex; align-items: center; ';
+      html += 'justify-content: center; gap: 6px; }';
       html += '.deleted-item { opacity: 0.6; }';
       html += '</style></head><body>';
       
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('bouquets') + 'Букеты</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Букеты</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<button class="btn-add" onclick="window.location.href=';
       html += '\'/warehouse/bouquet/edit\'">+ Создать новый букет</button>';
 
       html += '<input type="text" class="search" id="search" ';
-      html += 'placeholder="🔍 Поиск по названию..." oninput="render()">';
+      html += 'placeholder="Поиск по названию..." oninput="render()">';
 
       html += '<div class="controls">';
       html += '  <div class="view-toggles">';
@@ -7806,7 +7892,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '<script>';
       html += 'var allBouquets = []; var currentView = "grid"; ';
       html += 'var currentFilter = "all";';
-      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="#A0B4B4">';
+      html += 'var svgPh = \'<svg viewBox="0 0 24 24" fill="currentColor">';
       html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
       html += 'L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3';
       html += 'C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5';
@@ -7844,12 +7930,19 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'fetch("/api/warehouse/bouquets/all")';
       html += '.then(function(r){return r.json();}).then(function(d){ ';
       html += '  if (d.ok) { allBouquets = d.bouquets; render(); }';
-      html += '}).catch(function(){});';
+      html += '  else { ';
+      html += '    document.getElementById("list").innerHTML = ';
+      html += '    "<div style=\'color:red;\'>Ошибка: " + d.error + "</div>";';
+      html += '  }';
+      html += '}).catch(function(e){ ';
+      html += '  document.getElementById("list").innerHTML = ';
+      html += '  "<div style=\'color:red;\'>Сеть: " + e.message + "</div>";';
+      html += '});';
 
       html += 'function render() {';
       html += '  var container = document.getElementById("list");';
-      html += '  while(container.firstChild) container.removeChild(container.firstChild);';
-      
+      html += '  while(container.firstChild) ';
+      html += '  container.removeChild(container.firstChild);';
       html += '  var q = document.getElementById("search").value.toLowerCase();';
       
       html += '  var filtered = allBouquets.filter(function(b) {';
@@ -7865,7 +7958,7 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  if (filtered.length === 0) { ';
       html += '    var em = document.createElement("div"); ';
       html += '    em.style = "grid-column:1/-1; text-align:center; ';
-      html += '    padding:20px; color:#888;";';
+      html += '    padding:20px; color:var(--f-text-2);";';
       html += '    em.textContent = "Ничего не найдено"; ';
       html += '    container.appendChild(em); return; }';
 
@@ -7916,20 +8009,20 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    }';
       
       html += '    var btnRow = document.createElement("div"); ';
-      html += '    btnRow.style = "display:flex; gap:5px; margin-top:auto;";';
+      html += '    btnRow.style = "display:flex; gap:6px; margin-top:auto;";';
       
       html += '    if (bq.deleted) {';
       html += '      var btnRestore = document.createElement("button"); ';
       html += '      btnRestore.className = "btn-setup"; ';
-      html += '      btnRestore.style = "flex:1; color:' + successColor + ';"';
-      html += '      btnRestore.innerHTML = "♻️ Восстановить"; ';
+      html += '      btnRestore.style = "flex:1; color:var(--f-success);"';
+      html += '      btnRestore.innerHTML = "Восстановить"; ';
       html += '      btnRestore.onclick = function() { restoreBouquet(bq.id); }; ';
       html += '      btnRow.appendChild(btnRestore);';
       html += '    } else {';
       html += '      var btnEdit = document.createElement("button"); ';
       html += '      btnEdit.className = "btn-setup"; ';
       html += '      btnEdit.style = "flex:1;";';
-      html += '      btnEdit.innerHTML = "✏️"; ';
+      html += '      btnEdit.innerHTML = "Изм."; ';
       html += '      btnEdit.onclick = function() { ';
       html += '        window.location.href = "/warehouse/bouquet/edit?id=" ';
       html += '        + bq.id; }; ';
@@ -7937,8 +8030,9 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '      var btnSetup = document.createElement("button"); ';
       html += '      btnSetup.className = "btn-setup"; ';
-      html += '      btnSetup.style = "flex:3;";';
-      html += '      btnSetup.textContent = "Состав"; ';
+      html += '      btnSetup.style = "flex:2; color:var(--f-brand); ';
+      html += '      font-weight:700;";';
+      html += '      btnSetup.textContent = "Рецепт"; ';
       html += '      btnSetup.onclick = function() { ';
       html += '        window.location.href = "/warehouse/bouquets/recipe?id=" ';
       html += '        + bq.id; }; ';
@@ -7946,8 +8040,8 @@ function setupWarehouse(app, bot, s3ctx) {
       
       html += '      var btnDel = document.createElement("button"); ';
       html += '      btnDel.className = "btn-setup"; ';
-      html += '      btnDel.style = "flex:1; color:red;";';
-      html += '      btnDel.innerHTML = "🗑"; ';
+      html += '      btnDel.style = "flex:1; color:var(--f-danger);";';
+      html += '      btnDel.innerHTML = "Удал."; ';
       html += '      btnDel.onclick = function() { delBouquet(bq.id); }; ';
       html += '      btnRow.appendChild(btnDel);';
       html += '    }';
@@ -8003,8 +8097,7 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
-  // ====== 53. API ПЕРЕКЛЮЧЕНИЯ СВЯЗИ БУКЕТА ======
+  // ====== 48. API ПЕРЕКЛЮЧЕНИЯ СВЯЗИ БУКЕТА ======
   app.post('/api/warehouse/bouquet/toggle', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8019,7 +8112,7 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 54. API УДАЛЕНИЯ БУКЕТА (В КОРЗИНУ) ======
+  // ====== 49. API УДАЛЕНИЯ БУКЕТА (В КОРЗИНУ) ======
   app.post('/api/warehouse/bouquet/delete', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8032,7 +8125,7 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // ====== 55. API ВОССТАНОВЛЕНИЯ БУКЕТА ======
+  // ====== 50. API ВОССТАНОВЛЕНИЯ БУКЕТА ======
   app.post('/api/warehouse/bouquet/restore', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8044,7 +8137,8 @@ function setupWarehouse(app, bot, s3ctx) {
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
-  // ====== 56. API ДАННЫХ БУКЕТА ======
+
+  // ====== 51. API ДАННЫХ БУКЕТА ======
   app.get('/api/warehouse/bouquets/info', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8062,7 +8156,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 57. API СОХРАНЕНИЯ БУКЕТА ======
+  // ====== 52. API СОХРАНЕНИЯ БУКЕТА ======
   app.post('/api/warehouse/bouquet/save', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8118,7 +8212,7 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-  // ====== 58. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
+  // ====== 53. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
   app.get('/warehouse/bouquet/edit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8128,90 +8222,86 @@ function setupWarehouse(app, bot, s3ctx) {
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink + uiScript + '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; } ';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; } ';
-      html += '.card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 20px; margin-bottom: 15px; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); }';
-      html += '.btn-save { width: 100%; background: ' + successColor + '; ';
-      html += 'color: #fff; border: none; padding: 16px; ';
-      html += 'border-radius: 12px; font-size: 16px; font-weight: 800; ';
-      html += 'margin-top: 15px; }';
-      html += '.img-preview { width: 100px; height: 100px; border-radius: 12px; ';
-      html += 'object-fit: cover; display: none; margin-bottom: 10px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
       
-      html += '.recipe-block { display: none; margin-top: 15px; ';
-      html += 'border-top: 2px dashed #eee; padding-top: 15px; }';
+      html += '.card { padding: 20px; border-radius: var(--r-lg); ';
+      html += 'margin-bottom: 16px; }';
+      html += 'label { display: block; font-size: 13px; ';
+      html += 'color: var(--f-text-2); margin-bottom: 6px; font-weight: 600; }';
+      
+      html += '.btn-save { width: 100%; background: var(--f-success); ';
+      html += 'color: #fff; border: none; padding: 16px; ';
+      html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
+      html += 'margin-top: 16px; }';
+      html += '.img-preview { width: 120px; height: 120px; border-radius: 12px; ';
+      html += 'object-fit: cover; display: none; margin-bottom: 16px; }';
+      
+      html += '.recipe-block { display: none; margin-top: 16px; ';
+      html += 'border-top: 2px dashed var(--f-border); padding-top: 16px; }';
       html += '.b-row { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 8px; font-size: 14px; }';
-      html += '.b-controls { display: flex; gap: 5px; align-items: center; }';
-      html += '.qty-btn { background: #F0F4F4; border: none; width: 26px; ';
-      html += 'height: 26px; border-radius: 6px; font-weight: bold; ';
-      html += 'font-size: 14px; color: ' + brandColor + '; }';
-      html += '.qty-input { width: 60px !important; height: 26px; ';
+      html += '.b-controls { display: flex; gap: 6px; align-items: center; }';
+      html += '.qty-btn { background: #F0F4F4; border: none; width: 28px; ';
+      html += 'height: 28px; border-radius: 8px; font-weight: bold; ';
+      html += 'font-size: 14px; color: var(--f-text); }';
+      html += '.qty-input { width: 50px !important; height: 28px; ';
       html += 'font-size: 14px; margin: 0; padding: 0; text-align: center; }';
-      html += '.btn-add-raw { width: 100%; background: ' + brandColor + '; ';
-      html += 'color: #fff; border: none; padding: 12px; border-radius: 10px; ';
-      html += 'font-weight: 800; font-size: 14px; margin-top: 10px; }';
+      html += '.btn-add-raw { width: 100%; background: var(--f-brand); ';
+      html += 'color: #fff; border: none; padding: 12px; ';
+      html += 'border-radius: var(--r-md); font-weight: 800; font-size: 14px; ';
+      html += 'margin-top: 12px; }';
 
       html += '.dropdown-wrap { position: relative; }';
       html += '.dropdown-list { position: absolute; top: 100%; left: 0; ';
-      html += 'right: 0; background: #fff; border: 1px solid #eee; ';
-      html += 'border-radius: 12px; margin-top: -10px; z-index: 100; ';
-      html += 'box-shadow: 0 4px 15px rgba(0,0,0,0.1); ';
-      html += 'max-height: 200px; overflow-y: auto; display: none; }';
-      html += '.dd-item { padding: 12px 15px; border-bottom: 1px solid #eee; ';
-      html += 'cursor: pointer; display: flex; justify-content: space-between; ';
-      html += 'align-items: center; }';
+      html += 'right: 0; background: #fff; border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); margin-top: -8px; z-index: 100; ';
+      html += 'box-shadow: var(--sh-2); max-height: 200px; ';
+      html += 'overflow-y: auto; display: none; }';
+      html += '.dd-item { padding: 12px 16px; ';
+      html += 'border-bottom: 1px solid var(--f-border); cursor: pointer; ';
+      html += 'display: flex; justify-content: space-between; align-items: center; }';
       html += '.dd-item:last-child { border-bottom: none; }';
       html += '.dd-name { font-weight: 600; font-size: 14px; }';
       html += '.dd-stock { font-size: 12px; font-weight: 800; }';
-      html += '.clear-search { position: absolute; right: 15px; top: 22px; ';
-      html += 'font-size: 20px; color: #aaa; cursor: pointer; ';
+      html += '.clear-search { position: absolute; right: 14px; top: 14px; ';
+      html += 'font-size: 18px; color: #aaa; cursor: pointer; ';
       html += 'display: none; background: none; border: none; padding: 0; }';
       html += '</style></head><body>';
 
-      html += '<div class="header"><div class="header-left">';
-      html += '<a href="/warehouse/bouquets" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;" ';
-      html += 'id="pageTitle">Новый букет</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse/bouquets" class="back-btn">←</a>';
+      html += '<h2 class="page-title" id="pageTitle">Новый букет</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="card">';
       html += '<label>Название</label>';
-      html += '<input type="text" id="bqName" placeholder="Розы 51" ';
-      html += 'style="margin-bottom:10px;">';
+      html += '<input type="text" id="bqName" placeholder="Розы 51">';
       html += '<label>Цена (₽)</label>';
-      html += '<input type="number" id="bqPrice" placeholder="3500" ';
-      html += 'style="margin-bottom:10px;">';
+      html += '<input type="number" id="bqPrice" placeholder="3500">';
       html += '<label>Фото</label>';
       html += '<input type="file" id="bqPhoto" accept="image/*" ';
-      html += 'onchange="uploadPhoto(this)" style="margin-bottom:10px;">';
+      html += 'onchange="uploadPhoto(this)" style="padding:8px;">';
       html += '<img id="bqPreview" class="img-preview">';
       html += '<input type="hidden" id="bqPhotoUrl" value="">';
       
-      html += '<label style="display:flex; align-items:center; gap:8px; ';
-      html += 'margin-top:15px; font-weight:800; cursor:pointer;">';
+      html += '<label style="display:flex; align-items:center; gap:10px; ';
+      html += 'margin-top:20px; font-weight:800; font-size:15px; cursor:pointer;">';
       html += '<input type="checkbox" id="bqLinked" onchange="toggleRecipe()" ';
-      html += 'style="width:20px; height:20px; margin:0;"> ';
+      html += 'style="width:24px; height:24px; margin:0; accent-color:var(--f-brand);"> ';
       html += 'Привязать к складу (Рецепт)</label>';
       
-      // Блок рецепта
       html += '<div class="recipe-block" id="recipeSection">';
-      html += '<h3 style="margin-top:0; font-size:16px;">Состав:</h3>';
+      html += '<h3 style="margin-top:0; font-size:16px; font-weight:800; ';
+      html += 'margin-bottom:12px;">Состав:</h3>';
       html += '<div id="recipeList"></div>';
       
-      html += '<div style="margin-top:15px; background:#fafaf8; ';
-      html += 'padding:10px; border-radius:12px;">';
+      html += '<div style="margin-top:16px; background:#fafaf8; ';
+      html += 'padding:12px; border-radius:var(--r-md);">';
       html += '<label>Поиск по складу</label>';
       html += '<div class="dropdown-wrap">';
       html += '<input type="text" id="searchItem" oninput="onSearchInput()" ';
@@ -8240,13 +8330,15 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'var catalog = []; var recipe = [];';
       html += 'var selectedItem = null;';
 
-      html += 'function fmtNum(n) { var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'function fmtNum(n) { ';
+      html += 'var num = parseFloat(String(n).replace(",", ".")); ';
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
 
-      html += 'if (bId > 0) { ';
-      html += '  document.getElementById("pageTitle").textContent = "Редактирование";';
+    html += 'if (bId > 0) { ';
+      html += '  document.getElementById("pageTitle").textContent = ';
+      html += '  "Редактирование";';
       html += '  fetch("/api/warehouse/bouquets/info?id=" + bId)';
       html += '  .then(function(r){return r.json();}).then(function(d){';
       html += '    if (d.ok) {';
@@ -8300,13 +8392,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  if (val.length > 0) { btn.style.display = "block"; }';
       html += '  else { btn.style.display = "none"; }';
       html += '  if (!val) { dd.style.display = "none"; return; }';
-
       html += '  var found = catalog.filter(function(i) { ';
       html += '    return i.name.toLowerCase().includes(val.toLowerCase()); ';
       html += '  }).slice(0, 20);';
-
       html += '  if (found.length === 0) { dd.style.display = "none"; return; }';
-
       html += '  found.forEach(function(i) {';
       html += '    var row = document.createElement("div"); ';
       html += '    row.className = "dd-item";';
@@ -8316,8 +8405,8 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    st.className = "dd-stock"; ';
       html += '    var s = parseFloat(i.current_stock);';
       html += '    st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
-      html += '    st.style.color = s > 0 ? "' + successColor + '" : "';
-      html += dangerColor + '";';
+      html += '    st.style.color = s > 0 ? "var(--f-success)" : ';
+      html += '    "var(--f-danger)";';
       html += '    row.appendChild(nm); row.appendChild(st);';
       html += '    row.onclick = function() {';
       html += '      document.getElementById("searchItem").value = i.name;';
@@ -8344,7 +8433,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var q = parseFloat(document.getElementById("qtyAdd").value);';
       html += '  if (!q || q <= 0) { ';
       html += '    showAlert("Внимание", "Введите количество", false); return; }';
-      
       html += '  var ex = recipe.find(function(r) { ';
       html += '    return r.shop_item_id === selectedItem.id; });';
       html += '  if (ex) { ex.qty = parseFloat(ex.qty) + q; }';
@@ -8353,7 +8441,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      name: selectedItem.name, ';
       html += '      qty: q, unit: selectedItem.unit || "шт" }); ';
       html += '  }';
-      
       html += '  clearSearchText();';
       html += '  document.getElementById("qtyAdd").value = "";';
       html += '  renderRecipe();';
@@ -8376,7 +8463,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '    var mn = document.createElement("button"); ';
       html += '    mn.textContent = "-"; mn.className = "qty-btn"; ';
       html += '    mn.onclick = function() { changeQty(idx, -1); };';
-      
       html += '    var inp = document.createElement("input"); ';
       html += '    inp.type = "number"; inp.className = "qty-input"; ';
       html += '    inp.value = item.qty; inp.step = "0.1";';
@@ -8386,13 +8472,11 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        recipe[idx].qty = val; ';
       html += '      } else { renderRecipe(); }';
       html += '    };';
-      
       html += '    var pl = document.createElement("button"); ';
       html += '    pl.textContent = "+"; pl.className = "qty-btn"; ';
       html += '    pl.onclick = function() { changeQty(idx, 1); };';
       html += '    ctrl.appendChild(mn); ctrl.appendChild(inp); ';
       html += '    ctrl.appendChild(pl);';
-      
       html += '    var del = document.createElement("span"); ';
       html += '    del.textContent = "✕"; ';
       html += '    del.style = "color:red; cursor:pointer; font-size:18px; ';
@@ -8401,7 +8485,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '      recipe.splice(idx, 1); renderRecipe(); ';
       html += '    };';
       html += '    ctrl.appendChild(del);';
-      
       html += '    div.appendChild(n); div.appendChild(ctrl); ';
       html += '    list.appendChild(div);';
       html += '  });';
@@ -8448,7 +8531,6 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  var pendingItem = document.getElementById("searchItem").value;';
       html += '  var pendingQty = document.getElementById("qtyAdd").value;';
       
-      // Умное добавление (если забыли нажать +)
       html += '  if (isLinked && pendingItem && pendingQty && selectedItem) {';
       html += '    var q = parseFloat(pendingQty);';
       html += '    if (q > 0) {';
@@ -8459,11 +8541,12 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '        name: selectedItem.name, qty: q }); }';
       html += '    }';
       html += '  }';
-
+      
       html += '  var name = document.getElementById("bqName").value;';
       html += '  var price = parseFloat(document.getElementById("bqPrice").value);';
       html += '  var photoUrl = document.getElementById("bqPhotoUrl").value;';
-      html += '  if (!name || !price) { showAlert("Ошибка", "Заполните поля", false); return; }';
+      html += '  if (!name || !price) { ';
+      html += '    showAlert("Ошибка", "Заполните поля", false); return; }';
       
       html += '  var btn = document.getElementById("btnSave");';
       html += '  btn.disabled = true; btn.innerText = "Сохранение...";';
@@ -8473,32 +8556,39 @@ function setupWarehouse(app, bot, s3ctx) {
       html += '  body: JSON.stringify({ id: bId, name: name, price: price,';
       html += '  photo_url: photoUrl, is_linked: isLinked }) })';
       html += '  .then(function(r){return r.json();}).then(function(d){';
-      html += '    if (!d.ok) { btn.disabled = false; btn.innerText = "Сохранить"; ';
+      html += '    if (!d.ok) { btn.disabled = false; ';
+      html += '      btn.innerText = "Сохранить"; ';
       html += '      showAlert("Ошибка", d.error, false); return; }';
       
       html += '    var newId = d.id;';
       html += '    if (isLinked) {';
-      html += '      fetch("/api/warehouse/bouquets/recipe/save", { method: "POST",';
+      html += '      fetch("/api/warehouse/bouquets/recipe/save", { ';
+      html += '      method: "POST",';
       html += '      headers: { "Content-Type": "application/json" },';
-      html += '      body: JSON.stringify({ bouquet_id: newId, items: recipe }) })';
+      html += '      body: JSON.stringify({ bouquet_id: newId, ';
+      html += '      items: recipe }) })';
       html += '      .then(function(r){return r.json();}).then(function(res){';
-      html += '        if (res.ok) { window.location.href = "/warehouse/bouquets"; }';
-      html += '        else { btn.disabled = false; btn.innerText = "Сохранить";';
+      html += '        if (res.ok) { ';
+      html += '          window.location.href = "/warehouse/bouquets"; }';
+      html += '        else { btn.disabled = false; ';
+      html += '        btn.innerText = "Сохранить";';
       html += '        showAlert("Ошибка рецепта", res.error, false); }';
       html += '      }).catch(function(){ btn.disabled = false; ';
-      html += '      btn.innerText = "Сохранить"; showAlert("Ошибка", "Сеть", false); });';
+      html += '      btn.innerText = "Сохранить"; ';
+      html += '      showAlert("Ошибка", "Сеть", false); });';
       html += '    } else {';
       html += '      window.location.href = "/warehouse/bouquets";';
       html += '    }';
       html += '  }).catch(function(){ btn.disabled = false;';
-      html += '  btn.innerText = "Сохранить"; showAlert("Ошибка", "Сеть", false); });';
+      html += '  btn.innerText = "Сохранить"; ';
+      html += '  showAlert("Ошибка", "Сеть", false); });';
       html += '}';
       html += '<\/script></body></html>';
       res.send(html);
     } catch(e) { res.status(500).send('Ошибка сервера'); }
   });
 
-  // ====== 59. API ПОЛУЧЕНИЯ РЕЦЕПТА ======
+  // ====== 54. API ПОЛУЧЕНИЯ РЕЦЕПТА ======
   app.get('/api/warehouse/bouquets/recipe', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8519,18 +8609,22 @@ function setupWarehouse(app, bot, s3ctx) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // ====== 60. API СОХРАНЕНИЯ РЕЦЕПТА ======
+  // ====== 55. API СОХРАНЕНИЯ РЕЦЕПТА ======
   app.post('/api/warehouse/bouquets/recipe/save', async (req, res) => {
     const client = await pool.connect();
     try {
       const auth = getAuth(req);
-      if (!auth) { client.release(); return res.status(401).json({ ok: false }); }
+      if (!auth) { 
+        client.release(); 
+        return res.status(401).json({ ok: false }); 
+      }
       
       const bId = parseInt(req.body.bouquet_id);
       const items = req.body.items;
       
       if (!bId || !Array.isArray(items)) {
-        client.release(); return res.json({ ok: false, error: 'Неверные данные' });
+        client.release(); 
+        return res.json({ ok: false, error: 'Неверные данные' });
       }
 
       await client.query('BEGIN');
@@ -8553,10 +8647,12 @@ function setupWarehouse(app, bot, s3ctx) {
       res.json({ ok: true });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (e2) {}
-client.release(); res.status(500).json({ ok: false, error: e.message });
+      client.release(); 
+      res.status(500).json({ ok: false, error: e.message });
     }
   });
-      // ====== 61. API ЖУРНАЛА ======
+
+  // ====== 56. API ЖУРНАЛА ======
   app.get('/api/warehouse/audit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8596,7 +8692,7 @@ client.release(); res.status(500).json({ ok: false, error: e.message });
     }
   });
 
-  // ====== 62. ЭКРАН ЖУРНАЛА ======
+  // ====== 57. ЭКРАН ЖУРНАЛА ======
   app.get('/warehouse/audit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -8605,57 +8701,53 @@ client.release(); res.status(500).json({ ok: false, error: e.message });
       let html = '<!DOCTYPE html><html><head>';
       html += '<meta charset="UTF-8">';
       html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += 'initial-scale=1.0, maximum-scale=1.0, ';
+      html += 'user-scalable=no, viewport-fit=cover">';
       html += fontLink;
       html += uiScript;
       html += '<style>';
-      html += 'body { font-family: "Manrope", sans-serif; margin: 0; ';
-      html += 'padding: 15px; background: ' + bgGradient + '; ';
-      html += 'color: ' + brandColor + '; }';
-      html += '.header { display: flex; align-items: center; ';
-      html += 'margin-bottom: 15px; justify-content: space-between; }';
-      html += '.header-left { display: flex; align-items: center; }';
-      html += '.back { font-size: 24px; text-decoration: none; ';
-      html += 'color: ' + brandColor + '; margin-right: 15px; }';
+      html += 'body { padding: 0 16px 32px 16px; }';
       
-      html += '.filters { display: flex; gap: 8px; margin-bottom: 15px; }';
-      html += '.filter { flex: 1; padding: 10px; border: 1px solid #ddd; ';
-      html += 'border-radius: 12px; background: #fff; text-align: center; ';
-      html += 'cursor: pointer; font-size: 13px; font-weight: 600; }';
-      html += '.filter.active { background: ' + brandColor + '; color: #fff; }';
+      html += '.filters { display: flex; gap: 8px; margin-bottom: 16px; }';
+      html += '.filter { flex: 1; padding: 12px; ';
+      html += 'border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); background: #fff; text-align: center; ';
+      html += 'cursor: pointer; font-size: 14px; font-weight: 600; ';
+      html += 'color: var(--f-text); }';
+      html += '.filter.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); }';
       
       html += '.date-label { font-size: 13px; font-weight: 600; ';
-      html += 'color: #666; margin-bottom: 5px; }';
-      html += '.date-row { display: flex; margin-bottom: 15px; }';
-      html += '.date-row input { width: 100%; padding: 10px; margin: 0; ';
+      html += 'color: var(--f-text-2); margin-bottom: 8px; }';
+      html += '.date-row { display: flex; margin-bottom: 16px; }';
+      html += '.date-row input { width: 100%; padding: 12px; margin: 0; ';
       html += 'border: 2px solid transparent; transition: border 0.2s; }';
-      html += '.date-row input.active-date { border-color: ' + accentColor + '; }';
+      html += '.date-row input.active-date { ';
+      html += 'border-color: var(--f-accent); }';
       
-      html += '.log-card { background: #fff; border-radius: 16px; ';
-      html += 'padding: 15px; margin-bottom: 10px; cursor: pointer; ';
-      html += 'box-shadow: 0 4px 12px rgba(15,61,62,0.06); ';
-      html += 'border-left: 4px solid #ddd; }';
+      html += '.log-card { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 16px; margin-bottom: 12px; cursor: pointer; ';
+      html += 'box-shadow: var(--sh-1); border-left: 4px solid #ddd; }';
       html += '.log-card.sale { border-left-color: #3C7A89; }';
-      html += '.log-card.receipt { border-left-color: ' + successColor + '; }';
-      html += '.log-card.writeoff { border-left-color: ' + dangerColor + '; }';
+      html += '.log-card.receipt { border-left-color: var(--f-success); }';
+      html += '.log-card.writeoff { border-left-color: var(--f-danger); }';
       html += '.log-card.shift { border-left-color: #E67E22; }';
       html += '.log-top { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 8px; }';
       html += '.log-title { font-weight: 800; font-size: 15px; ';
       html += 'display: flex; align-items: center; }';
-      html += '.log-title svg { width: 18px; height: 18px; margin-right: 6px; }';
-      html += '.log-date { font-size: 11px; color: #888; }';
+      html += '.log-title svg { width: 18px; height: 18px; margin-right: 8px; }';
+      html += '.log-date { font-size: 12px; color: var(--f-text-2); }';
       html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
-      html += '.log-link { font-size: 12px; color: #3C7A89; ';
+      html += '.log-link { font-size: 13px; color: #3C7A89; ';
       html += 'margin-top: 8px; font-weight: 600; }';
       html += '</style></head><body>';
 
-      html += '<div class="header">';
-      html += '<div class="header-left">';
-      html += '<a href="/warehouse-app" class="back">←</a>';
-      html += '<h2 style="margin:0; display:flex; align-items:center;">';
-      html += getIconSvg('audit') + 'Журнал</h2></div>';
-      html += '<button class="burger" onclick="toggleMenu()">☰</button>';
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Журнал</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="filters">';
@@ -8697,26 +8789,28 @@ client.release(); res.status(500).json({ ok: false, error: e.message });
       html += '  } else { setPeriod("today"); }';
       html += '  loadData();';
       html += '}';
+      
       html += 'function getActionIcon(action) {';
       html += '  var c = "class=\'svg-ico\' viewBox=\'0 0 24 24\' ';
       html += 'fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'";';
       html += '  if (action === "sale") return "<svg " + c + ';
-      html += '"><rect x=\'2\' y=\'5\' width=\'20\' height=\'14\' ';
-      html += 'rx=\'2\'/><line x1=\'2\' y1=\'10\' x2=\'22\' y2=\'10\'/></svg>";';
+      html += '  "><rect x=\'2\' y=\'5\' width=\'20\' height=\'14\' ';
+      html += '  rx=\'2\'/><line x1=\'2\' y1=\'10\' x2=\'22\' y2=\'10\'/></svg>";';
       html += '  if (action === "receipt") return "<svg " + c + ';
-      html += '"><path d=\'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 ';
-      html += '0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 ';
-      html += '2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\'/></svg>";';
+      html += '  "><path d=\'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 ';
+      html += '  0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 ';
+      html += '  2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\'/></svg>";';
       html += '  if (action === "writeoff" || action === "cancel") ';
-      html += 'return "<svg " + c + "><polyline points=\'3 6 5 6 21 ';
-      html += '6\'/><path d=\'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2';
-      html += 'V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\'/></svg>";';
+      html += '  return "<svg " + c + "><polyline points=\'3 6 5 6 21 ';
+      html += '  6\'/><path d=\'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2';
+      html += '  V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\'/></svg>";';
       html += '  if (action === "shift") return "<svg " + c + ';
-      html += '"><circle cx=\'12\' cy=\'12\' r=\'10\'/><polyline ';
-      html += 'points=\'12 6 12 12 16 14\'/></svg>";';
+      html += '  "><circle cx=\'12\' cy=\'12\' r=\'10\'/><polyline ';
+      html += '  points=\'12 6 12 12 16 14\'/></svg>";';
       html += '  return "<svg " + c + "><circle cx=\'12\' cy=\'12\' ';
-      html += 'r=\'3\'/></svg>";';
+      html += '  r=\'3\'/></svg>";';
       html += '}';
+
       html += 'function loadData() {';
       html += '  var listEl = document.getElementById("list");';
       html += '  listEl.textContent = "Загрузка...";';
@@ -8729,7 +8823,9 @@ client.release(); res.status(500).json({ ok: false, error: e.message });
       html += '    while (listEl.firstChild) ';
       html += '    listEl.removeChild(listEl.firstChild);';
       html += '    if (!d.ok || d.logs.length === 0) {';
-      html += '      listEl.textContent = "Журнал пуст"; return; }';
+      html += '      listEl.innerHTML = "<div class=\'empty-state\'>" + ';
+      html += '      "<div class=\'empty-state-title\'>Журнал пуст</div></div>"; ';
+      html += '      return; }';
       html += '    d.logs.forEach(function(l) {';
       html += '      var div = document.createElement("div");';
       html += '      var acts = ["sale","receipt","writeoff","shift"];';
