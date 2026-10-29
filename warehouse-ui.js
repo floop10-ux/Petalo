@@ -2161,6 +2161,10 @@ function setupWarehouse(app, bot, s3ctx) {
       html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
       html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
       html += '.replace(/\\.$/, ""); }';
+      html += 'function translateReason(r) { ';
+      html += 'var map = { spoilage: "Порча", loss: "Потеря", ';
+      html += 'markdown: "Уценка", sorting: "Пересорт" }; ';
+      html += 'return map[r] || r || ""; }';
       html += 'var urlParams = new URLSearchParams(window.location.search);';
       html += 'var itemId = parseInt(urlParams.get("id")) || 0;';
       html += 'var itemName = ""; var itemUnit = "шт"; var isPinned = false;';
