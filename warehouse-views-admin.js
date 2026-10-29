@@ -848,7 +848,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '.textContent = "Ошибка загрузки"; });';
       html += '<\/script></body></html>';
       res.send(html);
-    } catch(e) {
+    }catch(e) {
       res.status(500).send('Ошибка сервера');
     }
   });
@@ -1009,15 +1009,10 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += 'var allBouquets = []; var currentView = "grid"; ';
       html += 'var currentFilter = "all";';
       
-      html += 'var svgPh = "<svg viewBox=\\"0 0 24 24\\" fill=\\"currentColor\\">";';
-      html += '<path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22';
-      html += 'L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3';
-      html += 'C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5';
-      html += 'C2,15.5 3.5,17.5 6.5,17.5C7.21,17.5 7.87,17.36 ';
-      html += '8.5,17.12C11.24,16.08 13.44,14.57 15,12.5';
-      html += 'C15,12.5 15.5,14.5 15.5,16.5C15.5,18.5 14.5,20 ';
-      html += '14.5,20C17,20 19.5,17.5 20.5,14.5C21.5,11.5 ';
-      html += '21.5,8 21.5,8C21.5,8 19.5,6 17,8Z"/></svg>";';
+      // SAFE PLACEHOLDER: no quotes, no escapes, no SVG
+      html += 'var svgPh = "<div style=background:#D8E4E4;';
+      html += 'width:40px;height:40px;border-radius:50%>';
+      html += '</div>";';
 
       html += 'if (localStorage.getItem("wh_bq_view")) { ';
       html += 'currentView = localStorage.getItem("wh_bq_view"); }';
@@ -1691,7 +1686,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '  "><rect x=\'2\' y=\'5\' width=\'20\' height=\'14\' ';
       html += '  rx=\'2\'/><line x1=\'2\' y1=\'10\' x2=\'22\' y2=\'10\'/></svg>";';
       html += '  if (action === "receipt") return "<svg " + c + ';
-      html += '  "><path d=\'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 ';
+      html += '  "><path d=\'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 ';
       html += '  0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 ';
       html += '  2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\'/></svg>";';
       html += '  if (action === "writeoff" || action === "cancel") ';
