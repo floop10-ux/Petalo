@@ -2472,7 +2472,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '    vl.id = "qty_" + idx;';
       html += '    vl.style = "width:40px; height:28px; text-align:center; ';
       html += '    border:none; background:#F0F4F4; border-radius:6px; ';
-      html += '    font-weight:bold; padding:0; margin:0;"';
+      html += '    font-weight:bold; padding:0; margin:0;";';
       html += '    vl.onclick = function() { setActiveInput(this.id); };';
       
       html += '    var pl = document.createElement("button"); ';
