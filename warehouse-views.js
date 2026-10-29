@@ -372,6 +372,16 @@ const uiScript = `
     Flowind
   </div>
   <script>
+     function fmtNum(n) { 
+      var num = parseFloat(String(n).replace(",", ".")); 
+      if (isNaN(num)) return "0"; 
+      return num % 1 === 0 ? num.toString() : num.toFixed(3).replace(/0+$/, "").replace(/\\.$/, ""); 
+    }
+    
+    function translateReason(r) { 
+      var map = { spoilage: "Порча", loss: "Потеря", markdown: "Уценка", sorting: "Пересорт" }; 
+      return map[r] || r || ""; 
+    }
     function showAlert(title, text, isSuccess) {
       var ov = document.getElementById('uiModal');
       var icon = document.getElementById('uiModalIcon');
