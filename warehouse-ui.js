@@ -7766,7 +7766,6 @@ function setupWarehouse(app, bot, s3ctx) {
     }
   });
 
-}
 
 // ====== 47. ЭКРАН СПИСКА НАКЛАДНЫХ ======
   app.get('/warehouse/receipts', async (req, res) => {
@@ -8807,5 +8806,6 @@ function setupWarehouse(app, bot, s3ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+}
 
 module.exports = { setupWarehouse };
