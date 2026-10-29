@@ -166,7 +166,7 @@ const fontLink = '<link href="https://fonts.googleapis.com/css2?' +
   'family=Manrope:wght@400;600;800&family=Inter:wght@400;600&' +
   'display=swap" rel="stylesheet">';
 
-const uiScript = `
+let uiScript = `
   <style>
     :root {
       --f-brand: #064C49;
