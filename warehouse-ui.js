@@ -2156,6 +2156,11 @@ function setupWarehouse(app, bot, s3ctx) {
       html += getUnifiedMenu('inventory');
 
       html += '<script>';
+      html += 'function fmtNum(n) { ';
+      html += 'var num = parseFloat(String(n).replace(",", ".")); ';
+      html += 'if (isNaN(num)) return "0"; return num % 1 === 0 ? ';
+      html += 'num.toString() : num.toFixed(3).replace(/0+$/, "")';
+      html += '.replace(/\\.$/, ""); }';
       html += 'var urlParams = new URLSearchParams(window.location.search);';
       html += 'var itemId = parseInt(urlParams.get("id")) || 0;';
       html += 'var itemName = ""; var itemUnit = "шт"; var isPinned = false;';
