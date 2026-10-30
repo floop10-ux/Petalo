@@ -246,7 +246,8 @@ let uiScript = `
       display: flex; align-items: center; justify-content: center;
       padding: 14px 20px; border-radius: var(--r-md);
       font-weight: 600; font-size: 16px; font-family: inherit;
-      border: none; cursor: pointer; transition: 0.2s; text-decoration: none;
+      border: none; cursor: pointer; transition: 0.2s; 
+      text-decoration: none;
     }
     .btn-primary { 
       background: var(--f-brand); color: #fff; 
@@ -318,7 +319,8 @@ let uiScript = `
       transition: 0.2s;
     }
     .menu-item.active {
-      background: rgba(6,76,73,0.06); color: var(--f-brand); font-weight: 700;
+      background: rgba(6,76,73,0.06); color: var(--f-brand); 
+      font-weight: 700;
     }
 
     .custom-modal-overlay { 
@@ -340,26 +342,28 @@ let uiScript = `
       justify-content: center; 
     }
     
-    .custom-modal h3 { margin: 0 0 8px 0; font-size: 20px; font-weight: 800; }
-    .custom-modal p { margin: 0 0 24px 0; font-size: 15px; color: var(--f-text-2); line-height: 1.5; }
+    .custom-modal h3 { margin: 0 0 8px 0; font-size: 20px; 
+      font-weight: 800; }
+    .custom-modal p { margin: 0 0 24px 0; font-size: 15px; 
+      color: var(--f-text-2); line-height: 1.5; }
     
     .custom-modal-btns { display: flex; gap: 12px; }
     .custom-modal-btns button { 
       flex: 1; padding: 14px; border: none; border-radius: var(--r-md);
-      font-size: 16px; font-weight: 700; font-family: inherit; cursor: pointer; 
+      font-size: 16px; font-weight: 700; font-family: inherit; 
+      cursor: pointer; 
     }
       
     .btn-cancel { background: var(--f-bg); color: var(--f-text-2); }
     .btn-ok { background: var(--f-brand); color: #fff; }
     .btn-danger { background: var(--f-danger); color: #fff; }
 
-    .empty-state { text-align: center; padding: 40px 20px; color: var(--f-text-2); }
-    .empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.4; }
-    .empty-state-title { font-size: 18px; font-weight: 800; color: var(--f-text); margin-bottom: 8px; }
+    .empty-state { text-align: center; padding: 40px 20px; 
+      color: var(--f-text-2); }
+    .empty-state-title { font-size: 18px; font-weight: 800; 
+      color: var(--f-text); margin-bottom: 8px; }
     .empty-state-text { font-size: 14px; margin-bottom: 20px; }
   </style>
-`;
-uiScript += `
   <script>
     function fmtNum(n) {
       var num = parseFloat(String(n).replace(",", "."));
@@ -478,7 +482,6 @@ uiScript += `
     Flowind
   </div>
 `;
-
 function setupWarehouseViews(app, bot, s3ctx, getAuth) {
 
   // ====== 1. ВХОД ======
@@ -563,7 +566,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
     html += '  btn.disabled = true; btn.innerText = "Вход...";';
     html += '  fetch("/api/warehouse/auth", { method: "POST", ';
     html += '  headers: { "Content-Type": "application/json" }, ';
-    html += '  body: JSON.stringify({ shopId: "' + shopId + '", pin: pin }) })';
+    html += '  body: JSON.stringify({ shopId: "' + shopId + '", ';
+    html += '  pin: pin }) })';
     html += '  .then(function(r) { return r.json(); })';
     html += '  .then(function(data) {';
     html += '    if (data.ok) window.location.href = "/warehouse-app"; ';
@@ -589,8 +593,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
     html += '    if (data.ok) window.location.href = "/warehouse-app"; ';
     html += '    else { btn.disabled = false; btn.innerText = "Войти";';
     html += '      if (data.rate_limited) showAlert("Стоп", ';
-    html += '      "Аккаунт заблокирован на 15 минут.", false); ';
-    html += '      else showAlert("Ошибка", "Неверный логин или пароль", false); }';
+    html += '      "Аккаунт заблокирован.", false); ';
+    html += '      else showAlert("Ошибка", "Неверный логин/пароль", false); }';
     html += '  }).catch(function() { btn.disabled = false; ';
     html += '  btn.innerText = "Войти"; showAlert("Ошибка сети", ';
     html += '  "Проверьте интернет", false); });';
@@ -788,7 +792,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       console.error('App error:', e.message);
       res.status(500).send('Ошибка сервера'); 
     }
-  });// ====== 3. ОБЗОР СКЛАДА ======
+  });
+  // ====== 3. ОБЗОР СКЛАДА ======
   app.get('/warehouse/inventory', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -846,7 +851,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'color: var(--f-brand); background: #fff; ';
       html += 'box-shadow: var(--sh-1); width: 80px; text-align: center; ';
       html += 'margin: 0; }';
-  html += '.h-scroll { display: flex; overflow-x: auto; ';
+
+      html += '.h-scroll { display: flex; overflow-x: auto; ';
       html += 'gap: 8px; margin-bottom: 16px; padding-bottom: 4px; }';
       html += '.h-scroll::-webkit-scrollbar { display: none; }';
       
@@ -926,6 +932,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += Math.round(stats.retail).toLocaleString('ru-RU') + ' ₽';
       html += '</div><div class="stat-lbl">Розница</div></div>';
       html += '</div>';
+
       html += '<div class="search-wrap">';
       html += '<input type="text" class="search" id="search" ';
       html += 'placeholder="Поиск по названию..." onkeyup="applyFilters()">';
@@ -943,15 +950,17 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  <div style="display:flex; gap:8px; align-items:center;">';
       html += '    <div class="view-toggles">';
       html += '      <button class="view-btn active" id="btn-view-tile" ';
-      html += 'onclick="setViewMode(\'tile\')"><svg viewBox="0 0 24 24" ';
-      html += 'fill="none" stroke="currentColor" stroke-width="2">';
+      html += 'onclick="setViewMode(&apos;tile&apos;)">';
+      html += '<svg viewBox="0 0 24 24" fill="none" ';
+      html += 'stroke="currentColor" stroke-width="2">';
       html += '<rect x="3" y="3" width="7" height="7"/>';
       html += '<rect x="14" y="3" width="7" height="7"/>';
       html += '<rect x="14" y="14" width="7" height="7"/>';
       html += '<rect x="3" y="14" width="7" height="7"/></svg></button>';
       html += '      <button class="view-btn" id="btn-view-row" ';
-      html += 'onclick="setViewMode(\'row\')"><svg viewBox="0 0 24 24" ';
-      html += 'fill="none" stroke="currentColor" stroke-width="2">';
+      html += 'onclick="setViewMode(&apos;row&apos;)">';
+      html += '<svg viewBox="0 0 24 24" fill="none" ';
+      html += 'stroke="currentColor" stroke-width="2">';
       html += '<line x1="8" y1="6" x2="21" y2="6"/>';
       html += '<line x1="8" y1="12" x2="21" y2="12"/>';
       html += '<line x1="8" y1="18" x2="21" y2="18"/>';
@@ -986,12 +995,18 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'var noPriceFilter = false; var minusFilter = false; ';
       html += 'var showArchive = false;';
 
+      html += 'var svgPh = \'<div style="width:100%;height:100px;';
+      html += 'background:#F0F4F4;border-radius:8px;"></div>\';';
+      html += 'var svgPhRow = \'<div style="width:48px;height:48px;';
+      html += 'background:#F0F4F4;border-radius:8px;"></div>\';';
+
       html += 'if (localStorage.getItem("wh_view_mode")) ';
       html += 'viewMode = localStorage.getItem("wh_view_mode");';
       html += 'if (localStorage.getItem("wh_page_limit")) ';
       html += 'pageLimit = parseInt(localStorage.getItem("wh_page_limit"));';
       html += 'document.getElementById("limitSelect").value = pageLimit;';
       html += 'updateViewButtons();';
+
       html += 'function setViewMode(mode) {';
       html += '  viewMode = mode; ';
       html += 'localStorage.setItem("wh_view_mode", mode); ';
@@ -1154,7 +1169,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '          img.src = i.photo_url; a.appendChild(img); } ';
       html += '        else { ';
       html += '          var ph = document.createElement("div"); ';
-      html += '          ph.className = "ph"; a.appendChild(ph); }';
+      html += '          ph.className = "ph"; ph.innerHTML = svgPh; ';
+      html += '          a.appendChild(ph); }';
       
       html += '        if (i.is_pinned) { ';
       html += '          var pin = document.createElement("div"); ';
@@ -1197,7 +1213,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '          img.src = i.photo_url; left.appendChild(img); } ';
       html += '        else { ';
       html += '          var ph = document.createElement("div"); ';
-      html += '          ph.className = "ph"; left.appendChild(ph); }';
+      html += '          ph.className = "ph"; ph.innerHTML = svgPhRow; ';
+      html += '          left.appendChild(ph); }';
       
       html += '        var nmWrap = document.createElement("div");';
       html += '        var nm = document.createElement("div"); ';
@@ -1341,10 +1358,12 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'font-weight: 600; color: var(--f-text); background: #fff; ';
       html += 'box-shadow: var(--sh-1); width: 80px; text-align: center; ';
       html += 'margin: 0; }';
-      html += '.pag-btn { background: #fff; border: 1px solid var(--f-border); ';
+      html += '.pag-btn { background: #fff; ';
+      html += 'border: 1px solid var(--f-border); ';
       html += 'padding: 8px 12px; border-radius: 10px; font-weight: 600; ';
       html += 'color: var(--f-text); box-shadow: var(--sh-1); }';
       html += '</style></head><body>';
+
       html += '<div class="page-header">';
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse/inventory" class="back-btn">←</a>';
@@ -1372,7 +1391,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'onclick="deleteItem()">Удалить товар</button>';
       html += '</div>';
 
-      html += '<div class="controls" id="historyControls" style="display:none;">';
+      html += '<div class="controls" id="historyControls" ';
+      html += 'style="display:none;">';
       html += '<h3 style="margin:0; font-size:16px;">История операций</h3>';
       html += '<select class="limit-select" id="limitSelect" ';
       html += 'onchange="changeLimit(this.value)">';
@@ -1402,8 +1422,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'window.location.search).get("id")) || 0;';
       html += 'var itemName = ""; var itemUnit = "шт"; var isPinned = false;';
       html += 'var itemPrice = 0; var totalHistory = 0; var currentPage = 1;';
-      html += 'var pageLimit = parseInt(localStorage.getItem("wh_item_limit")) ';
-      html += '|| 10;';
+      html += 'var pageLimit = parseInt(localStorage.getItem(';
+      html += '"wh_item_limit")) || 10;';
       html += 'document.getElementById("limitSelect").value = pageLimit;';
 
       html += 'function clickPhoto() {';
@@ -1415,6 +1435,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'localStorage.setItem("wh_item_limit", v);';
       html += '  currentPage = 1; loadHistory();';
       html += '}';
+
       html += 'function prevPage() { ';
       html += '  if (currentPage > 1) { currentPage--; loadHistory(); } }';
       html += 'function nextPage() { ';
@@ -1441,15 +1462,19 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '      itemName = d.item.name; itemUnit = d.item.unit || "шт";';
       html += '      isPinned = d.item.is_pinned === true;';
       html += '      itemPrice = parseFloat(d.item.retail_price) || 0;';
-      html += '      document.getElementById("actions").style.display = "grid";';
-      html += '      document.getElementById("historyControls").style.display = "flex";';
+      html += '      document.getElementById("actions")';
+      html += '      .style.display = "grid";';
+      html += '      document.getElementById("historyControls")';
+      html += '      .style.display = "flex";';
       html += '      updatePinBtn();';
       html += '      if (itemPrice === 0) { ';
       html += '        var bsp = document.getElementById("btnSetPrice");';
-      html += '        bsp.style.display = "flex"; bsp.innerText = "Задать цену"; }';
+      html += '        bsp.style.display = "flex"; ';
+      html += '        bsp.innerText = "Задать цену"; }';
       html += '      else { ';
       html += '        var bsp2 = document.getElementById("btnSetPrice");';
-      html += '        bsp2.style.display = "flex"; bsp2.innerText = "Изменить цену"; }';
+      html += '        bsp2.style.display = "flex"; ';
+      html += '        bsp2.innerText = "Изменить цену"; }';
       
       html += '      var isPos = parseFloat(d.item.current_stock) > 0;';
       html += '      var cl = isPos ? "var(--f-success)" : "var(--f-danger)";';
@@ -1476,67 +1501,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '        hi.appendChild(prDiv);';
       html += '      }';
       html += '    }';
-      html += 'function prevPage() { ';
-      html += '  if (currentPage > 1) { currentPage--; loadHistory(); } }';
-      html += 'function nextPage() { ';
-      html += '  var maxP = Math.ceil(totalHistory / pageLimit) || 1; ';
-      html += '  if (currentPage < maxP) { currentPage++; loadHistory(); } }';
-
-      html += 'function loadHistory() {';
-      html += '  var list = document.getElementById("list");';
-      html += '  if (currentPage === 1) list.textContent = "Загрузка...";';
-      html += '  var offset = (currentPage - 1) * pageLimit;';
-      html += '  fetch("/api/warehouse/item/history?id=" + itemId + ';
-      html += '  "&limit=" + pageLimit + "&offset=" + offset)';
-      html += '  .then(function(r) { return r.json(); })';
-      html += '  .then(function(d) {';
-      html += '    if (!d.ok) { ';
-      html += '      list.textContent = "Ошибка: " + (d.error || "unknown"); ';
-      html += '      return; ';
-      html += '    }';
-      html += '    totalHistory = d.total || 0;';
       
-      html += '    if (currentPage === 1) {';
-      html += '      var hi = document.getElementById("header-info");';
-      html += '      while (hi.firstChild) hi.removeChild(hi.firstChild);';
-      html += '      itemName = d.item.name; itemUnit = d.item.unit || "шт";';
-      html += '      isPinned = d.item.is_pinned === true;';
-      html += '      itemPrice = parseFloat(d.item.retail_price) || 0;';
-      html += '      document.getElementById("actions").style.display = "grid";';
-      html += '      document.getElementById("historyControls").style.display = "flex";';
-      html += '      updatePinBtn();';
-      html += '      if (itemPrice === 0) { ';
-      html += '        var bsp = document.getElementById("btnSetPrice");';
-      html += '        bsp.style.display = "flex"; bsp.innerText = "Задать цену"; }';
-      html += '      else { ';
-      html += '        var bsp2 = document.getElementById("btnSetPrice");';
-      html += '        bsp2.style.display = "flex"; bsp2.innerText = "Изменить цену"; }';
-      
-      html += '      var isPos = parseFloat(d.item.current_stock) > 0;';
-      html += '      var cl = isPos ? "var(--f-success)" : "var(--f-danger)";';
-      html += '      var h2 = document.createElement("h2");';
-      html += '      h2.style.margin = "0"; h2.style.fontSize = "24px";';
-      html += '      h2.style.fontWeight = "800";';
-      html += '      h2.textContent = itemName; hi.appendChild(h2);';
-      html += '      var stockDiv = document.createElement("div");';
-      html += '      stockDiv.style.fontSize = "20px";';
-      html += '      stockDiv.style.fontWeight = "800";';
-      html += '      stockDiv.style.color = cl;';
-      html += '      stockDiv.style.marginTop = "8px";';
-      html += '      stockDiv.textContent = "Остаток: " + ';
-      html += '      fmtNum(d.item.current_stock) + " " + itemUnit;';
-      html += '      hi.appendChild(stockDiv);';
-      html += '      if (itemPrice > 0) {';
-      html += '        var prDiv = document.createElement("div");';
-      html += '        prDiv.style.fontSize = "16px";';
-      html += '        prDiv.style.fontWeight = "600";';
-      html += '        prDiv.style.color = "var(--f-brand)";';
-      html += '        prDiv.style.marginTop = "4px";';
-      html += '        prDiv.textContent = "Цена: " + ';
-      html += '        itemPrice.toLocaleString("ru-RU") + " ₽";';
-      html += '        hi.appendChild(prDiv);';
-      html += '      }';
-      html += '    }';
       html += '    var maxP = Math.ceil(totalHistory / pageLimit) || 1;';
       html += '    document.getElementById("pageInfo").textContent = ';
       html += '    currentPage + " / " + maxP;';
@@ -1656,7 +1621,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '    body: JSON.stringify({ id: itemId, price: num }) })';
       html += '    .then(function(r) { return r.json(); })';
       html += '    .then(function(d) { ';
-      html += '      if (d.ok) { showAlert("Готово", "Цена установлена", true); ';
+      html += '      if (d.ok) { showAlert("Готово", ';
+      html += '      "Цена установлена", true); ';
       html += '      setTimeout(function() { location.reload(); }, 1000); } ';
       html += '      else showAlert("Ошибка", d.error, false); })';
       html += '    .catch(function() {});';
@@ -1778,14 +1744,16 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
         errHtml += '<meta charset="UTF-8">';
         errHtml += metaSafari;
         errHtml += '<meta name="viewport" content="width=device-width, ';
-        errHtml += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+        errHtml += 'initial-scale=1.0, maximum-scale=1.0, ';
+        errHtml += 'user-scalable=no">';
         errHtml += fontLink;
         errHtml += uiScript;
         errHtml += '<style>';
         errHtml += 'body { display: flex; flex-direction: column; ';
         errHtml += 'align-items: center; justify-content: center; ';
         errHtml += 'height: 100vh; padding: 20px; text-align: center; }';
-        errHtml += '.card { max-width: 340px; width: 100%; padding: 40px 24px; }';
+        errHtml += '.card { max-width: 340px; width: 100%; ';
+        errHtml += 'padding: 40px 24px; }';
         errHtml += '</style></head><body>';
         errHtml += '<div class="card">';
         errHtml += '<h1 style="font-size:48px; margin:0 0 16px 0;">⏱</h1>';
@@ -2088,7 +2056,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '<div class="pay-btn active" id="pcm-cash" ';
       html += 'onclick="setPrecheckChangeMethod(&apos;cash&apos;)">Нал</div>';
       html += '<div class="pay-btn" id="pcm-card" ';
-      html += 'onclick="setPrecheckChangeMethod(&apos;card&apos;)">Карта</div>';
+      html += 'onclick="setPrecheckChangeMethod(&apos;card&apos;)">';
+      html += 'Карта</div>';
       html += '<div class="pay-btn" id="pcm-qr" ';
       html += 'onclick="setPrecheckChangeMethod(&apos;qr&apos;)">QR</div>';
       html += '</div></div>';
@@ -2097,10 +2066,10 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'font-weight:800; font-size:18px; margin-bottom:16px;">';
       html += '<span>Итого:</span><span id="precheckTotal">0 ₽</span></div>';
       html += '<div style="display:flex; gap:12px;">';
-      html += '<button onclick="closePrecheck()" style="flex:1; padding:14px; ';
-      html += 'border:none; border-radius:12px; font-weight:800; ';
-      html += 'font-size:16px; background:#F0F4F4; color:var(--f-text);">';
-      html += 'Вернуться</button>';
+      html += '<button onclick="closePrecheck()" style="flex:1; ';
+      html += 'padding:14px; border:none; border-radius:12px; ';
+      html += 'font-weight:800; font-size:16px; background:#F0F4F4; ';
+      html += 'color:var(--f-text);">Вернуться</button>';
       html += '<button onclick="saveSale()" style="flex:2; padding:14px; ';
       html += 'border:none; border-radius:12px; font-weight:800; ';
       html += 'font-size:16px; background:var(--f-success); color:#fff;">';
@@ -2146,8 +2115,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'var isPayAmountEdited = false; ';
       html += 'var isTotalPriceEdited = false;';
       
-      html += 'var svgPh = \'<div style="width:40px;height:40px;';
-      html += 'background:#D8E4E4;border-radius:50%;"></div>\';';
+      html += 'var svgPh = "<div style=width:40px;height:40px;';
+      html += 'background:#D8E4E4;border-radius:50%;></div>";';
 
       html += 'if (localStorage.getItem("wh_sale_grid_cols")) {';
       html += '  gridCols = parseInt(';
@@ -2218,7 +2187,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '}';
       html += 'function clearSearchText() {';
       html += '  document.getElementById("search").value = "";';
-      html += '  document.getElementById("clearSearch").style.display = "none";';
+      html += '  document.getElementById("clearSearch").style.display = ';
+      html += '  "none";';
       html += '  filterItems();';
       html += '}';
 
@@ -2325,7 +2295,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  currentCat = id;';
       html += '  var els = document.querySelectorAll(".cat-btn"); ';
       html += '  els.forEach(function(el) { el.classList.remove("active"); });';
-      html += '  document.getElementById("cat-" + id).classList.add("active");';
+      html += '  document.getElementById("cat-" + id)';
+      html += '  .classList.add("active");';
       html += '  filterItems();';
       html += '}';
 
@@ -2953,8 +2924,12 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  if (!d.ok || d.docs.length === 0) {';
       html += '    var empty = document.createElement("div");';
       html += '    empty.className = "empty-state";';
-      html += '    empty.textContent = "Накладных нет";';
+      html += '    var emTitle = document.createElement("div");';
+      html += '    emTitle.className = "empty-state-title";';
+      html += '    emTitle.textContent = "Накладных нет";';
+      html += '    empty.appendChild(emTitle);';
       html += '    b.appendChild(empty); return; }';
+      
       html += '  d.docs.forEach(function(doc) {';
       html += '    var a = document.createElement("a");';
       html += '    var st = doc.status === "draft" ? "draft" : "completed";';
@@ -3063,12 +3038,14 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '      list.appendChild(row);';
       html += '    });';
       html += '    total.textContent = "Итого: " + ';
-      html += '    parseFloat(d.header.total_sum).toLocaleString("ru-RU") + " ₽";';
+      html += '    parseFloat(d.header.total_sum).toLocaleString("ru-RU") + ';
+      html += '    " ₽";';
       html += '  }).catch(function(){ title.textContent = "Ошибка сети"; });';
       html += '}';
       
       html += 'function closeDocPreview() {';
-      html += '  document.getElementById("docPreviewModal").style.display = "none";';
+      html += '  document.getElementById("docPreviewModal").style.display = ';
+      html += '  "none";';
       html += '}';
 
       html += 'function deleteDraft(id) {';
@@ -3156,7 +3133,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'border-bottom: 1px solid var(--f-border); }';
       html += '.b-top { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 8px; font-weight: 700; }';
-      html += '.b-controls { display: grid; grid-template-columns: 1fr 1fr 1fr; ';
+      html += '.b-controls { display: grid; ';
+      html += 'grid-template-columns: 1fr 1fr 1fr; ';
       html += 'gap: 8px; align-items: end; }';
       html += '.b-controls label { font-size: 11px; margin-bottom: 4px; }';
       html += '.b-controls input { font-size: 14px; padding: 8px; ';
@@ -3176,7 +3154,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'overflow-y: auto; display: none; }';
       html += '.dd-item { padding: 12px 16px; ';
       html += 'border-bottom: 1px solid var(--f-border); cursor: pointer; ';
-      html += 'display: flex; justify-content: space-between; align-items: center; }';
+      html += 'display: flex; justify-content: space-between; ';
+      html += 'align-items: center; }';
       html += '.dd-item:last-child { border-bottom: none; }';
       html += '.dd-name { font-weight: 600; font-size: 14px; }';
       html += '.dd-stock { font-size: 12px; font-weight: 800; }';
@@ -3296,11 +3275,11 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '    row.onclick = function() {';
       html += '      document.getElementById("itemName").value = i.name;';
       html += '      document.getElementById("itemRetail").value = ';
-      html += '      i.retail_price || "";';
-      html += '      currentLastCost = parseFloat(i.last_cost) || 0;';
+      html += '      i.retail_price || ""     ;';
+      html += '      currentLastCost = parseFloat(i.last_cost) || 0 dd;';
       html += '      document.getElementById("clearSearch")';
-      html += '      .style.display = "none";';
-      html += '      dd.style.display = "none";';
+      html += '.style      .style.display = "none";';
+      html += '.display = "none";';
       html += '      calcCostDiff();';
       html += '    };';
       html += '    dd.appendChild(row);';
@@ -3310,7 +3289,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
 
       html += 'function clearSearchText() {';
       html += '  document.getElementById("itemName").value = "";';
-      html += '  document.getElementById("clearSearch").style.display = "none";';
+      html += '  document.getElementById("clearSearch").style.display = ';
+      html += '  "none";';
       html += '  document.getElementById("ddList").style.display = "none";';
       html += '}';
 
@@ -3460,7 +3440,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  var totalSum = 0;';
       html += '  receiptItems.forEach(function(item, idx) {';
       html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
-      html += '    var p = parseFloat(String(item.unit_cost).replace(",", ".")) || 0;';
+      html += '    var p = parseFloat(String(item.unit_cost)';
+      html += '    .replace(",", ".")) || 0;';
       html += '    var rowSum = Math.round(q * p * 100) / 100;';
       html += '    totalSum += rowSum;';
       html += '    var div = document.createElement("div"); ';
@@ -3482,40 +3463,54 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '    div.appendChild(top);';
       html += '    var ctrl = document.createElement("div"); ';
       html += '    ctrl.className = "b-controls";';
+      
       html += '    var c1 = document.createElement("div");';
-      html += '    c1.innerHTML = "<label>Количество</label>";';
+      html += '    var lbl1 = document.createElement("label");';
+      html += '    lbl1.textContent = "Количество";';
+      html += '    c1.appendChild(lbl1);';
       html += '    var inpQ = document.createElement("input"); ';
       html += '    inpQ.type = "number"; inpQ.value = fmtNum(item.qty); ';
       html += '    inpQ.step = "0.1"; inpQ.inputMode = "decimal";';
       html += '    inpQ.onchange = function() { ';
-      html += '      var v = parseFloat(String(this.value).replace(",", ".")); ';
+      html += '      var v = parseFloat(String(this.value)';
+      html += '      .replace(",", ".")); ';
       html += '      if (v > 0) { receiptItems[idx].qty = v; renderList(); } ';
       html += '      else { this.value = fmtNum(item.qty); }';
       html += '    };';
       html += '    c1.appendChild(inpQ);';
+      
       html += '    var c2 = document.createElement("div");';
-      html += '    c2.innerHTML = "<label>Закупка (₽)</label>";';
+      html += '    var lbl2 = document.createElement("label");';
+      html += '    lbl2.textContent = "Закупка (₽)";';
+      html += '    c2.appendChild(lbl2);';
       html += '    var inpP = document.createElement("input"); ';
       html += '    inpP.type = "number"; inpP.value = fmtNum(item.unit_cost); ';
       html += '    inpP.inputMode = "decimal";';
       html += '    inpP.onchange = function() { ';
-      html += '      var v = parseFloat(String(this.value).replace(",", ".")); ';
-      html += '      if (v > 0) { receiptItems[idx].unit_cost = v; renderList(); } ';
+      html += '      var v = parseFloat(String(this.value)';
+      html += '      .replace(",", ".")); ';
+      html += '      if (v > 0) { receiptItems[idx].unit_cost = v;';
+      html += '      renderList(); } ';
       html += '      else { this.value = fmtNum(item.unit_cost); }';
       html += '    };';
       html += '    c2.appendChild(inpP);';
+      
       html += '    var c3 = document.createElement("div");';
-      html += '    c3.innerHTML = "<label>Розница (₽)</label>";';
+      html += '    var lbl3 = document.createElement("label");';
+      html += '    lbl3.textContent = "Розница (₽)";';
+      html += '    c3.appendChild(lbl3);';
       html += '    var inpR = document.createElement("input"); ';
       html += '    inpR.type = "number"; ';
       html += '    inpR.value = item.retail_price > 0 ? ';
       html += '    fmtNum(item.retail_price) : ""; ';
       html += '    inpR.inputMode = "decimal";';
       html += '    inpR.onchange = function() { ';
-      html += '      var v = parseFloat(String(this.value).replace(",", ".")) || 0; ';
+      html += '      var v = parseFloat(String(this.value)';
+      html += '      .replace(",", ".")) || 0; ';
       html += '      receiptItems[idx].retail_price = v; ';
       html += '    };';
       html += '    c3.appendChild(inpR);';
+      
       html += '    ctrl.appendChild(c1); ctrl.appendChild(c2); ';
       html += '    ctrl.appendChild(c3);';
       html += '    div.appendChild(ctrl); list.appendChild(div);';
@@ -3593,7 +3588,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'overflow-y: auto; display: none; }';
       html += '.dd-item { padding: 12px 16px; ';
       html += 'border-bottom: 1px solid var(--f-border); cursor: pointer; ';
-      html += 'display: flex; justify-content: space-between; align-items: center; }';
+      html += 'display: flex; justify-content: space-between; ';
+      html += 'align-items: center; }';
       html += '.dd-item:last-child { border-bottom: none; }';
       html += '.dd-name { font-weight: 600; font-size: 14px; }';
       html += '.dd-stock { font-size: 12px; font-weight: 800; }';
@@ -3602,8 +3598,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; ';
       html += 'margin-bottom: 16px; }';
       html += '.card { background: #fff; padding: 10px; ';
-      html += 'border-radius: var(--r-lg); text-align: center; cursor: pointer; ';
-      html += 'box-shadow: var(--sh-1); }';
+      html += 'border-radius: var(--r-lg); text-align: center; ';
+      html += 'cursor: pointer; box-shadow: var(--sh-1); }';
       html += '.card img { width: 100%; aspect-ratio: 1; object-fit: cover; ';
       html += 'border-radius: var(--r-md); margin-bottom: 8px; }';
       html += '.card .ph { width: 100%; aspect-ratio: 1; ';
@@ -3641,8 +3637,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'font-weight: 800; margin-top: 12px; display: none; }';
 
       html += '.form-block { display: none; background: #fff; ';
-      html += 'border-radius: var(--r-lg); padding: 16px; margin-bottom: 16px; ';
-      html += 'box-shadow: var(--sh-1); }';
+      html += 'border-radius: var(--r-lg); padding: 16px; ';
+      html += 'margin-bottom: 16px; box-shadow: var(--sh-1); }';
       html += '.reasons { display: grid; grid-template-columns: 1fr 1fr; ';
       html += 'gap: 10px; margin-bottom: 16px; }';
       html += '.reason { padding: 12px; border-radius: var(--r-md); ';
@@ -3690,7 +3686,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
 
       html += '<div class="form-block" id="formBlock">';
       html += '<label style="display:block; font-size:13px; font-weight:600; ';
-      html += 'color:var(--f-text-2); margin-bottom:8px;">Причина списания</label>';
+      html += 'color:var(--f-text-2); margin-bottom:8px;">';
+      html += 'Причина списания</label>';
       html += '<div class="reasons">';
       html += '<div class="reason active" ';
       html += 'onclick="setR(this, &apos;spoilage&apos;)">Порча</div>';
@@ -3727,13 +3724,14 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'var allItems = []; var cart = []; ';
       html += 'var selReason = "spoilage";';
       
-      html += 'var svgPh = \'<div style="width:40px;height:40px;';
-      html += 'background:#D8E4E4;border-radius:50%;"></div>\';';
+      html += 'var svgPh = "<div style=width:40px;height:40px;';
+      html += 'background:#D8E4E4;border-radius:50%;></div>";';
 
       html += 'fetch("/api/warehouse/items")';
       html += '.then(function(r) { return r.json(); })';
       html += '.then(function(d) { allItems = d.items; renderGrid(); })';
       html += '.catch(function() {});';
+
       html += 'document.addEventListener("click", function(e) {';
       html += '  var dd = document.getElementById("ddList");';
       html += '  var inp = document.getElementById("search");';
@@ -3744,12 +3742,14 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '});';
 
       html += 'function onSearchInput() {';
-      html += '  var q = document.getElementById("search").value.toLowerCase();';
+      html += '  var q = document.getElementById("search").value';
+      html += '  .toLowerCase();';
       html += '  var dd = document.getElementById("ddList");';
       html += '  while(dd.firstChild) dd.removeChild(dd.firstChild);';
       html += '  if (q.length > 0) {';
       html += '    var found = allItems.filter(function(i) { ';
-      html += '      return i.name.toLowerCase().includes(q); }).slice(0, 20);';
+      html += '      return i.name.toLowerCase().includes(q); ';
+      html += '    }).slice(0, 20);';
       html += '    if (found.length > 0) {';
       html += '      found.forEach(function(i) {';
       html += '        var row = document.createElement("div"); ';
@@ -3776,7 +3776,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '}';
 
       html += 'function renderGrid() {';
-      html += '  var q = document.getElementById("search").value.toLowerCase();';
+      html += '  var q = document.getElementById("search").value';
+      html += '  .toLowerCase();';
       html += '  var items = allItems.filter(function(i) { ';
       html += '    return i.name.toLowerCase().includes(q); });';
       html += '  drawCards(items);';
@@ -3786,7 +3787,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  var g = document.getElementById("itemsGrid");';
       html += '  while (g.firstChild) g.removeChild(g.firstChild);';
       html += '  items.forEach(function(i) {';
-      html += '    var d = document.createElement("div"); d.className = "card";';
+      html += '    var d = document.createElement("div"); ';
+      html += '    d.className = "card";';
       html += '    if (i.photo_url) { ';
       html += '      var img = document.createElement("img"); ';
       html += '      img.src = i.photo_url; d.appendChild(img); } ';
@@ -3834,7 +3836,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  var totQty = 0; var totSum = 0;';
       html += '  cart.forEach(function(item, idx) {';
       html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
-      html += '    var c = parseFloat(String(item.avg_cost).replace(",", ".")) || 0;';
+      html += '    var c = parseFloat(String(item.avg_cost)';
+      html += '    .replace(",", ".")) || 0;';
       html += '    totQty += q; totSum += q * c;';
       html += '    var div = document.createElement("div");';
       html += '    div.className = "b-row";';
@@ -3849,7 +3852,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '    inp.type = "number"; inp.className = "qty-input"; ';
       html += '    inp.value = item.qty; inp.inputMode = "decimal";';
       html += '    inp.onchange = function() { ';
-      html += '      var v = parseFloat(String(this.value).replace(",", ".")); ';
+      html += '      var v = parseFloat(String(this.value)';
+      html += '      .replace(",", ".")); ';
       html += '      if (v > 0) { cart[idx].qty = v; renderBasket(); } ';
       html += '      else { this.value = item.qty; }';
       html += '    };';
@@ -3873,12 +3877,14 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  "Всего: " + fmtNum(totQty) + " шт";';
       html += '  document.getElementById("totSum").textContent = ';
       html += '  Math.round(totSum).toLocaleString("ru-RU") + " ₽";';
-      html += '  document.getElementById("btnCheckout").style.display = "block";';
+      html += '  document.getElementById("btnCheckout").style.display = ';
+      html += '  "block";';
       html += '}';
 
       html += 'function showForm() {';
       html += '  document.getElementById("formBlock").style.display = "block";';
-      html += '  document.getElementById("btnCheckout").style.display = "none";';
+      html += '  document.getElementById("btnCheckout").style.display = ';
+      html += '  "none";';
       html += '  document.getElementById("formBlock").scrollIntoView({ ';
       html += '    behavior: "smooth" });';
       html += '}';
@@ -3925,7 +3931,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '      setTimeout(function() { ';
       html += '        window.location.href = "/warehouse-app"; }, 1500);';
       html += '    } else {';
-      html += '      document.getElementById("btnSaveWriteoff").disabled = false;';
+      html += '      document.getElementById("btnSaveWriteoff").disabled = ';
+      html += '      false;';
       html += '      document.getElementById("btnSaveWriteoff").innerText = ';
       html += '      "Списать всё"; showAlert("Ошибка", d.error, false);';
       html += '    }';
@@ -4028,9 +4035,11 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  if (d.docs.length === 0) { ';
       html += '    var em = document.createElement("div"); ';
       html += '    em.className = "empty-state"; ';
-      html += '    em.innerHTML = "<div class=&apos;empty-state-title&apos;>" +';
-      html += '    "Документов нет</div>"; ';
-      html += '    b.appendChild(em); return; }';
+      html += '    var emT = document.createElement("div"); ';
+      html += '    emT.className = "empty-state-title"; ';
+      html += '    emT.textContent = "Документов нет"; ';
+      html += '    em.appendChild(emT); b.appendChild(em); ';
+      html += '    return; }';
       
       html += '  d.docs.forEach(function(doc){ ';
       html += '    var a = document.createElement("a"); ';
@@ -4137,6 +4146,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
+
   // ====== 11. ЭКРАН ДЕТАЛЕЙ ДОКУМЕНТА ======
   app.get('/warehouse/documents/details', async (req, res) => {
     try {
@@ -4199,14 +4209,14 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  "Приходная накладная №" : "Акт списания №";';
       
       html += '  var title = document.createElement("div"); ';
-      html += '  title.style = "font-size:20px; font-weight:800;"; ';
-      html += '  title.textContent = titleTxt + h.id; ';
+      html += '  title.style = "font-size:20px; font-weight:800;дела"; ';
+      html += '  title.textContent =л titleTxt + h.id; ';
       html += '  content.appendChild(title);';
       
-      html += '  var meta = document.createElement("div"); ';
+      html += '  var meta = document ".createElement("div"); ';
       html += '  meta.style = "font-size:13px; color:var(--f-text-2); ';
       html += '  margin-bottom:16px;"; ';
-      html += '  meta.textContent = ds + " · Сделал: " + ';
+      html += '  meta.textContent = ds + " · С ';
       html += '  (h.author || "Неизвестно"); ';
       html += '  content.appendChild(meta);';
       
@@ -4251,8 +4261,14 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  var totalTxt = docType === "receipts" ? ';
       html += '  parseFloat(h.total_sum).toLocaleString("ru-RU") + " ₽" : ';
       html += '  fmtNum(h.total_sum) + " шт";';
-      html += '  total.innerHTML = "<span>Итого:</span><span>" + ';
-      html += '  totalTxt + "</span>"; content.appendChild(total);';
+      
+      html += '  var spanLeft = document.createElement("span"); ';
+      html += '  spanLeft.textContent = "Итого:"; ';
+      html += '  var spanRight = document.createElement("span"); ';
+      html += '  spanRight.textContent = totalTxt; ';
+      html += '  total.appendChild(spanLeft); ';
+      html += '  total.appendChild(spanRight); ';
+      html += '  content.appendChild(total);';
       
       html += '  if (docType === "receipts" && h.status === "completed") {';
       html += '    var cancelBtn = document.createElement("button"); ';
