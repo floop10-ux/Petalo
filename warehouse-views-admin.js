@@ -309,6 +309,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       res.status(500).send('Ошибка сервера');
     }
   });
+
   // ====== 3. ЭКРАН НАСТРОЕК ======
   app.get('/warehouse/settings', async (req, res) => {
     try {
@@ -458,7 +459,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 4. ЭКРАН ИСТОРИИ ======
   app.get('/warehouse/history', async (req, res) => {
     try {
@@ -520,6 +520,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '.item.sale { border-left-color: #3C7A89; } ';
       html += '.item.writeoff { border-left-color: var(--f-accent); } ';
       html += '.item.receipt { border-left-color: var(--f-success); }';
+      html += '.item.cancel { border-left-color: var(--f-danger); }';
       html += '.date { font-size: 12px; color: var(--f-text-2); margin-top: 4px; } ';
       html += '.amount { font-weight: 800; font-size: 16px; ';
       html += 'text-align: right; } ';
@@ -641,8 +642,10 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       
       html += '  var onlySales = document.getElementById("onlySales").checked;';
       html += '  var filtered = rawHistory.filter(function(h){';
-      html += '    if (onlySales && h.type !== "sale") return false;';
-      html += '    if (h.type === "sale" && payFilter !== "all") {';
+      html += '    if (onlySales && h.type !== "sale" && ';
+      html += '    h.type !== "cancel") return false;';
+      html += '    if ((h.type === "sale" || h.type === "cancel") && ';
+      html += '    payFilter !== "all") {';
       html += '      if (payFilter === "cash" && parseFloat(h.pay_cash) <= 0) ';
       html += '        return false;';
       html += '      if (payFilter === "card" && parseFloat(h.pay_card) <= 0) ';
@@ -667,7 +670,9 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '  var totSales = 0; var totCount = 0; var totLoss = 0;';
       html += '  filtered.forEach(function(h){ ';
       html += '    if (h.type === "sale") { totSales += parseFloat(h.amount); ';
-      html += '    totCount++; } else if (h.type === "writeoff") { ';
+      html += '    totCount++; } else if (h.type === "cancel") { ';
+      html += '    totSales -= parseFloat(h.amount); ';
+      html += '    } else if (h.type === "writeoff") { ';
       html += '    totLoss += parseFloat(h.amount); } });';
       
       html += '  document.getElementById("totalsBanner").style.display = "flex";';
@@ -684,16 +689,82 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '    { hour: "2-digit", minute: "2-digit" }); ';
       html += '    var seller = h.person || "Флорист";';
       
-      html += '    if (h.type === "sale") { ';
+      html += '    if (h.type === "cancel") { ';
+      html += '      div.className = "item cancel"; ';
+      html += '      var saleId = h.id; ';
+      html += '      div.onclick = function() { window.location.href = ';
+      html += '      "/warehouse/sale/details?id=" + saleId + ';
+      html += '      "&from=history"; };';
+      html += '      var left = document.createElement("div"); ';
+      html += '      var title = document.createElement("b"); ';
+      html += '      title.textContent = "Возврат (Отмена чека)"; ';
+      html += '      title.style.color = "var(--f-danger)"; ';
+      html += '      var dateDiv = document.createElement("div"); ';
+      html += '      dateDiv.className = "date"; dateDiv.textContent = ds; ';
+      
+      html += '      var payStr = "";';
+      html += '      var pCash = parseFloat(h.pay_cash) || 0;';
+      html += '      var pCard = parseFloat(h.pay_card) || 0;';
+      html += '      var pQr = parseFloat(h.pay_qr) || 0;';
+      html += '      if (pCash > 0) payStr += "Нал " + ';
+      html += '      pCash.toLocaleString("ru-RU") + " ₽, ";';
+      html += '      if (pCard > 0) payStr += "Карта " + ';
+      html += '      pCard.toLocaleString("ru-RU") + " ₽, ";';
+      html += '      if (pQr > 0) payStr += "QR " + ';
+      html += '      pQr.toLocaleString("ru-RU") + " ₽, ";';
+      html += '      if (payStr.length > 2) payStr = payStr.slice(0, -2);';
+      html += '      if (payStr) {';
+      html += '        var payDiv = document.createElement("div");';
+      html += '        payDiv.style.fontSize = "11px";';
+      html += '        payDiv.style.color = "var(--f-text-2)";';
+      html += '        payDiv.textContent = "Оплата: " + payStr;';
+      html += '        dateDiv.appendChild(payDiv);';
+      html += '      }';
+
+      html += '      var itemsDiv = document.createElement("div"); ';
+      html += '      itemsDiv.className = "items-list"; ';
+      html += '      itemsDiv.textContent = h.items || ""; ';
+      html += '      left.appendChild(title); left.appendChild(dateDiv); ';
+      html += '      left.appendChild(itemsDiv);';
+      html += '      var right = document.createElement("div"); ';
+      html += '      var amtDiv = document.createElement("div"); ';
+      html += '      amtDiv.className = "amount"; ';
+      html += '      amtDiv.style.color = "var(--f-danger)"; ';
+      html += '      amtDiv.textContent = "-" + ';
+      html += '      parseFloat(h.amount).toLocaleString("ru-RU") + " ₽"; ';
+      html += '      right.appendChild(amtDiv);';
+      html += '      div.appendChild(left); div.appendChild(right);';
+      html += '    } else if (h.type === "sale") { ';
       html += '      div.className = "item sale"; ';
       html += '      var saleId = h.id; ';
       html += '      div.onclick = function() { window.location.href = ';
-      html += '      "/warehouse/sale/details?id=" + saleId; };';
+      html += '      "/warehouse/sale/details?id=" + saleId + ';
+      html += '      "&from=history"; };';
       html += '      var left = document.createElement("div"); ';
       html += '      var title = document.createElement("b"); ';
       html += '      title.textContent = "Продажа (" + seller + ")"; ';
       html += '      var dateDiv = document.createElement("div"); ';
       html += '      dateDiv.className = "date"; dateDiv.textContent = ds; ';
+      
+      html += '      var payStr = "";';
+      html += '      var pCash = parseFloat(h.pay_cash) || 0;';
+      html += '      var pCard = parseFloat(h.pay_card) || 0;';
+      html += '      var pQr = parseFloat(h.pay_qr) || 0;';
+      html += '      if (pCash > 0) payStr += "Нал " + ';
+      html += '      pCash.toLocaleString("ru-RU") + " ₽, ";';
+      html += '      if (pCard > 0) payStr += "Карта " + ';
+      html += '      pCard.toLocaleString("ru-RU") + " ₽, ";';
+      html += '      if (pQr > 0) payStr += "QR " + ';
+      html += '      pQr.toLocaleString("ru-RU") + " ₽, ";';
+      html += '      if (payStr.length > 2) payStr = payStr.slice(0, -2);';
+      html += '      if (payStr) {';
+      html += '        var payDiv = document.createElement("div");';
+      html += '        payDiv.style.fontSize = "11px";';
+      html += '        payDiv.style.color = "var(--f-text-2)";';
+      html += '        payDiv.textContent = "Оплата: " + payStr;';
+      html += '        dateDiv.appendChild(payDiv);';
+      html += '      }';
+
       html += '      var itemsDiv = document.createElement("div"); ';
       html += '      itemsDiv.className = "items-list"; ';
       html += '      itemsDiv.textContent = h.items || ""; ';
@@ -767,6 +838,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       res.status(500).send('Ошибка сервера');
     }
   });
+
   // ====== 5. ЭКРАН ДЕТАЛЕЙ ПРОДАЖИ ======
   app.get('/warehouse/sale/details', async (req, res) => {
     try {
@@ -795,12 +867,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += 'background: #fff; border: 2px solid var(--f-danger); ';
       html += 'color: var(--f-danger); border-radius: var(--r-md); ';
       html += 'font-weight: 800; font-size: 16px; margin-top: 24px; ';
-      html += 'cursor: pointer; }';
+      html += 'cursor: pointer; text-align: center; }';
       html += '</style></head><body>';
       
       html += '<div class="page-header">';
       html += '<div class="page-header-left">';
-      html += '<a href="/warehouse/history" class="back-btn">←</a>';
+      html += '<a href="#" id="backBtn" class="back-btn">←</a>';
       html += '<h2 class="page-title">Чек</h2></div>';
       html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
@@ -810,6 +882,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += getUnifiedMenu('history');
 
       html += '<script>';
+      html += 'var from = new URLSearchParams(window.location.search)';
+      html += '.get("from") || "history";';
+      html += 'var backUrl = from === "journal" ? ';
+      html += '"/warehouse/audit" : "/warehouse/history";';
+      html += 'document.getElementById("backBtn").href = backUrl;';
+
       html += 'var saleId = new URLSearchParams(window.location.search)';
       html += '.get("id") || "";';
       html += 'fetch("/api/warehouse/sale/details?id=" + saleId)';
@@ -823,13 +901,31 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       
       html += '  var tot = document.createElement("div"); ';
       html += '  tot.className = "total"; ';
+      html += '  if (s.status === "cancelled") { ';
+      html += '    tot.style.color = "var(--f-danger)"; }';
       html += '  tot.textContent = parseFloat(s.real_price)';
       html += '  .toLocaleString("ru-RU") + " ₽"; content.appendChild(tot);';
       
       html += '  var meta = document.createElement("div"); ';
       html += '  meta.className = "meta"; ';
       html += '  meta.textContent = "Продал: " + (s.seller || "Неизвестно") + ';
-      html += '  " · Дата: " + ds; content.appendChild(meta);';
+      html += '  " · Дата: " + ds; ';
+
+      html += '  var payStr = "";';
+      html += '  var pCash = parseFloat(s.pay_cash) || 0;';
+      html += '  var pCard = parseFloat(s.pay_card) || 0;';
+      html += '  var pQr = parseFloat(s.pay_qr) || 0;';
+      html += '  if (pCash > 0) payStr += "Нал " + ';
+      html += '  pCash.toLocaleString("ru-RU") + " ₽, ";';
+      html += '  if (pCard > 0) payStr += "Карта " + ';
+      html += '  pCard.toLocaleString("ru-RU") + " ₽, ";';
+      html += '  if (pQr > 0) payStr += "QR " + ';
+      html += '  pQr.toLocaleString("ru-RU") + " ₽, ";';
+      html += '  if (payStr.length > 2) payStr = payStr.slice(0, -2);';
+      html += '  if (payStr) {';
+      html += '    meta.innerHTML += "<br>Оплата: " + payStr;';
+      html += '  }';
+      html += '  content.appendChild(meta);';
       
       html += '  d.items.forEach(function(i){ ';
       html += '    var a = document.createElement("a"); ';
@@ -850,24 +946,36 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '    a.appendChild(left); a.appendChild(right); ';
       html += '    content.appendChild(a); });';
       
-      html += '  var cancelBtn = document.createElement("button"); ';
-      html += '  cancelBtn.className = "btn-cancel-sale"; ';
-      html += '  cancelBtn.innerText = "Отменить продажу (Возврат)";';
-      html += '  cancelBtn.onclick = function() { ';
-      html += '    showConfirm("Отмена продажи", ';
-      html += '    "Вы уверены? Товары вернутся на склад.", function() {';
-      html += '      fetch("/api/warehouse/sale/cancel", { method: "POST", ';
-      html += '      headers: { "Content-Type": "application/json" }, ';
-      html += '      body: JSON.stringify({ saleId: saleId, ';
-      html += '      action: "return" }) })';
-      html += '      .then(function(r){return r.json();}).then(function(res){ ';
-      html += '      if(res.ok){ showAlert("Готово", "Возврат оформлен", true); ';
-      html += '      setTimeout(function(){window.location.href=';
-      html += '      "/warehouse/history";}, 1000); } ';
-      html += '      else showAlert("Ошибка", res.error, false); })';
-      html += '      .catch(function(){});';
-      html += '    }, true); };';
-      html += '  content.appendChild(cancelBtn);';
+      html += '  if (s.status === "cancelled") {';
+      html += '    var statusDiv = document.createElement("div");';
+      html += '    statusDiv.className = "btn-cancel-sale";';
+      html += '    statusDiv.style.cursor = "default";';
+      html += '    statusDiv.style.background = "#FFF3F3";';
+      html += '    statusDiv.textContent = "ЧЕК ОТМЕНЕН (ВОЗВРАТ)";';
+      html += '    content.appendChild(statusDiv);';
+      html += '  } else {';
+      html += '    var cancelBtn = document.createElement("button"); ';
+      html += '    cancelBtn.className = "btn-cancel-sale"; ';
+      html += '    cancelBtn.innerText = "Отменить продажу (Возврат)";';
+      html += '    cancelBtn.onclick = function() { ';
+      html += '      showConfirm("Отмена продажи", ';
+      html += '      "Вы уверены? Товары вернутся на склад.", function() {';
+      html += '        fetch("/api/warehouse/sale/cancel", { method: "POST", ';
+      html += '        headers: { "Content-Type": "application/json" }, ';
+      html += '        body: JSON.stringify({ saleId: saleId, ';
+      html += '        action: "return" }) })';
+      html += '        .then(function(r){return r.json();})';
+      html += '        .then(function(res){ ';
+      html += '        if(res.ok){ ';
+      html += '          showAlert("Готово", "Возврат оформлен", true); ';
+      html += '          setTimeout(function(){window.location.href=';
+      html += '          backUrl;}, 1000); } ';
+      html += '        else showAlert("Ошибка", res.error, false); })';
+      html += '        .catch(function(){});';
+      html += '      }, true); };';
+      html += '    content.appendChild(cancelBtn);';
+      html += '  }';
+
       html += '}).catch(function(){ document.getElementById("content")';
       html += '.textContent = "Ошибка загрузки"; });';
       html += '<\/script></body></html>';
@@ -876,7 +984,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 6. ЭКРАН БУКЕТОВ ======
   app.get('/warehouse/bouquets', async (req, res) => {
     try {
@@ -921,12 +1028,10 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '.f-btn.active { background: var(--f-brand); color: #fff; ';
       html += 'border-color: var(--f-brand); }';
 
-      // ИСПРАВЛЕНИЕ СЕТКИ (minmax)
       html += '.b-grid { display: grid; ';
       html += 'grid-template-columns: repeat(2, minmax(0, 1fr)); ';
       html += 'gap: 12px; align-items: stretch; }';
       
-      // ИСПРАВЛЕНИЕ СЖАТИЯ ТЕКСТА (min-width: 0)
       html += '.b-card-grid { background: #fff; border-radius: var(--r-lg); ';
       html += 'padding: 12px; display: flex; flex-direction: column; ';
       html += 'height: 100%; box-shadow: var(--sh-1); min-width: 0; }';
@@ -1175,7 +1280,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '        + bq.id; }; ';
       html += '      btnRow.appendChild(btnEdit);';
       
-      // ИСПРАВЛЕНИЕ ССЫЛКИ НА РЕЦЕПТ
       html += '      var btnSetup = document.createElement("button"); ';
       html += '      btnSetup.className = "btn-setup"; ';
       html += '      btnSetup.style.cssText = ';
@@ -1245,6 +1349,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       res.status(500).send('Ошибка сервера');
     }
   });
+
   // ====== 7. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
   app.get('/warehouse/bouquet/edit', async (req, res) => {
     try {
@@ -1282,7 +1387,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += 'height: 28px; border-radius: 8px; font-weight: bold; ';
       html += 'font-size: 14px; color: var(--f-text); }';
       
-      // ИСПРАВЛЕНИЕ ШИРИНЫ ПОЛЯ ВВОДА (было 50px, стало 70px)
       html += '.qty-input { width: 70px !important; height: 28px; ';
       html += 'font-size: 14px; margin: 0; padding: 0; text-align: center; }';
       
@@ -1364,358 +1468,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '</div>';
 
       html += getUnifiedMenu('bouquets');
-
-      html += '<script>';
-      html += 'var bId = ' + bId + ';';
-      html += 'var catalog = []; var recipe = [];';
-      html += 'var selectedItem = null;';
-
-      html += 'if (bId > 0) { ';
-      html += '  document.getElementById("pageTitle").textContent = ';
-      html += '  "Редактирование";';
-      html += '  fetch("/api/warehouse/bouquets/info?id=" + bId)';
-      html += '  .then(function(r){return r.json();}).then(function(d){';
-      html += '    if (d.ok) {';
-      html += '      document.getElementById("bqName").value = d.bouquet.name;';
-      html += '      document.getElementById("bqPrice").value = d.bouquet.price;';
-      html += '      if (d.bouquet.wh_linked) {';
-      html += '        document.getElementById("bqLinked").checked = true;';
-      html += '        toggleRecipe();';
-      html += '      }';
-      html += '      if (d.bouquet.photos && d.bouquet.photos.length > 0) {';
-      html += '        var p = d.bouquet.photos[0];';
-      html += '        var url = (typeof p === "string") ? p : (p.s3 || p.s3b);';
-      html += '        if (url) {';
-      html += '          document.getElementById("bqPhotoUrl").value = url;';
-      html += '          var img = document.getElementById("bqPreview");';
-      html += '          img.src = url; img.style.display = "block";';
-      html += '        }';
-      html += '      }';
-      html += '    }';
-      html += '  }).catch(function(){});';
-
-      html += '  fetch("/api/warehouse/bouquets/recipe?id=" + bId)';
-      html += '  .then(function(r){return r.json();}).then(function(d){ ';
-      html += '  if (d.ok) { recipe = d.items; renderRecipe(); } });';
-      html += '}';
-
-      html += 'fetch("/api/warehouse/items")';
-      html += '.then(function(r){return r.json();}).then(function(d){ ';
-      html += 'if (d.ok) catalog = d.items; });';
-
-      html += 'function toggleRecipe() {';
-      html += '  var isChecked = document.getElementById("bqLinked").checked;';
-      html += '  document.getElementById("recipeSection").style.display = ';
-      html += '  isChecked ? "block" : "none";';
-      html += '}';
-
-      html += 'document.addEventListener("click", function(e) {';
-      html += '  var dd = document.getElementById("ddList");';
-      html += '  var inp = document.getElementById("searchItem");';
-      html += '  if (dd && inp && e.target !== dd && ';
-      html += '  e.target !== inp && !dd.contains(e.target)) {';
-      html += '    dd.style.display = "none";';
-      html += '  }';
-      html += '});';
-
-      html += 'function onSearchInput() {';
-      html += '  var val = document.getElementById("searchItem").value;';
-      html += '  var dd = document.getElementById("ddList");';
-      html += '  var btn = document.getElementById("clearSearch");';
-      html += '  while(dd.firstChild) dd.removeChild(dd.firstChild);';
-      html += '  if (val.length > 0) { btn.style.display = "block"; }';
-      html += '  else { btn.style.display = "none"; }';
-      html += '  if (!val) { dd.style.display = "none"; return; }';
-      html += '  var found = catalog.filter(function(i) { ';
-      html += '    return i.name.toLowerCase().includes(val.toLowerCase()); ';
-      html += '  }).slice(0, 20);';
-      html += '  if (found.length === 0) { dd.style.display = "none"; return; }';
-      html += '  found.forEach(function(i) {';
-      html += '    var row = document.createElement("div"); ';
-      html += '    row.className = "dd-item";';
-      html += '    var nm = document.createElement("div"); ';
-      html += '    nm.className = "dd-name"; nm.textContent = i.name;';
-      html += '    var st = document.createElement("div"); ';
-      html += '    st.className = "dd-stock"; ';
-      html += '    var s = parseFloat(i.current_stock);';
-      html += '    st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
-      html += '    st.style.cssText = s > 0 ? ';
-      html += '    "color:var(--f-success)" : "color:var(--f-danger)";';
-      html += '    row.appendChild(nm); row.appendChild(st);';
-      html += '    row.onclick = function() {';
-      html += '      document.getElementById("searchItem").value = i.name;';
-      html += '      document.getElementById("clearSearch")';
-      html += '      .style.display = "none";';
-      html += '      selectedItem = i;';
-      html += '      dd.style.display = "none";';
-      html += '    };';
-      html += '    dd.appendChild(row);';
-      html += '  });';
-      html += '  dd.style.display = "block";';
-      html += '}';
-
-      html += 'function clearSearchText() {';
-      html += '  document.getElementById("searchItem").value = "";';
-      html += '  document.getElementById("clearSearch").style.display = "none";';
-      html += '  document.getElementById("ddList").style.display = "none";';
-      html += '  selectedItem = null;';
-      html += '}';
-
-      html += 'function addItem() {';
-      html += '  if (!selectedItem) { ';
-      html += '    showAlert("Внимание", "Выберите товар", false); return; }';
-      html += '  var q = parseFloat(document.getElementById("qtyAdd").value);';
-      html += '  if (!q || q <= 0) { ';
-      html += '    showAlert("Внимание", "Введите количество", false); return; }';
-      html += '  var ex = recipe.find(function(r) { ';
-      html += '    return r.shop_item_id === selectedItem.id; });';
-      html += '  if (ex) { ex.qty = parseFloat(ex.qty) + q; }';
-      html += '  else { ';
-      html += '    recipe.push({ shop_item_id: selectedItem.id, ';
-      html += '      name: selectedItem.name, ';
-      html += '      qty: q, unit: selectedItem.unit || "шт" }); ';
-      html += '  }';
-      html += '  clearSearchText();';
-      html += '  document.getElementById("qtyAdd").value = "";';
-      html += '  renderRecipe();';
-      html += '}';
-
-      html += 'function renderRecipe() {';
-      html += '  var list = document.getElementById("recipeList");';
-      html += '  while(list.firstChild) list.removeChild(list.firstChild);';
-      html += '  if (recipe.length === 0) { ';
-      html += '    list.textContent = "Состав пуст."; ';
-      html += '    return; }';
-      
-      html += '  recipe.forEach(function(item, idx) {';
-      html += '    var div = document.createElement("div"); ';
-      html += '    div.className = "b-row";';
-      html += '    var n = document.createElement("div"); ';
-      html += '    n.textContent = item.name;';
-      html += '    var ctrl = document.createElement("div"); ';
-      html += '    ctrl.className = "b-controls";';
-      html += '    var mn = document.createElement("button"); ';
-      html += '    mn.textContent = "-"; mn.className = "qty-btn"; ';
-      html += '    mn.onclick = function() { changeQty(idx, -1); };';
-      html += '    var inp = document.createElement("input"); ';
-      html += '    inp.type = "number"; inp.className = "qty-input"; ';
-      html += '    inp.value = item.qty; inp.step = "0.1";';
-      html += '    inp.onchange = function() { ';
-      html += '      var val = parseFloat(this.value); ';
-      html += '      if (!isNaN(val) && val > 0) { ';
-      html += '        recipe[idx].qty = val; ';
-      html += '      } else { renderRecipe(); }';
-      html += '    };';
-      html += '    var pl = document.createElement("button"); ';
-      html += '    pl.textContent = "+"; pl.className = "qty-btn"; ';
-      html += '    pl.onclick = function() { changeQty(idx, 1); };';
-      html += '    ctrl.appendChild(mn); ctrl.appendChild(inp); ';
-      html += '    ctrl.appendChild(pl);';
-      html += '    var del = document.createElement("span"); ';
-      html += '    del.textContent = "✕"; ';
-      html += '    del.style.cssText = "color:red; cursor:pointer; ';
-      html += '    font-size:18px; margin-left:10px;";';
-      html += '    del.onclick = function() { ';
-      html += '      recipe.splice(idx, 1); renderRecipe(); ';
-      html += '    };';
-      html += '    ctrl.appendChild(del);';
-      html += '    div.appendChild(n); div.appendChild(ctrl); ';
-      html += '    list.appendChild(div);';
-      html += '  });';
-      html += '}';
-
-      html += 'function changeQty(idx, delta) {';
-      html += '  recipe[idx].qty = parseFloat(recipe[idx].qty) + delta;';
-      html += '  if (recipe[idx].qty <= 0) {';
-      html += '    recipe.splice(idx, 1); renderRecipe();';
-      html += '  } else { renderRecipe(); }';
-      html += '}';
-
-      html += 'function uploadPhoto(input) {';
-      html += '  var f = input.files[0]; if (!f) return;';
-      html += '  var rd = new FileReader();';
-      html += '  rd.onload = function(e) {';
-      html += '    var img = new Image();';
-      html += '    img.onload = function() {';
-      html += '      var canvas = document.createElement("canvas");';
-      html += '      var MAX = 800; var w = img.width, h = img.height;';
-      html += '      if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }';
-      html += '      else { if (h > MAX) { w *= MAX / h; h = MAX; } }';
-      html += '      canvas.width = w; canvas.height = h;';
-      html += '      var ctx = canvas.getContext("2d");';
-      html += '      ctx.drawImage(img, 0, 0, w, h);';
-      html += '      var dataUrl = canvas.toDataURL("image/jpeg", 0.7);';
-      html += '      showAlert("Загрузка", "Отправляем фото...", true);';
-      html += '      fetch("/api/warehouse/upload", { method: "POST",';
-      html += '      headers: { "Content-Type": "application/json" },';
-      html += '      body: JSON.stringify({ image: dataUrl }) })';
-      html += '      .then(function(r){return r.json();}).then(function(d){';
-      html += '        if (d.ok) {';
-      html += '          document.getElementById("bqPhotoUrl").value = d.url;';
-      html += '          var prev = document.getElementById("bqPreview");';
-      html += '          prev.src = d.url; prev.style.display = "block";';
-      html += '        } else showAlert("Ошибка", "Фото не принято", false);';
-      html += '      }).catch(function(){ showAlert("Ошибка", "Сеть", false); });';
-      html += '    }; img.src = e.target.result;';
-      html += '  }; rd.readAsDataURL(f);';
-      html += '}';
-
-      html += 'function saveAll() {';
-      html += '  var isLinked = document.getElementById("bqLinked").checked;';
-      html += '  var pendingItem = document.getElementById("searchItem").value;';
-      html += '  var pendingQty = document.getElementById("qtyAdd").value;';
-      
-      html += '  if (isLinked && pendingItem && pendingQty && selectedItem) {';
-      html += '    var q = parseFloat(pendingQty);';
-      html += '    if (q > 0) {';
-      html += '      var ex = recipe.find(function(r) { ';
-      html += '        return r.shop_item_id === selectedItem.id; });';
-      html += '      if (ex) { ex.qty = parseFloat(ex.qty) + q; }';
-      html += '      else { recipe.push({ shop_item_id: selectedItem.id, ';
-      html += '        name: selectedItem.name, qty: q }); }';
-      html += '    }';
-      html += '  }';
-      
-      html += '  var name = document.getElementById("bqName").value;';
-      html += '  var price = parseFloat(document.getElementById("bqPrice").value);';
-      html += '  var photoUrl = document.getElementById("bqPhotoUrl").value;';
-      html += '  if (!name || !price) { ';
-      html += '    showAlert("Ошибка", "Заполните поля", false); return; }';
-      
-      html += '  var btn = document.getElementById("btnSave");';
-      html += '  btn.disabled = true; btn.innerText = "Сохранение...";';
-      
-      html += '  fetch("/api/warehouse/bouquet/save", { method: "POST",';
-      html += '  headers: { "Content-Type": "application/json" },';
-      html += '  body: JSON.stringify({ id: bId, name: name, price: price,';
-      html += '  photo_url: photoUrl, is_linked: isLinked }) })';
-      html += '  .then(function(r){return r.json();}).then(function(d){';
-      html += '    if (!d.ok) { btn.disabled = false; ';
-      html += '      btn.innerText = "Сохранить"; ';
-      html += '      showAlert("Ошибка", d.error, false); return; }';
-      
-      html += '    var newId = d.id;';
-      html += '    if (isLinked) {';
-      html += '      fetch("/api/warehouse/bouquets/recipe/save", { ';
-      html += '      method: "POST",';
-      html += '      headers: { "Content-Type": "application/json" },';
-      html += '      body: JSON.stringify({ bouquet_id: newId, ';
-      html += '      items: recipe }) })';
-      html += '      .then(function(r){return r.json();}).then(function(res){';
-      html += '        if (res.ok) { ';
-      html += '          window.location.href = "/warehouse/bouquets"; }';
-      html += '        else { btn.disabled = false; ';
-      html += '        btn.innerText = "Сохранить";';
-      html += '        showAlert("Ошибка рецепта", res.error, false); }';
-      html += '      }).catch(function(){ btn.disabled = false; ';
-      html += '      btn.innerText = "Сохранить"; ';
-      html += '      showAlert("Ошибка", "Сеть", false); });';
-      html += '    } else {';
-      html += '      window.location.href = "/warehouse/bouquets";';
-      html += '    }';
-      html += '  }).catch(function(){ btn.disabled = false;';
-      html += '  btn.innerText = "Сохранить"; ';
-      html += '  showAlert("Ошибка", "Сеть", false); });';
-      html += '}';
-      html += '<\/script></body></html>';
-      res.send(html);
-    } catch(e) { res.status(500).send('Ошибка сервера'); }
-  });
-
-  // ====== 8. ЭКРАН ЖУРНАЛА ======
-  app.get('/warehouse/audit', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
-      
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
-      html += metaSafari;
-      html += '<meta name="viewport" content="width=device-width, ';
-      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
-      html += '<style>';
-      html += 'body { padding: 0 16px 32px 16px; }';
-      
-      html += '.filters { display: flex; gap: 8px; margin-bottom: 16px; }';
-      html += '.filter { flex: 1; padding: 12px; ';
-      html += 'border: 1px solid var(--f-border); ';
-      html += 'border-radius: var(--r-md); background: #fff; text-align: center; ';
-      html += 'cursor: pointer; font-size: 14px; font-weight: 600; ';
-      html += 'color: var(--f-text); }';
-      html += '.filter.active { background: var(--f-brand); color: #fff; ';
-      html += 'border-color: var(--f-brand); }';
-      
-      html += '.date-label { font-size: 13px; font-weight: 600; ';
-      html += 'color: var(--f-text-2); margin-bottom: 8px; }';
-      html += '.date-row { display: flex; margin-bottom: 16px; }';
-      html += '.date-row input { width: 100%; padding: 12px; margin: 0; ';
-      html += 'border: 2px solid transparent; transition: border 0.2s; }';
-      html += '.date-row input.active-date { ';
-      html += 'border-color: var(--f-accent); }';
-      
-      html += '.log-card { background: #fff; border-radius: var(--r-lg); ';
-      html += 'padding: 16px; margin-bottom: 12px; cursor: pointer; ';
-      html += 'box-shadow: var(--sh-1); border-left: 4px solid #ddd; }';
-      html += '.log-card.sale { border-left-color: #3C7A89; }';
-      html += '.log-card.receipt { border-left-color: var(--f-success); }';
-      html += '.log-card.writeoff { border-left-color: var(--f-danger); }';
-      html += '.log-card.shift { border-left-color: #E67E22; }';
-      html += '.log-top { display: flex; justify-content: space-between; ';
-      html += 'align-items: center; margin-bottom: 8px; }';
-      html += '.log-title { font-weight: 800; font-size: 15px; ';
-      html += 'display: flex; align-items: center; }';
-      html += '.log-title svg { width: 18px; height: 18px; margin-right: 8px; }';
-      html += '.log-date { font-size: 12px; color: var(--f-text-2); }';
-      html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
-      html += '.log-link { font-size: 13px; color: #3C7A89; ';
-      html += 'margin-top: 8px; font-weight: 600; }';
-      html += '</style></head><body>';
-
-      html += '<div class="page-header">';
-      html += '<div class="page-header-left">';
-      html += '<a href="/warehouse-app" class="back-btn">←</a>';
-      html += '<h2 class="page-title">Журнал</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
-      html += '</div>';
-
-      html += '<div class="filters">';
-      html += '<div class="filter active" id="f-today" ';
-      html += 'onclick="setPeriod(&apos;today&apos;)">Сегодня</div>';
-      html += '<div class="filter" id="f-week" ';
-      html += 'onclick="setPeriod(&apos;week&apos;)">Неделя</div>';
-      html += '<div class="filter" id="f-month" ';
-      html += 'onclick="setPeriod(&apos;month&apos;)">Месяц</div>';
-      html += '</div>';
-      
-      html += '<div class="date-label">Или выберите конкретную дату:</div>';
-      html += '<div class="date-row">';
-      html += '<input type="date" id="auditDate" ';
-      html += 'onchange="setCustomDate(this.value)">';
-      html += '</div>';
-      html += '<div id="list">Загрузка...</div>';
-      
-      html += getUnifiedMenu('audit');
-
-      html += '<script>';
-      html += 'var currentPeriod = "today"; var currentDate = "";';
-      html += 'function setPeriod(p) {';
-      html += '  currentPeriod = p; currentDate = "";';
-      html += '  var dInp = document.getElementById("auditDate");';
-      html += '  dInp.value = ""; dInp.classList.remove("active-date");';
-      html += '  document.querySelectorAll(".filter").forEach(function(el){';
-      html += '    el.classList.remove("active");});';
-      html += '  document.getElementById("f-" + p).classList.add("active");';
-      html += '  loadData();';
-      html += '}';
-      html += 'function setCustomDate(val) {';
-      html += '  currentDate = val;';
-      html += '  var dInp = document.getElementById("auditDate");';
-      html += '  if (val) {';
-      html += '    dInp.classList.add("active-date");';
-      html += '    document.querySelectorAll(".filter").forEach(function(el){';
-      html += '      el.classList.remove("active");});';
       html += '  } else { setPeriod("today"); }';
       html += '  loadData();';
       html += '}';
@@ -1792,18 +1544,22 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '        link.className = "log-link";';
       html += '        if (l.action === "sale") {';
       html += '          link.textContent = "Чек №" + l.ref_id + " →";';
-      html += '          div.onclick = function() { window.location.href = ';
-      html += '          "/warehouse/sale/details?id=" + l.ref_id; };';
+      html += '          div.onclick = function() { ';
+      html += '          window.location.href = ';
+      html += '          "/warehouse/sale/details?id=" + ';
+      html += '          l.ref_id + "&from=journal"; };';
       html += '        } else if (l.action === "receipt") {';
       html += '          link.textContent = "Накладная №" + l.ref_id + " →";';
-      html += '          div.onclick = function() { window.location.href = ';
-      html += '          "/warehouse/documents/details?id=" + l.ref_id + ';
-      html += '          "&type=receipts"; };';
+      html += '          div.onclick = function() { ';
+      html += '          window.location.href = ';
+      html += '          "/warehouse/documents/details?id=" + ';
+      html += '          l.ref_id + "&type=receipts"; };';
       html += '        } else if (l.action === "writeoff") {';
       html += '          link.textContent = "Акт списания №" + l.ref_id + " →";';
-      html += '          div.onclick = function() { window.location.href = ';
-      html += '          "/warehouse/documents/details?id=" + l.ref_id + ';
-      html += '          "&type=writeoffs"; };';
+      html += '          div.onclick = function() { ';
+      html += '          window.location.href = ';
+      html += '          "/warehouse/documents/details?id=" + ';
+      html += '          l.ref_id + "&type=writeoffs"; };';
       html += '        }';
       html += '        div.appendChild(link);';
       html += '      }';
