@@ -31,13 +31,10 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     'ALTER TABLE wh_writeoffs ADD COLUMN ' +
     'IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\''
   ).catch(function(){});
-  
-  // НОВАЯ МИГРАЦИЯ ДЛЯ СТАТУСА ПРОДАЖИ
   pool.query(
     'ALTER TABLE wh_sales ADD COLUMN ' +
     'IF NOT EXISTS status VARCHAR(20) DEFAULT \'active\''
   ).catch(function(){});
-
   pool.query(
     'UPDATE wh_writeoffs SET doc_id = \'legacy_\' || shop_id ' +
     '|| \'_\' || extract(epoch from date)::int WHERE doc_id IS NULL'
@@ -1041,7 +1038,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ДОКУМЕНТЫ (ИСПРАВЛЕННЫЙ SQL) ======
+  // ====== ДОКУМЕНТЫ ======
   app.get('/api/warehouse/documents', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1242,23 +1239,26 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ ok: true, ingredients: r.rows, missing: missing });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
-  // ====== БУКЕТЫ: ALL / TOGGLE / DELETE / RESTORE ======
+
   app.get('/api/warehouse/bouquets/all', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
+      
       const r = await pool.query(
         'SELECT b.id, b.name, b.price, b.photos, b.wh_linked, ' +
-        'b.deleted, (SELECT STRING_AGG(' +
-        'COALESCE(shi.custom_name, i.name) || \' x\' || ' +
-        'TRIM(TRAILING \'.\' FROM TRIM(TRAILING \'0\' FROM ' +
-        'rcp.qty::text)), \', \') FROM wh_bouquet_recipes rcp ' +
+        'b.deleted, ' +
+        '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) ' +
+        '|| \' x\' || TRIM(TRAILING \'.\' FROM TRIM(TRAILING \'0\' ' +
+        'FROM rcp.qty::text)), \', \') ' +
+        'FROM wh_bouquet_recipes rcp ' +
         'JOIN wh_shop_items shi ON shi.id = rcp.shop_item_id ' +
         'JOIN wh_items i ON i.id = shi.item_id ' +
         'WHERE rcp.bouquet_id = b.id) as recipe_text ' +
         'FROM bouquets b WHERE b.shop_id = $1 ORDER BY b.name ASC',
         [auth.shopId]
       );
+      
       const result = r.rows.map(function(b) {
         let photoUrl = null;
         if (b.photos && b.photos.length > 0) {
@@ -1274,9 +1274,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         };
       });
       res.json({ ok: true, bouquets: result });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e.message });
-    }
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/warehouse/bouquet/toggle', async (req, res) => {
@@ -1302,9 +1300,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [req.body.id, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e.message });
-    }
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/warehouse/bouquet/restore', async (req, res) => {
@@ -1317,9 +1313,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [req.body.id, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: e.message });
-    }
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   app.get('/api/warehouse/bouquets/info', async (req, res) => {
@@ -1448,7 +1442,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== ЖУРНАЛ ======
   app.get('/api/warehouse/audit', async (req, res) => {
     try {
@@ -1909,7 +1902,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       const cancels = await pool.query(
         'SELECT s.id::text, s.real_price as amount, s.date, ' +
-        '\'cancel\' as type, a.name as person, ' +
+        '\'cancel\' as type, a.name as person, s.pay_cash, ' +
+        's.pay_card, s.pay_qr, ' +
         '(SELECT STRING_AGG(COALESCE(shi.custom_name, ' +
         'i.name) || \' x\' || TRIM(TRAILING \'.\' FROM ' +
         'TRIM(TRAILING \'0\' FROM si.qty::text)), \', \') ' +
@@ -1981,6 +1975,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
       const sale = await pool.query(
         'SELECT s.id, s.real_price, s.date, s.status, ' +
+        's.pay_cash, s.pay_card, s.pay_qr, ' +
         'a.name as seller FROM wh_sales s ' +
         'LEFT JOIN admins a ON a.chat_id = s.chat_id ' +
         'WHERE s.id = $1 AND s.shop_id = $2',
