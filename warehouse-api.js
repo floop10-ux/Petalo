@@ -36,14 +36,34 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     'UPDATE wh_writeoffs SET doc_id = \'legacy_\' || shop_id ' +
     '|| \'_\' || extract(epoch from date)::int WHERE doc_id IS NULL'
   ).catch(function(){});
+  
+  // НОВЫЕ МИГРАЦИИ ДЛЯ ИСПРАВЛЕНИЯ БАГОВ
+  pool.query(
+    'ALTER TABLE admins ADD COLUMN IF NOT EXISTS login VARCHAR(50)'
+  ).catch(function(){});
+  pool.query(
+    'ALTER TABLE admins ADD COLUMN IF NOT EXISTS password_hash VARCHAR(100)'
+  ).catch(function(){});
+  pool.query(
+    'ALTER TABLE shops ADD COLUMN IF NOT EXISTS settings JSONB'
+  ).catch(function(){});
+  pool.query(
+    'ALTER TABLE shops ADD COLUMN IF NOT EXISTS invite_code VARCHAR(50)'
+  ).catch(function(){});
+  pool.query(
+    'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS wh_linked ' +
+    'BOOLEAN DEFAULT FALSE'
+  ).catch(function(){});
+  pool.query(
+    'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS deleted ' +
+    'BOOLEAN DEFAULT FALSE'
+  ).catch(function(){});
 
   // ====== АВТОРИЗАЦИЯ ======
   app.post('/api/warehouse/auth', async (req, res) => {
     try {
       const ip = (req.headers['x-forwarded-for'] || '')
         .split(',')[0].trim() || req.ip || 'unknown';
-      // Здесь мы упростим проверку для примера, 
-      // в реальности лучше перенести checkAuthLimit в утилиты
       
       const shopId = req.body.shopId;
       const pin = String(req.body.pin);
@@ -56,9 +76,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (r.rows.length === 0) return res.json({ ok: false });
       
       const chatId = r.rows[0].chat_id;
-      
-      // Временно используем заглушку для signAuth, 
-      // пока не перенесем её в общий модуль
       res.json({ ok: true, role: r.rows[0].role });
     } catch (e) { 
       console.error('Auth error:', e.message);
@@ -110,7 +127,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-// ====== УПРАВЛЕНИЕ ТОВАРОМ ======
+  // ====== УПРАВЛЕНИЕ ТОВАРОМ ======
   app.post('/api/warehouse/item/set-price', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -955,7 +972,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           'MAX(w.date) as date, SUM(w.qty) as amount, ' +
           'MAX(w.reason) as reason, MAX(a.name) as author, ' +
           '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) ' +
-          '|| \' x\' || qty, \', \') FROM wh_writeoffs w2 ' +
+          '|| \' x\' || w2.qty::text, \', \') FROM wh_writeoffs w2 ' +
           'LEFT JOIN wh_shop_items shi ON shi.id = w2.shop_item_id ' +
           'LEFT JOIN wh_items i ON i.id = shi.item_id ' +
           'WHERE w2.doc_id = COALESCE(w.doc_id, w.id::text)) as items ' +
@@ -1108,7 +1125,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== БУКЕТЫ ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
@@ -1126,7 +1142,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         ') AS missing_ingredients ' +
         'FROM bouquets b ' +
         'WHERE b.shop_id = $1 AND b.wh_linked = TRUE ' +
-        'AND b.deleted = FALSE AND b.hidden = FALSE ' +
+        'AND b.deleted = FALSE ' +
         'ORDER BY b.name ASC', [shopId]
       );
       
@@ -1316,15 +1332,15 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (bId > 0) {
         if (photoUrl) {
           await pool.query(
-            'UPDATE bouquets SET name = $1, price = $2, photos = $3 ' +
-            'WHERE id = $4 AND shop_id = $5',
-            [name, price, JSON.stringify(photos), bId, auth.shopId]
+            'UPDATE bouquets SET name = $1, price = $2, photos = $3, ' +
+            'wh_linked = $4 WHERE id = $5 AND shop_id = $6',
+            [name, price, JSON.stringify(photos), isLinked, bId, auth.shopId]
           );
         } else {
           await pool.query(
-            'UPDATE bouquets SET name = $1, price = $2 ' +
-            'WHERE id = $3 AND shop_id = $4',
-            [name, price, bId, auth.shopId]
+            'UPDATE bouquets SET name = $1, price = $2, wh_linked = $3 ' +
+            'WHERE id = $4 AND shop_id = $5',
+            [name, price, isLinked, bId, auth.shopId]
           );
         }
       } else {
@@ -1335,8 +1351,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         const shopNumber = shopNumberRes.rows[0].next;
         const ins = await pool.query(
           'INSERT INTO bouquets (shop_id, shop_number, name, price, ' +
-          'photos, chat_id, confirmed_at, wh_linked) ' +
-          'VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7) RETURNING id',
+          'photos, chat_id, confirmed_at, wh_linked, deleted) ' +
+          'VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, FALSE) RETURNING id',
           [auth.shopId, shopNumber, name, price, 
            JSON.stringify(photos), auth.chatId, isLinked]
         );
@@ -1695,7 +1711,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ 
         ok: true, 
         staff: r.rows,
-        inviteCode: shopInfo.rows.length > 0 ? shopInfo.rows[0].invite_code : '',
+        inviteCode: shopInfo.rows.length > 0 ? 
+          shopInfo.rows[0].invite_code : '',
         ownerLogin: ownerCheck.rows[0].login || ''
       });
     } catch (e) { 
@@ -1877,7 +1894,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
       
       const sales = await pool.query(
-        'SELECT s.id, s.real_price as amount, s.date, ' +
+        'SELECT s.id::text, s.real_price as amount, s.date, ' +
         '\'sale\' as type, a.name as person, ' +
         's.pay_cash, s.pay_card, s.pay_qr, ' +
         '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) ' +
@@ -1918,7 +1935,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       
       const receipts = await pool.query(
-        'SELECT r.id, r.total_sum as amount, r.date, ' +
+        'SELECT r.id::text, r.total_sum as amount, r.date, ' +
         '\'receipt\' as type, a.name as person, ' +
         '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) ' +
         '|| \' x\' || TRIM(TRAILING \'.\' FROM TRIM(TRAILING \'0\' ' +
