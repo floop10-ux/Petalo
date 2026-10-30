@@ -1029,7 +1029,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += 'var allBouquets = []; var currentView = "grid"; ';
       html += 'var currentFilter = "all";';
       
-      // SAFE PLACEHOLDER: no quotes, no escapes, no SVG
       html += 'var svgPh = "<div style=background:#D8E4E4;';
       html += 'width:40px;height:40px;border-radius:50%>';
       html += '</div>";';
@@ -1146,19 +1145,21 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '    }';
       
       html += '    var btnRow = document.createElement("div"); ';
-      html += '    btnRow.style = "display:flex; gap:6px; margin-top:auto;";';
+      html += '    btnRow.style.cssText = ';
+      html += '    "display:flex; gap:6px; margin-top:auto;";';
       
       html += '    if (bq.deleted) {';
       html += '      var btnRestore = document.createElement("button"); ';
       html += '      btnRestore.className = "btn-setup"; ';
-      html += '      btnRestore.style = "flex:1; color:var(--f-success);"';
+      html += '      btnRestore.style.cssText = ';
+      html += '      "flex:1; color:var(--f-success);";';
       html += '      btnRestore.innerHTML = "Восстановить"; ';
       html += '      btnRestore.onclick = function() { restoreBouquet(bq.id); }; ';
       html += '      btnRow.appendChild(btnRestore);';
       html += '    } else {';
       html += '      var btnEdit = document.createElement("button"); ';
       html += '      btnEdit.className = "btn-setup"; ';
-      html += '      btnEdit.style = "flex:1;";';
+      html += '      btnEdit.style.cssText = "flex:1;";';
       html += '      btnEdit.innerHTML = "Изм."; ';
       html += '      btnEdit.onclick = function() { ';
       html += '        window.location.href = "/warehouse/bouquet/edit?id=" ';
@@ -1167,8 +1168,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       
       html += '      var btnSetup = document.createElement("button"); ';
       html += '      btnSetup.className = "btn-setup"; ';
-      html += '      btnSetup.style = "flex:2; color:var(--f-brand); ';
-      html += '      font-weight:700;";';
+      html += '      btnSetup.style.cssText = ';
+      html += '      "flex:2; color:var(--f-brand); font-weight:700;";';
       html += '      btnSetup.textContent = "Рецепт"; ';
       html += '      btnSetup.onclick = function() { ';
       html += '        window.location.href = "/warehouse/bouquets/recipe?id=" ';
@@ -1177,7 +1178,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       
       html += '      var btnDel = document.createElement("button"); ';
       html += '      btnDel.className = "btn-setup"; ';
-      html += '      btnDel.style = "flex:1; color:var(--f-danger);";';
+      html += '      btnDel.style.cssText = "flex:1; color:var(--f-danger);";';
       html += '      btnDel.innerHTML = "Удал."; ';
       html += '      btnDel.onclick = function() { delBouquet(bq.id); }; ';
       html += '      btnRow.appendChild(btnDel);';
@@ -1233,8 +1234,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
     } catch(e) {
       res.status(500).send('Ошибка сервера');
     }
-  });
-  // ====== 7. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
+  });// ====== 7. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
   app.get('/warehouse/bouquet/edit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1258,8 +1258,9 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += 'color: #fff; border: none; padding: 16px; ';
       html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
       html += 'margin-top: 16px; }';
-      html += '.img-preview { width: 120px; height: 120px; border-radius: 12px; ';
-      html += 'object-fit: cover; display: none; margin-bottom: 16px; }';
+      html += '.img-preview { width: 120px; height: 120px; ';
+      html += 'border-radius: 12px; object-fit: cover; display: none; ';
+      html += 'margin-bottom: 16px; }';
       
       html += '.recipe-block { display: none; margin-top: 16px; ';
       html += 'border-top: 2px dashed var(--f-border); padding-top: 16px; }';
@@ -1424,8 +1425,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '    st.className = "dd-stock"; ';
       html += '    var s = parseFloat(i.current_stock);';
       html += '    st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
-      html += '    st.style.color = s > 0 ? "var(--f-success)" : ';
-      html += '    "var(--f-danger)";';
+      html += '    st.style.cssText = s > 0 ? ';
+      html += '    "color:var(--f-success)" : "color:var(--f-danger)";';
       html += '    row.appendChild(nm); row.appendChild(st);';
       html += '    row.onclick = function() {';
       html += '      document.getElementById("searchItem").value = i.name;';
@@ -1498,8 +1499,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '    ctrl.appendChild(pl);';
       html += '    var del = document.createElement("span"); ';
       html += '    del.textContent = "✕"; ';
-      html += '    del.style = "color:red; cursor:pointer; font-size:18px; ';
-      html += '    margin-left:10px;";';
+      html += '    del.style.cssText = "color:red; cursor:pointer; ';
+      html += '    font-size:18px; margin-left:10px;";';
       html += '    del.onclick = function() { ';
       html += '      recipe.splice(idx, 1); renderRecipe(); ';
       html += '    };';
