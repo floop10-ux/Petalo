@@ -37,7 +37,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     '|| \'_\' || extract(epoch from date)::int WHERE doc_id IS NULL'
   ).catch(function(){});
   
-  // НОВЫЕ МИГРАЦИИ ДЛЯ ИСПРАВЛЕНИЯ БАГОВ
   pool.query(
     'ALTER TABLE admins ADD COLUMN IF NOT EXISTS login VARCHAR(50)'
   ).catch(function(){});
@@ -62,9 +61,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
   // ====== АВТОРИЗАЦИЯ ======
   app.post('/api/warehouse/auth', async (req, res) => {
     try {
-      const ip = (req.headers['x-forwarded-for'] || '')
-        .split(',')[0].trim() || req.ip || 'unknown';
-      
       const shopId = req.body.shopId;
       const pin = String(req.body.pin);
 
@@ -74,8 +70,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
 
       if (r.rows.length === 0) return res.json({ ok: false });
-      
-      const chatId = r.rows[0].chat_id;
       res.json({ ok: true, role: r.rows[0].role });
     } catch (e) { 
       console.error('Auth error:', e.message);
@@ -98,9 +92,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
   app.get('/api/warehouse/items', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) {
-        return res.status(401).json({ ok: false, error: 'Unauthorized' });
-      }
+      if (!auth) return res.status(401).json({ ok: false });
+      
       const shopId = auth.shopId;
       const showArchive = req.query.show_archive === 'true';
       
@@ -115,6 +108,13 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         
       if (!showArchive) {
         query += 'AND (i.hidden = FALSE OR i.hidden IS NULL) ';
+      }
+      
+      // Исключаем из архива товары, которые являются букетами
+      // (если у них есть рецепт, значит это букет)
+      if (showArchive) {
+        query += 'AND NOT EXISTS (SELECT 1 FROM wh_bouquet_recipes r ' +
+                 'WHERE r.shop_item_id = i.id) ';
       }
       
       query += 'ORDER BY i.is_pinned DESC, w.name ASC';
@@ -149,9 +149,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'Цена ' + price + ' ₽ для ID: ' + itemId, itemId);
         
       res.json({ ok: true });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/item/rename', async (req, res) => {
@@ -161,8 +159,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const ownerCheck = await pool.query(
         'SELECT role FROM admins WHERE chat_id = $1 ' +
-        'AND shop_id = $2 LIMIT 1', 
-        [auth.chatId, auth.shopId]
+        'AND shop_id = $2 LIMIT 1', [auth.chatId, auth.shopId]
       );
       if (ownerCheck.rows.length === 0 ||
           ownerCheck.rows[0].role !== 'owner') {
@@ -177,8 +174,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
 
       const r = await pool.query(
         'SELECT i.item_id FROM wh_shop_items i ' +
-        'WHERE i.id = $1 AND i.shop_id = $2', 
-        [itemId, auth.shopId]
+        'WHERE i.id = $1 AND i.shop_id = $2', [itemId, auth.shopId]
       );
       if (r.rows.length === 0) return res.json({ ok: false });
 
@@ -213,9 +209,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [val, itemId, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/item/set-photo', async (req, res) => {
@@ -240,9 +234,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [url, r.rows[0].item_id]
       );
       res.json({ ok: true });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/item/delete', async (req, res) => {
@@ -272,8 +264,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (hasHistory) {
         await client.query(
           'UPDATE wh_shop_items SET hidden = TRUE ' +
-          'WHERE id = $1 AND shop_id = $2', 
-          [itemId, auth.shopId]
+          'WHERE id = $1 AND shop_id = $2', [itemId, auth.shopId]
         );
       } else {
         await client.query(
@@ -388,7 +379,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ ok: false, error: e.message });
     }
   });
-
   // ====== ПРОДАЖИ ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
@@ -421,8 +411,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (idempotency_key) {
         const checkKey = await client.query(
           'SELECT id FROM wh_sales WHERE idempotency_key = $1 ' +
-          'AND shop_id = $2',
-          [idempotency_key, shopId]
+          'AND shop_id = $2', [idempotency_key, shopId]
         );
         if (checkKey.rows.length > 0) {
           client.release();
@@ -464,8 +453,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         
         const costQ = await client.query(
           'SELECT avg_cost FROM wh_shop_items ' +
-          'WHERE id = $1 AND shop_id = $2', 
-          [item.id, shopId]
+          'WHERE id = $1 AND shop_id = $2', [item.id, shopId]
         );
         var costVal = 0;
         if (costQ.rows.length > 0 && costQ.rows[0].avg_cost) {
@@ -534,8 +522,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         
         const costQ = await client.query(
           'SELECT avg_cost FROM wh_shop_items ' +
-          'WHERE id = $1 AND shop_id = $2', 
-          [item.id, shopId]
+          'WHERE id = $1 AND shop_id = $2', [item.id, shopId]
         );
         const cost = parseFloat(costQ.rows[0].avg_cost) || 0;
         totalLoss += (cost * qty);
@@ -630,6 +617,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
   // ====== НАКЛАДНЫЕ (ПРИХОДЫ) ======
   app.get('/api/warehouse/receipts', async (req, res) => {
     try {
@@ -644,9 +632,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [auth.shopId]
       );
       res.json({ ok: true, docs: r.rows });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/receipt/delete', async (req, res) => {
@@ -659,8 +645,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const r = await pool.query(
         'SELECT status FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2', 
-        [receiptId, auth.shopId]
+        'WHERE id = $1 AND shop_id = $2', [receiptId, auth.shopId]
       );
       
       if (r.rows.length === 0 || r.rows[0].status !== 'draft') {
@@ -668,18 +653,14 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
       
       await pool.query(
-        'DELETE FROM wh_receipt_items ' +
-        'WHERE receipt_id = $1', [receiptId]
+        'DELETE FROM wh_receipt_items WHERE receipt_id = $1', [receiptId]
       );
       await pool.query(
-        'DELETE FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2', 
+        'DELETE FROM wh_receipts WHERE id = $1 AND shop_id = $2', 
         [receiptId, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.get('/api/warehouse/receipt/items', async (req, res) => {
@@ -701,9 +682,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'WHERE ri.receipt_id = $1', [receiptId]
       );
       res.json({ ok: true, items: r.rows });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/receipt/item/add', async (req, res) => {
@@ -719,8 +698,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
 
       const checkR = await pool.query(
         'SELECT status FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2', 
-        [receiptId, shopId]
+        'WHERE id = $1 AND shop_id = $2', [receiptId, shopId]
       );
       if (checkR.rows.length === 0 || checkR.rows[0].status !== 'draft') {
         return res.json({ ok: false, error: 'Накладная не черновик' });
@@ -772,8 +750,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (shopItemRes.rows.length === 0) {
         const nsi = await pool.query(
           'INSERT INTO wh_shop_items (shop_id, item_id) ' +
-          'VALUES ($1, $2) RETURNING id', 
-          [shopId, itemId]
+          'VALUES ($1, $2) RETURNING id', [shopId, itemId]
         );
         shopItemId = nsi.rows[0].id;
       } else { 
@@ -811,15 +788,13 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
 
       await pool.query(
         'UPDATE wh_receipts SET total_sum = total_sum + $1, ' +
-        'updated_at = NOW() WHERE id = $2', 
-        [sum, receiptId]
+        'updated_at = NOW() WHERE id = $2', [sum, receiptId]
       );
       
       await pool.query(
         'UPDATE wh_shop_items SET retail_price = ' +
         'CASE WHEN $1 > 0 THEN $1 ELSE retail_price END ' +
-        'WHERE id = $2', 
-        [numRetail, shopItemId]
+        'WHERE id = $2', [numRetail, shopItemId]
       );
 
       const items = await pool.query(
@@ -857,8 +832,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       await client.query('BEGIN');
       const checkR = await client.query(
         'SELECT status FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2 FOR UPDATE', 
-        [receiptId, shopId]
+        'WHERE id = $1 AND shop_id = $2 FOR UPDATE', [receiptId, shopId]
       );
       
       if (checkR.rows.length === 0 || 
@@ -870,8 +844,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
 
       await client.query(
-        'DELETE FROM wh_receipt_items WHERE receipt_id = $1', 
-        [receiptId]
+        'DELETE FROM wh_receipt_items WHERE receipt_id = $1', [receiptId]
       );
 
       let totalSum = 0;
@@ -949,7 +922,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ДОКУМЕНТЫ ======
+  // ====== ДОКУМЕНТЫ (ИСПРАВЛЕННЫЙ SQL) ======
   app.get('/api/warehouse/documents', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -967,20 +940,25 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         );
         res.json({ ok: true, docs: r.rows });
       } else {
+        // ИСПРАВЛЕНИЕ: обертка в подзапрос для правильной группировки
         const r = await pool.query(
-          'SELECT COALESCE(doc_id, id::text) as id, ' +
-          'MAX(w.date) as date, SUM(w.qty) as amount, ' +
-          'MAX(w.reason) as reason, MAX(a.name) as author, ' +
-          '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) ' +
-          '|| \' x\' || w2.qty::text, \', \') FROM wh_writeoffs w2 ' +
-          'LEFT JOIN wh_shop_items shi ON shi.id = w2.shop_item_id ' +
-          'LEFT JOIN wh_items i ON i.id = shi.item_id ' +
-          'WHERE w2.doc_id = COALESCE(w.doc_id, w.id::text)) as items ' +
-          'FROM wh_writeoffs w ' +
-          'LEFT JOIN admins a ON a.chat_id = w.chat_id ' +
-          'WHERE w.shop_id = $1 AND w.status = \'completed\' ' +
-          'GROUP BY COALESCE(w.doc_id, w.id::text) ' +
-          'ORDER BY MAX(w.date) DESC LIMIT 50', [shopId]
+          'SELECT doc_id as id, MAX(date) as date, ' +
+          'SUM(amount) as amount, MAX(reason) as reason, ' +
+          'MAX(author) as author, STRING_AGG(items, \', \') as items ' +
+          'FROM (' +
+          '  SELECT COALESCE(w.doc_id, w.id::text) as doc_id, ' +
+          '  w.date, w.qty as amount, w.reason, ' +
+          '  a.name as author, ' +
+          '  COALESCE(shi.custom_name, i.name) || \' x\' || ' +
+          '  w.qty::text as items ' +
+          '  FROM wh_writeoffs w ' +
+          '  LEFT JOIN admins a ON a.chat_id = w.chat_id ' +
+          '  LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id ' +
+          '  LEFT JOIN wh_items i ON i.id = shi.item_id ' +
+          '  WHERE w.shop_id = $1 AND w.status = \'completed\'' +
+          ') sub ' +
+          'GROUP BY doc_id ORDER BY MAX(date) DESC LIMIT 50',
+          [shopId]
         );
         res.json({ ok: true, docs: r.rows });
       }
@@ -988,7 +966,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
-
+  // ====== ДЕТАЛИ ДОКУМЕНТА ======
   app.get('/api/warehouse/documents/details', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1011,8 +989,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           'SELECT r.id, r.date, r.total_sum, r.status, ' +
           'a.name as author FROM wh_receipts r ' +
           'LEFT JOIN admins a ON a.chat_id = r.chat_id ' +
-          'WHERE r.id = $1 AND r.shop_id = $2', 
-          [rid, shopId]
+          'WHERE r.id = $1 AND r.shop_id = $2', [rid, shopId]
         );
         
         if (header.rows.length === 0) {
@@ -1038,8 +1015,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           'FROM wh_writeoffs w ' +
           'LEFT JOIN admins a ON a.chat_id = w.chat_id ' +
           'WHERE (w.doc_id = $1 OR w.id::text = $1) ' +
-          'AND w.shop_id = $2', 
-          [docId, shopId]
+          'AND w.shop_id = $2', [docId, shopId]
         );
         
         if (header.rows.length === 0 || !header.rows[0].date) {
@@ -1052,8 +1028,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           'FROM wh_writeoffs w ' +
           'LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id ' +
           'LEFT JOIN wh_items i ON i.id = shi.item_id ' +
-          'WHERE (w.doc_id = $1 OR w.id::text = $1)', 
-          [docId]
+          'WHERE (w.doc_id = $1 OR w.id::text = $1)', [docId]
         );
         res.json({ ok: true, header: header.rows[0], items: items.rows });
       }
@@ -1062,6 +1037,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
+  // ====== ОТМЕНА НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1082,8 +1058,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       await client.query('BEGIN');
       const checkR = await client.query(
         'SELECT status FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2 FOR UPDATE', 
-        [receiptId, shopId]
+        'WHERE id = $1 AND shop_id = $2 FOR UPDATE', [receiptId, shopId]
       );
       
       if (checkR.rows.length === 0 || 
@@ -1125,6 +1100,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
   // ====== БУКЕТЫ ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
@@ -1132,7 +1108,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (!auth) return res.status(401).json({ ok: false });
       
       const shopId = auth.shopId;
-      
       const r = await pool.query(
         'SELECT b.id, b.name, b.price, b.photos, ' +
         'EXISTS (' +
@@ -1180,8 +1155,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const checkB = await pool.query(
         'SELECT wh_linked FROM bouquets ' +
-        'WHERE id = $1 AND shop_id = $2', 
-        [bouquetId, shopId]
+        'WHERE id = $1 AND shop_id = $2', [bouquetId, shopId]
       );
       
       if (checkB.rows.length === 0 || !checkB.rows[0].wh_linked) {
@@ -1229,8 +1203,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'JOIN wh_items i ON i.id = shi.item_id ' +
         'WHERE rcp.bouquet_id = b.id) as recipe_text ' +
         'FROM bouquets b ' +
-        'WHERE b.shop_id = $1 ORDER BY b.name ASC',
-        [auth.shopId]
+        'WHERE b.shop_id = $1 ORDER BY b.name ASC', [auth.shopId]
       );
       
       const result = r.rows.map(function(b) {
@@ -1377,8 +1350,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'JOIN wh_shop_items shi ON shi.id = r.shop_item_id ' +
         'JOIN wh_items i ON i.id = shi.item_id ' +
         'WHERE r.bouquet_id = $1 AND shi.shop_id = $2 ' +
-        'ORDER BY r.id ASC',
-        [req.query.id, auth.shopId]
+        'ORDER BY r.id ASC', [req.query.id, auth.shopId]
       );
       res.json({ ok: true, items: r.rows });
     } catch (e) { res.status(500).json({ ok: false }); }
@@ -1411,8 +1383,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         const qty = parseFloat(String(it.qty).replace(',', '.'));
         await client.query(
           'INSERT INTO wh_bouquet_recipes (bouquet_id, shop_item_id, qty) ' +
-          'VALUES ($1, $2, $3)',
-          [bId, it.shop_item_id, qty]
+          'VALUES ($1, $2, $3)', [bId, it.shop_item_id, qty]
         );
       }
       
@@ -1457,14 +1428,12 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'FROM wh_audit_log l ' +
         'LEFT JOIN admins a ON a.chat_id = l.chat_id ' +
         'WHERE l.shop_id = $1 ' + dateFilter + ' ' +
-        'ORDER BY l.date DESC LIMIT 100',
-        params
+        'ORDER BY l.date DESC LIMIT 100', params
       );
       res.json({ ok: true, logs: r.rows });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
+
   // ====== ОТЧЁТЫ ======
   app.get('/api/warehouse/reports', async (req, res) => {
     try {
@@ -1519,8 +1488,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'FROM wh_writeoffs w ' +
         'JOIN wh_shop_items i ON i.id = w.shop_item_id ' +
         'WHERE w.shop_id = $1 ' + dateFilterWriteoffs +
-        'GROUP BY w.reason',
-        paramsWriteoffs
+        'GROUP BY w.reason', paramsWriteoffs
       );
 
       const top = await pool.query(
@@ -1536,16 +1504,14 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'JOIN wh_items i ON i.id = shi.item_id ' +
         'WHERE s.shop_id = $1 ' + dateFilterSales +
         'GROUP BY shi.id, shi.custom_name, i.name ' +
-        'ORDER BY total_rev DESC LIMIT 5',
-        paramsSales
+        'ORDER BY total_rev DESC LIMIT 5', paramsSales
       );
 
       const receiptSum = await pool.query(
         'SELECT COALESCE(SUM(total_sum), 0) AS total ' +
         'FROM wh_receipts r ' +
         'WHERE r.shop_id = $1 AND r.status = \'completed\' ' +
-        dateFilterReceipts,
-        paramsReceipts
+        dateFilterReceipts, paramsReceipts
       );
 
       const daily = await pool.query(
@@ -1630,8 +1596,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         }
         await pool.query(
           'INSERT INTO wh_shifts (shop_id, chat_id, start_cash) ' +
-          'VALUES ($1, $2, $3)',
-          [shopId, chatId, startCash]
+          'VALUES ($1, $2, $3)', [shopId, chatId, startCash]
         );
       } else {
         const shiftRes = await pool.query(
@@ -1715,9 +1680,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           shopInfo.rows[0].invite_code : '',
         ownerLogin: ownerCheck.rows[0].login || ''
       });
-    } catch (e) { 
-      res.status(500).json({ ok: false }); 
-    }
+    } catch (e) { res.status(500).json({ ok: false }); }
   });
 
   app.post('/api/warehouse/florist/pin', async (req, res) => {
@@ -1727,8 +1690,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const ownerCheck = await pool.query(
         'SELECT role FROM admins WHERE chat_id = $1 ' +
-        'AND shop_id = $2 LIMIT 1', 
-        [auth.chatId, auth.shopId]
+        'AND shop_id = $2 LIMIT 1', [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
         return res.status(403).json({ ok: false });
@@ -1750,8 +1712,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const ownerCheck = await pool.query(
         'SELECT role FROM admins WHERE chat_id = $1 ' +
-        'AND shop_id = $2 LIMIT 1', 
-        [auth.chatId, auth.shopId]
+        'AND shop_id = $2 LIMIT 1', [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
         return res.status(403).json({ ok: false });
@@ -1778,8 +1739,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const ownerCheck = await pool.query(
         'SELECT role FROM admins WHERE chat_id = $1 ' +
-        'AND shop_id = $2 LIMIT 1', 
-        [auth.chatId, auth.shopId]
+        'AND shop_id = $2 LIMIT 1', [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
         return res.status(403).json({ ok: false });
@@ -1787,8 +1747,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       await pool.query(
         'DELETE FROM admins WHERE shop_id = $1 AND chat_id = $2 ' +
-        'AND role = \'florist\'', 
-        [auth.shopId, req.body.chatId]
+        'AND role = \'florist\'', [auth.shopId, req.body.chatId]
       );
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false }); }
@@ -1805,8 +1764,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       
       const adm = await pool.query(
-        'SELECT login FROM admins WHERE chat_id = $1 LIMIT 1', 
-        [auth.chatId]
+        'SELECT login FROM admins WHERE chat_id = $1 LIMIT 1', [auth.chatId]
       );
       const currentLogin = adm.rows.length > 0 ? adm.rows[0].login : '';
 
@@ -1840,8 +1798,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const ownerCheck = await pool.query(
         'SELECT role FROM admins WHERE chat_id = $1 ' +
-        'AND shop_id = $2 LIMIT 1', 
-        [auth.chatId, auth.shopId]
+        'AND shop_id = $2 LIMIT 1', [auth.chatId, auth.shopId]
       );
       if (!ownerCheck.rows[0] || ownerCheck.rows[0].role !== 'owner') {
         return res.status(403).json({ ok: false });
@@ -1908,8 +1865,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'LEFT JOIN admins a ON a.chat_id = s.chat_id ' +
         'WHERE s.shop_id = $1 ' +
         'AND s.date >= $2::date AND s.date < ($2::date + 1) ' +
-        chatFilterSales + 'ORDER BY s.date DESC', 
-        params
+        chatFilterSales + 'ORDER BY s.date DESC', params
       );
       
       const writeoffs = await pool.query(
@@ -1930,8 +1886,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         chatFilterWriteoffs + 
         'GROUP BY COALESCE(w.doc_id, w.id::text), ' +
         'DATE_TRUNC(\'minute\', w.date) ' +
-        'ORDER BY DATE_TRUNC(\'minute\', w.date) DESC', 
-        params
+        'ORDER BY DATE_TRUNC(\'minute\', w.date) DESC', params
       );
       
       const receipts = await pool.query(
@@ -1949,8 +1904,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'WHERE r.shop_id = $1 ' +
         'AND r.date >= $2::date AND r.date < ($2::date + 1) ' +
         'AND r.status = \'completed\' ' + chatFilterReceipts +
-        'ORDER BY r.date DESC', 
-        params
+        'ORDER BY r.date DESC', params
       );
       
       let list = [...sales.rows, ...writeoffs.rows, ...receipts.rows];
