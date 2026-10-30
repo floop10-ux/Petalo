@@ -611,9 +611,13 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '  a.className = "day-btn"; ';
       html += '  if (dStr === selectedDate) a.classList.add("active"); ';
       html += '  var label = i === 0 ? "Сегодня" : daysRu[d.getDay()]; ';
-      html += '  a.innerHTML = "<div style=\'font-size:10px;\'>" + label + ';
-      html += '  "</div><div style=\'font-size:18px;font-weight:800;\'>" + ';
-      html += '  d.getDate() + "</div>"; ';
+      html += '  var div1 = document.createElement("div"); ';
+      html += '  div1.style.fontSize = "10px"; div1.textContent = label; ';
+      html += '  var div2 = document.createElement("div"); ';
+      html += '  div2.style.fontSize = "18px"; ';
+      html += '  div2.style.fontWeight = "800"; ';
+      html += '  div2.textContent = d.getDate(); ';
+      html += '  a.appendChild(div1); a.appendChild(div2); ';
       html += '  cal.appendChild(a); } }';
       html += 'renderCalendar();';
 
@@ -917,11 +921,16 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '.f-btn.active { background: var(--f-brand); color: #fff; ';
       html += 'border-color: var(--f-brand); }';
 
-      html += '.b-grid { display: grid; grid-template-columns: 1fr 1fr; ';
+      // ИСПРАВЛЕНИЕ СЕТКИ (minmax)
+      html += '.b-grid { display: grid; ';
+      html += 'grid-template-columns: repeat(2, minmax(0, 1fr)); ';
       html += 'gap: 12px; align-items: stretch; }';
+      
+      // ИСПРАВЛЕНИЕ СЖАТИЯ ТЕКСТА (min-width: 0)
       html += '.b-card-grid { background: #fff; border-radius: var(--r-lg); ';
       html += 'padding: 12px; display: flex; flex-direction: column; ';
-      html += 'height: 100%; box-shadow: var(--sh-1); }';
+      html += 'height: 100%; box-shadow: var(--sh-1); min-width: 0; }';
+      
       html += '.b-img-grid { width: 100%; aspect-ratio: 1; ';
       html += 'border-radius: var(--r-md); object-fit: cover; ';
       html += 'background: #F0F4F4; margin-bottom: 8px; }';
@@ -934,7 +943,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '.b-list { display: flex; flex-direction: column; gap: 10px; }';
       html += '.b-card-list { background: #fff; border-radius: var(--r-lg); ';
       html += 'padding: 16px; display: flex; align-items: flex-start; gap: 16px; ';
-      html += 'box-shadow: var(--sh-1); }';
+      html += 'box-shadow: var(--sh-1); min-width: 0; }';
       html += '.b-img-list { width: 72px; height: 72px; ';
       html += 'border-radius: var(--r-md); object-fit: cover; ';
       html += 'background: #F0F4F4; flex-shrink: 0; }';
@@ -1166,13 +1175,14 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '        + bq.id; }; ';
       html += '      btnRow.appendChild(btnEdit);';
       
+      // ИСПРАВЛЕНИЕ ССЫЛКИ НА РЕЦЕПТ
       html += '      var btnSetup = document.createElement("button"); ';
       html += '      btnSetup.className = "btn-setup"; ';
       html += '      btnSetup.style.cssText = ';
       html += '      "flex:2; color:var(--f-brand); font-weight:700;";';
       html += '      btnSetup.textContent = "Рецепт"; ';
       html += '      btnSetup.onclick = function() { ';
-      html += '        window.location.href = "/warehouse/bouquets/recipe?id=" ';
+      html += '        window.location.href = "/warehouse/bouquet/edit?id=" ';
       html += '        + bq.id; }; ';
       html += '      btnRow.appendChild(btnSetup);';
       
@@ -1234,7 +1244,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
     } catch(e) {
       res.status(500).send('Ошибка сервера');
     }
-  });// ====== 7. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
+  });
+  // ====== 7. ЭКРАН РЕДАКТИРОВАНИЯ БУКЕТА ======
   app.get('/warehouse/bouquet/edit', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1270,8 +1281,11 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '.qty-btn { background: #F0F4F4; border: none; width: 28px; ';
       html += 'height: 28px; border-radius: 8px; font-weight: bold; ';
       html += 'font-size: 14px; color: var(--f-text); }';
-      html += '.qty-input { width: 50px !important; height: 28px; ';
+      
+      // ИСПРАВЛЕНИЕ ШИРИНЫ ПОЛЯ ВВОДА (было 50px, стало 70px)
+      html += '.qty-input { width: 70px !important; height: 28px; ';
       html += 'font-size: 14px; margin: 0; padding: 0; text-align: center; }';
+      
       html += '.btn-add-raw { width: 100%; background: var(--f-brand); ';
       html += 'color: #fff; border: none; padding: 12px; ';
       html += 'border-radius: var(--r-md); font-weight: 800; font-size: 14px; ';
