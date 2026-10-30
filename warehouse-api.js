@@ -110,8 +110,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         query += 'AND (i.hidden = FALSE OR i.hidden IS NULL) ';
       }
       
-      // Исключаем из архива товары, которые являются букетами
-      // (если у них есть рецепт, значит это букет)
       if (showArchive) {
         query += 'AND NOT EXISTS (SELECT 1 FROM wh_bouquet_recipes r ' +
                  'WHERE r.shop_item_id = i.id) ';
@@ -379,6 +377,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ ok: false, error: e.message });
     }
   });
+
   // ====== ПРОДАЖИ ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
@@ -617,7 +616,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== НАКЛАДНЫЕ (ПРИХОДЫ) ======
   app.get('/api/warehouse/receipts', async (req, res) => {
     try {
@@ -922,6 +920,70 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
+  // ====== ОТМЕНА НАКЛАДНОЙ ======
+  app.post('/api/warehouse/receipt/cancel', async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const auth = getAuth(req);
+      if (!auth) { 
+        client.release(); 
+        return res.status(401).json({ ok: false }); 
+      }
+      
+      const shopId = auth.shopId;
+      const receiptId = parseInt(req.body.id);
+      
+      if (!receiptId || isNaN(receiptId)) { 
+        client.release(); 
+        return res.json({ ok: false, error: 'Неверный ID' }); 
+      }
+      
+      await client.query('BEGIN');
+      const checkR = await client.query(
+        'SELECT status FROM wh_receipts ' +
+        'WHERE id = $1 AND shop_id = $2 FOR UPDATE', [receiptId, shopId]
+      );
+      
+      if (checkR.rows.length === 0 || 
+          checkR.rows[0].status !== 'completed') {
+        await client.query('ROLLBACK'); client.release(); 
+        return res.json({ 
+          ok: false, error: 'Накладная не найдена или не проведена' 
+        });
+      }
+
+      const items = await client.query(
+        'SELECT shop_item_id, qty FROM wh_receipt_items ' +
+        'WHERE receipt_id = $1', [receiptId]
+      );
+      
+      for (let i = 0; i < items.rows.length; i++) {
+        const item = items.rows[i];
+        await client.query(
+          'UPDATE wh_shop_items SET current_stock = ' +
+          'current_stock - $1 WHERE id = $2 AND shop_id = $3',
+          [item.qty, item.shop_item_id, shopId]
+        );
+      }
+      
+      await client.query(
+        'UPDATE wh_receipts SET status = \'draft\', ' +
+        'updated_at = NOW() WHERE id = $1 AND shop_id = $2', 
+        [receiptId, shopId]
+      );
+      await client.query('COMMIT');
+      client.release();
+      
+      await logAction(shopId, auth.chatId, 'receipt_cancel', 
+        'Отменено проведение накладной ' + receiptId, receiptId);
+      res.json({ ok: true });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (e2) {}
+      client.release(); 
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ====== ДОКУМЕНТЫ (ИСПРАВЛЕННЫЙ SQL) ======
   app.get('/api/warehouse/documents', async (req, res) => {
     try {
@@ -940,7 +1002,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         );
         res.json({ ok: true, docs: r.rows });
       } else {
-        // ИСПРАВЛЕНИЕ: обертка в подзапрос для правильной группировки
         const r = await pool.query(
           'SELECT doc_id as id, MAX(date) as date, ' +
           'SUM(amount) as amount, MAX(reason) as reason, ' +
@@ -966,6 +1027,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
+
   // ====== ДЕТАЛИ ДОКУМЕНТА ======
   app.get('/api/warehouse/documents/details', async (req, res) => {
     try {
@@ -1036,71 +1098,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
-
-  // ====== ОТМЕНА НАКЛАДНОЙ ======
-  app.post('/api/warehouse/receipt/cancel', async (req, res) => {
-    const client = await pool.connect();
-    try {
-      const auth = getAuth(req);
-      if (!auth) { 
-        client.release(); 
-        return res.status(401).json({ ok: false }); 
-      }
-      
-      const shopId = auth.shopId;
-      const receiptId = parseInt(req.body.id);
-      
-      if (!receiptId || isNaN(receiptId)) { 
-        client.release(); 
-        return res.json({ ok: false, error: 'Неверный ID' }); 
-      }
-      
-      await client.query('BEGIN');
-      const checkR = await client.query(
-        'SELECT status FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2 FOR UPDATE', [receiptId, shopId]
-      );
-      
-      if (checkR.rows.length === 0 || 
-          checkR.rows[0].status !== 'completed') {
-        await client.query('ROLLBACK'); client.release(); 
-        return res.json({ 
-          ok: false, error: 'Накладная не найдена или не проведена' 
-        });
-      }
-
-      const items = await client.query(
-        'SELECT shop_item_id, qty FROM wh_receipt_items ' +
-        'WHERE receipt_id = $1', [receiptId]
-      );
-      
-      for (let i = 0; i < items.rows.length; i++) {
-        const item = items.rows[i];
-        await client.query(
-          'UPDATE wh_shop_items SET current_stock = ' +
-          'current_stock - $1 WHERE id = $2 AND shop_id = $3',
-          [item.qty, item.shop_item_id, shopId]
-        );
-      }
-      
-      await client.query(
-        'UPDATE wh_receipts SET status = \'draft\', ' +
-        'updated_at = NOW() WHERE id = $1 AND shop_id = $2', 
-        [receiptId, shopId]
-      );
-      await client.query('COMMIT');
-      client.release();
-      
-      await logAction(shopId, auth.chatId, 'receipt_cancel', 
-        'Отменено проведение накладной ' + receiptId, receiptId);
-      res.json({ ok: true });
-    } catch (e) {
-      try { await client.query('ROLLBACK'); } catch (e2) {}
-      client.release(); 
-      res.status(500).json({ ok: false, error: e.message });
-    }
-  });
-
   // ====== БУКЕТЫ ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
@@ -1571,7 +1568,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== СМЕНЫ ======
   app.post('/api/warehouse/shift', async (req, res) => {
     try {
@@ -2027,4 +2023,5 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
   });
 
 }
+
 module.exports = { setupWarehouseApi };
