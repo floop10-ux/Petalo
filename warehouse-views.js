@@ -169,21 +169,11 @@ const fontLink = '<link href="https://fonts.googleapis.com/css2?' +
 let uiScript = `
   <style>
     :root {
-      --f-brand: #064C49;
-      --f-accent: #E1846D;
-      --f-bg: #F5F8F7;
-      --f-surface: #FFFFFF;
-      --f-text: #183B39;
-      --f-text-2: #6A8785;
-      --f-border: #E1EAE9;
-      --f-success: #2E8B57;
-      --f-danger: #D9534F;
-      --f-warn: #F0AD4E;
-      --r-sm: 8px;
-      --r-md: 12px;
-      --r-lg: 16px;
-      --r-xl: 24px;
-      --sh-1: 0 2px 8px rgba(6,76,73,0.04);
+      --f-brand: #064C49; --f-accent: #E1846D; --f-bg: #F5F8F7;
+      --f-surface: #FFFFFF; --f-text: #183B39; --f-text-2: #6A8785;
+      --f-border: #E1EAE9; --f-success: #2E8B57; --f-danger: #D9534F;
+      --f-warn: #F0AD4E; --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
+      --r-xl: 24px; --sh-1: 0 2px 8px rgba(6,76,73,0.04);
       --sh-2: 0 4px 16px rgba(6,76,73,0.08);
       --sh-3: 0 10px 30px rgba(6,76,73,0.15);
     }
@@ -195,6 +185,7 @@ let uiScript = `
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 
         'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
+      touch-action: manipulation;
     }
     
     body { 
@@ -202,6 +193,12 @@ let uiScript = `
       -webkit-user-select: none; user-select: none; 
       padding-bottom: env(safe-area-inset-bottom);
     }
+    
+    button, .btn, .numpad button {
+      touch-action: manipulation;
+      -webkit-user-select: none; user-select: none;
+    }
+
     input, textarea { 
       -webkit-user-select: text; user-select: text; 
     }
@@ -265,7 +262,6 @@ let uiScript = `
       padding: 16px; box-shadow: var(--sh-1);
       border: 1px solid rgba(0,0,0,0.02); margin-bottom: 12px;
     }
-
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     
     .page-header {
@@ -293,9 +289,20 @@ let uiScript = `
       opacity: 0.15; pointer-events: none; z-index: 900; 
     }
 
-    .svg-ico { 
-      width: 24px; height: 24px; vertical-align: middle; 
-      margin-right: 12px; color: currentColor; 
+    .svg-ico { width: 24px; height: 24px; vertical-align: middle; 
+      margin-right: 12px; color: currentColor; }
+
+    /* ИСПРАВЛЕНИЕ БАГА С МЕНЮ */
+    body.menu-open .page-header, 
+    body.menu-open input, 
+    body.menu-open select, 
+    body.menu-open textarea,
+    body.menu-open button:not(.sidebar button) { 
+      pointer-events: none; 
+    }
+    body.menu-open .sidebar, 
+    body.menu-open .sidebar-overlay { 
+      pointer-events: auto; 
     }
 
     .sidebar { 
@@ -335,25 +342,21 @@ let uiScript = `
       width: 90%; max-width: 340px; text-align: center; 
       box-shadow: var(--sh-3); 
     }
-    
     .modal-icon-wrap { 
       margin: 0 auto 16px; width: 56px; height: 56px;
       border-radius: 50%; display: flex; align-items: center; 
       justify-content: center; 
     }
-    
     .custom-modal h3 { margin: 0 0 8px 0; font-size: 20px; 
       font-weight: 800; }
     .custom-modal p { margin: 0 0 24px 0; font-size: 15px; 
       color: var(--f-text-2); line-height: 1.5; }
-    
     .custom-modal-btns { display: flex; gap: 12px; }
     .custom-modal-btns button { 
       flex: 1; padding: 14px; border: none; border-radius: var(--r-md);
       font-size: 16px; font-weight: 700; font-family: inherit; 
       cursor: pointer; 
     }
-      
     .btn-cancel { background: var(--f-bg); color: var(--f-text-2); }
     .btn-ok { background: var(--f-brand); color: #fff; }
     .btn-danger { background: var(--f-danger); color: #fff; }
@@ -362,7 +365,6 @@ let uiScript = `
       color: var(--f-text-2); }
     .empty-state-title { font-size: 18px; font-weight: 800; 
       color: var(--f-text); margin-bottom: 8px; }
-    .empty-state-text { font-size: 14px; margin-bottom: 20px; }
   </style>
   <script>
     function fmtNum(n) {
@@ -461,7 +463,11 @@ let uiScript = `
     function toggleMenu() {
       var sb = document.getElementById('unifiedMenuSidebar');
       var ov = document.getElementById('unifiedMenuOverlay');
-      if (sb && ov) { sb.classList.toggle('open'); ov.classList.toggle('open'); }
+      if (sb && ov) { 
+        sb.classList.toggle('open'); 
+        ov.classList.toggle('open'); 
+        document.body.classList.toggle('menu-open');
+      }
     }
   </script>
   <div class="custom-modal-overlay" id="uiModal">
@@ -482,19 +488,16 @@ let uiScript = `
     Flowind
   </div>
 `;
-function setupWarehouseViews(app, bot, s3ctx, getAuth) {
 
+function setupWarehouseViews(app, bot, s3ctx, getAuth) {
   // ====== 1. ВХОД ======
   app.get('/warehouse-login', (req, res) => {
     const shopId = req.query.shop || 'kupidon';
-    let html = '<!DOCTYPE html><html><head>';
-    html += '<meta charset="UTF-8">';
+    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
     html += metaSafari;
     html += '<meta name="viewport" content="width=device-width, ';
     html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-    html += fontLink;
-    html += uiScript;
-    html += '<style>';
+    html += fontLink + uiScript + '<style>';
     html += 'body { text-align: center; padding: 40px 20px; }';
     html += '.login-card { background: var(--f-surface); ';
     html += 'border-radius: var(--r-xl); padding: 32px 24px; ';
@@ -615,8 +618,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       const r = await pool.query(
         'SELECT role, name, can_receipt, can_sale, ' +
         'can_writeoff FROM admins WHERE chat_id = $1 ' +
-        'AND shop_id = $2 LIMIT 1',
-        [chatId, shopId]
+        'AND shop_id = $2 LIMIT 1', [chatId, shopId]
       );
       
       if (r.rows.length === 0) {
@@ -656,8 +658,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
                             parseInt(att.minus_stock) > 0 || 
                             parseInt(att.zero_stock) > 0);
 
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
+      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
       html += '<meta name="viewport" content="width=device-width, ';
       html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
@@ -1298,20 +1299,18 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
+
   // ====== 4. КАРТОЧКА ТОВАРА (ВЫПИСКА) ======
   app.get('/warehouse/item', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
       
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
+      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
       html += '<meta name="viewport" content="width=device-width, ';
       html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
-      html += '<style>';
+      html += fontLink + uiScript + '<style>';
       html += 'body { padding: 0 16px 32px 16px; }';
       
       html += '.history-card { background: #fff; border-radius: var(--r-md); ';
@@ -1350,6 +1349,8 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'border-color: var(--f-brand); }';
       html += '.btn-act.danger { color: var(--f-danger); }';
       html += '.btn-act.full { grid-column: 1 / -1; }';
+      html += '.btn-act.success { color: var(--f-success); ';
+      html += 'border-color: var(--f-success); }';
       
       html += '.controls { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 16px; }';
@@ -1378,6 +1379,12 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'margin-bottom:20px;"></div>';
 
       html += '<div class="actions" id="actions" style="display:none;">';
+      
+      // НОВАЯ КНОПКА ВОССТАНОВЛЕНИЯ
+      html += '<button class="btn-act success full" id="btnRestore" ';
+      html += 'style="display:none;" onclick="restoreItem()">';
+      html += 'Восстановить из архива</button>';
+      
       html += '<button class="btn-act primary" id="btnSetPrice" ';
       html += 'style="display:none;" onclick="setRetailPrice()">';
       html += 'Задать цену</button>';
@@ -1387,7 +1394,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'Переименовать</button>';
       html += '<button class="btn-act" onclick="clickPhoto()">';
       html += 'Загрузить фото</button>';
-      html += '<button class="btn-act danger full" ';
+      html += '<button class="btn-act danger full" id="btnDelete" ';
       html += 'onclick="deleteItem()">Удалить товар</button>';
       html += '</div>';
 
@@ -1424,6 +1431,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'var itemPrice = 0; var totalHistory = 0; var currentPage = 1;';
       html += 'var pageLimit = parseInt(localStorage.getItem(';
       html += '"wh_item_limit")) || 10;';
+      html += 'var isArchived = false;';
       html += 'document.getElementById("limitSelect").value = pageLimit;';
 
       html += 'function clickPhoto() {';
@@ -1461,12 +1469,20 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '      while (hi.firstChild) hi.removeChild(hi.firstChild);';
       html += '      itemName = d.item.name; itemUnit = d.item.unit || "шт";';
       html += '      isPinned = d.item.is_pinned === true;';
+      html += '      isArchived = d.item.hidden === true;';
       html += '      itemPrice = parseFloat(d.item.retail_price) || 0;';
       html += '      document.getElementById("actions")';
       html += '      .style.display = "grid";';
       html += '      document.getElementById("historyControls")';
       html += '      .style.display = "flex";';
       html += '      updatePinBtn();';
+      
+      html += '      if (isArchived) {';
+      html += '        var br = document.getElementById("btnRestore");';
+      html += '        br.style.display = "flex";';
+      html += '        document.getElementById("btnDelete").style.display = "none";';
+      html += '      }';
+
       html += '      if (itemPrice === 0) { ';
       html += '        var bsp = document.getElementById("btnSetPrice");';
       html += '        bsp.style.display = "flex"; ';
@@ -1591,6 +1607,24 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
 
       html += 'loadHistory();';
       
+      html += 'function restoreItem() {';
+      html += '  var btn = document.getElementById("btnRestore");';
+      html += '  btn.disabled = true; btn.innerText = "Восстановление...";';
+      html += '  fetch("/api/warehouse/item/restore", { method: "POST", ';
+      html += '  headers: { "Content-Type": "application/json" }, ';
+      html += '  body: JSON.stringify({ id: itemId }) })';
+      html += '  .then(function(r) { return r.json(); })';
+      html += '  .then(function(d) { if (d.ok) { ';
+      html += '    showAlert("Готово", "Товар возвращен", true); ';
+      html += '    setTimeout(function() { location.reload(); }, 1000); } ';
+      html += '    else { btn.disabled = false; ';
+      html += '      btn.innerText = "Восстановить из архива"; ';
+      html += '      showAlert("Ошибка", d.error, false); } })';
+      html += '  .catch(function() { btn.disabled = false; ';
+      html += '    btn.innerText = "Восстановить из архива"; ';
+      html += '    showAlert("Ошибка сети", "Проверьте интернет", false); });';
+      html += '}';
+
       html += 'function deleteItem() {';
       html += '  showConfirm("Удаление", "Вы уверены, что хотите удалить " + ';
       html += '  itemName + "? Если есть история, он будет скрыт.", ';
@@ -1740,15 +1774,11 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       );
 
       if (shiftRes.rows.length === 0) {
-        let errHtml = '<!DOCTYPE html><html><head>';
-        errHtml += '<meta charset="UTF-8">';
+        let errHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
         errHtml += metaSafari;
         errHtml += '<meta name="viewport" content="width=device-width, ';
-        errHtml += 'initial-scale=1.0, maximum-scale=1.0, ';
-        errHtml += 'user-scalable=no">';
-        errHtml += fontLink;
-        errHtml += uiScript;
-        errHtml += '<style>';
+        errHtml += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+        errHtml += fontLink + uiScript + '<style>';
         errHtml += 'body { display: flex; flex-direction: column; ';
         errHtml += 'align-items: center; justify-content: center; ';
         errHtml += 'height: 100vh; padding: 20px; text-align: center; }';
@@ -1767,16 +1797,13 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
         return res.send(errHtml);
       }
 
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
+      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
       html += '<meta name="viewport" content="width=device-width, ';
       html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
+      html += fontLink + uiScript;
       html += '<style>';
       html += 'body { padding: 0 16px 80px 16px; }';
-      
       html += '.search-wrapper { position: relative; margin-bottom: 16px; }';
       html += '.search { width: 100%; padding: 14px 16px; border: none; ';
       html += 'border-radius: var(--r-md); box-sizing: border-box; ';
@@ -1907,7 +1934,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '.numpad button { padding: 12px 0; font-size: 18px; ';
       html += 'border: none; background: #fff; border-radius: 10px; ';
       html += 'font-family: inherit; font-weight: 600; color: var(--f-text); ';
-      html += 'box-shadow: var(--sh-1); }';
+      html += 'box-shadow: var(--sh-1); touch-action: manipulation; }';
       html += '.numpad button:active { background: #eee; }';
 
       html += '.btn-submit { width: 100%; padding: 14px; font-size: 15px; ';
@@ -1927,7 +1954,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'flex: 1; display: flex; flex-direction: column; ';
       html += 'align-items: center; justify-content: center; gap: 2px; ';
       html += 'font-weight: 600; font-size: 11px; transition: 0.2s; ';
-      html += 'color: var(--f-text-2); }';
+      html += 'color: var(--f-text-2); touch-action: manipulation; }';
       html += '.pay-btn svg { width: 18px; height: 18px; ';
       html += 'margin-right: 0; margin-bottom: 2px; }';
       html += '.pay-btn.active { background: #E0F2F1; ';
@@ -2190,6 +2217,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  ed.textContent = "Сеть: " + e.message; ';
       html += '  g.appendChild(ed); ';
       html += '});';
+
       html += 'function onSearchInput() {';
       html += '  var val = document.getElementById("search").value;';
       html += '  var btn = document.getElementById("clearSearch");';
@@ -2295,7 +2323,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '      name: it.name, qty: it.qty, ';
       html += '      retail: it.retail_price || 0 }); }';
       html += '    });';
-      html += '    resetPayments(); openSheet();';
+      html += '    recalculateTotals(); openSheet();';
       html += '  }).catch(function() { showAlert("Ошибка сети", ';
       html += '  "Проверьте интернет", false); });';
       html += '}';
@@ -2392,11 +2420,15 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  if (ex) ex.qty += 1; ';
       html += '  else cart.push({ id: item.id, name: item.name, qty: 1, ';
       html += '  retail: item.retail_price || 0 });';
-      html += '  resetPayments();';
+      html += '  recalculateTotals();';
       html += '}';
 
-      html += 'function resetPayments() { ';
-      html += 'payments = []; isPayAmountEdited = false; ';
+      html += 'function recalculateTotals() { ';
+      html += 'currentIdempotencyKey = null; ';
+      html += 'saveCart(); renderBasket(); }';
+
+      html += 'function clearCartAndPayments() { ';
+      html += 'cart = []; payments = []; isPayAmountEdited = false; ';
       html += 'isTotalPriceEdited = false; currentIdempotencyKey = null; ';
       html += 'saveCart(); renderBasket(); }';
 
@@ -2439,7 +2471,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  if (diff < -100) {';
       html += '    cartList.style.transform = "translateX(-100%)";';
       html += '    setTimeout(function() { ';
-      html += '      clearCartDirect(); ';
+      html += '      clearCartAndPayments(); ';
       html += '      cartList.style.transform = "translateX(0)"; ';
       html += '      cartList.style.background = "transparent"; }, 300);';
       html += '  } else {';
@@ -2455,13 +2487,6 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  var diff = e.changedTouches[0].clientX - startX;';
       html += '  if (diff > -30 && diff < 30) { openSheet(); }';
       html += '});';
-
-      html += 'function clearCartDirect() {';
-      html += '  cart = []; payments = []; isPayAmountEdited = false;';
-      html += '  isTotalPriceEdited = false; currentIdempotencyKey = null;';
-      html += '  localStorage.removeItem("wh_cart_kupidon");';
-      html += '  renderBasket();';
-      html += '}';
 
       html += 'loadCart();';
 
@@ -2535,7 +2560,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '    del.onclick = function() { ';
       html += '      showConfirm("Удаление", "Убрать " + item.name + "?", ';
       html += '      function() { ';
-      html += '        cart.splice(idx, 1); resetPayments(); ';
+      html += '        cart.splice(idx, 1); recalculateTotals(); ';
       html += '      }, true); ';
       html += '    };';
       
@@ -2571,9 +2596,9 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  cart[idx].qty = cur + delta;';
       html += '  if (cart[idx].qty <= 0) {';
       html += '    showConfirm("Удаление", "Убрать товар?", function() {';
-      html += '      cart.splice(idx, 1); resetPayments();';
+      html += '      cart.splice(idx, 1); recalculateTotals();';
       html += '    }, true);';
-      html += '  } else { resetPayments(); }';
+      html += '  } else { recalculateTotals(); }';
       html += '}';
 
       html += 'function setPay(method) {';
@@ -2858,14 +2883,11 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
       
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
+      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
       html += '<meta name="viewport" content="width=device-width, ';
       html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
-      html += '<style>';
+      html += fontLink + uiScript + '<style>';
       html += 'body { padding: 0 16px 32px 16px; }';
       
       html += '.btn-new { display: flex; align-items: center; ';
@@ -3099,7 +3121,6 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка создания'); 
     }
   });
-
   // ====== 8. ЭКРАН РЕДАКТИРОВАНИЯ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/edit', async (req, res) => {
     try {
@@ -3114,21 +3135,17 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
 
       const checkR = await pool.query(
         'SELECT status FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2',
-        [receiptId, auth.shopId]
+        'WHERE id = $1 AND shop_id = $2', [receiptId, auth.shopId]
       );
       if (checkR.rows.length === 0 || checkR.rows[0].status !== 'draft') {
         return res.status(403).send('Накладная не найдена или уже проведена');
       }
 
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
+      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
       html += '<meta name="viewport" content="width=device-width, ';
       html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
-      html += '<style>';
+      html += fontLink + uiScript + '<style>';
       html += 'body { padding: 0 16px 32px 16px; }';
       
       html += '.card { padding: 20px; border-radius: var(--r-lg); ';
@@ -3377,7 +3394,6 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '.then(function(d) { if (d.ok) { ';
       html += '  receiptItems = d.items; renderList(); } })';
       html += '.catch(function() {});';
-
       html += 'function addToBasket() {';
       html += '  var name = document.getElementById("itemName").value;';
       html += '  var qty = document.getElementById("itemQty").value';
@@ -3544,10 +3560,26 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'function saveReceipt() {';
       html += '  if (receiptItems.length === 0) { ';
       html += '    showAlert("Ошибка", "Накладная пуста.", false); return; }';
+      
       html += '  var noPriceCount = 0;';
+      html += '  var lowRetailCount = 0;';
+      
       html += '  receiptItems.forEach(function(it) {';
       html += '    if (parseFloat(it.retail_price) === 0) { noPriceCount++; }';
+      html += '    else if (parseFloat(it.retail_price) < parseFloat(it.unit_cost)) {';
+      html += '      lowRetailCount++;';
+      html += '    }';
       html += '  });';
+      
+      html += '  if (lowRetailCount > 0) {';
+      html += '    showConfirm("Внимание", "У " + lowRetailCount + " товаров Розница ниже Закупки! Вы уверены, что хотите продавать в убыток?", ';
+      html += '    function() { checkNoPrice(noPriceCount); }, false);';
+      html += '  } else {';
+      html += '    checkNoPrice(noPriceCount);';
+      html += '  }';
+      html += '}';
+
+      html += 'function checkNoPrice(noPriceCount) {';
       html += '  if (noPriceCount > 0) {';
       html += '    showConfirm("Внимание", "Товаров без цены: " + ';
       html += '    noPriceCount + ". Они не появятся в Кассе. ", ';
@@ -3591,14 +3623,11 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
       
-      let html = '<!DOCTYPE html><html><head>';
-      html += '<meta charset="UTF-8">';
+      let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
       html += '<meta name="viewport" content="width=device-width, ';
       html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-      html += fontLink;
-      html += uiScript;
-      html += '<style>';
+      html += fontLink + uiScript + '<style>';
       html += 'body { padding: 0 16px 32px 16px; }';
       
       html += '.search-wrap { position: relative; margin-bottom: 16px; }';
@@ -3969,7 +3998,6 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 10. ЭКРАН ДОКУМЕНТОВ ======
   app.get('/warehouse/documents', async (req, res) => {
     try {
@@ -4049,6 +4077,12 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += 'var tab = document.getElementById("tab-" + currentType); ';
       html += 'if (tab) tab.classList.add("active");';
       
+      html += 'function shortId(id) {';
+      html += '  if (!id) return "";';
+      html += '  var parts = String(id).split("_");';
+      html += '  return parts[parts.length - 1];';
+      html += '}';
+      
       html += 'fetch("/api/warehouse/documents?type=" + currentType)';
       html += '.then(function(r){return r.json();})';
       html += '.then(function(d){';
@@ -4091,13 +4125,13 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '    amount.className = "amount";';
       
       html += '    if (currentType === "receipts") { ';
-      html += '      title.textContent = "Накладная №" + doc.id; ';
+      html += '      title.textContent = "Накладная №" + shortId(doc.id); ';
       html += '      meta.textContent = ds + " · " + author; ';
       html += '      amount.textContent = parseFloat(doc.amount)';
       html += '      .toLocaleString("ru-RU") + " ₽"; ';
       html += '      amount.style.color = "#3C7A89"; ';
       html += '    } else { ';
-      html += '      title.textContent = "Акт списания №" + doc.id; ';
+      html += '      title.textContent = "Акт списания №" + shortId(doc.id); ';
       html += '      var itm = doc.items || ""; ';
       html += '      var reason = translateReason(doc.reason); ';
       html += '      meta.textContent = ds + " · " + author + " (" + ';
@@ -4132,7 +4166,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
 
       html += '    b.appendChild(a); });';
       html += '}).catch(function(){ ';
-      html += '  document.getElementById("list").textContent = "Ошибка"; });';
+      html += 'document.getElementById("list").textContent = "Ошибка"; });';
 
       html += 'function showDocPreview(id, type) {';
       html += '  var ov = document.getElementById("docPreviewModal");';
@@ -4148,7 +4182,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '  .then(function(d) {';
       html += '    if (!d.ok) { title.textContent = "Ошибка"; return; }';
       html += '    title.textContent = (type === "receipts" ? ';
-      html += '    "Накладная №" : "Акт №") + id;';
+      html += '    "Накладная №" : "Акт №") + shortId(id);';
       html += '    d.items.forEach(function(i) {';
       html += '      var row = document.createElement("div");';
       html += '      row.className = "dp-row";';
@@ -4222,6 +4256,12 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += getUnifiedMenu('documents');
 
       html += '<script>';
+      html += 'function shortId(id) {';
+      html += '  if (!id) return "";';
+      html += '  var parts = String(id).split("_");';
+      html += '  return parts[parts.length - 1];';
+      html += '}';
+      
       html += 'var urlParams = new URLSearchParams(window.location.search); ';
       html += 'var docId = urlParams.get("id") || ""; ';
       html += 'var docType = urlParams.get("type") || "receipts";';
@@ -4240,7 +4280,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       
       html += '  var title = document.createElement("div"); ';
       html += '  title.style = "font-size:20px; font-weight:800;"; ';
-      html += '  title.textContent = titleTxt + h.id; ';
+      html += '  title.textContent = titleTxt + shortId(h.id); ';
       html += '  content.appendChild(title);';
       
       html += '  var meta = document.createElement("div"); ';
@@ -4264,7 +4304,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '      var cost = document.createElement("div"); ';
       html += '      cost.style = "font-size:12px; color:var(--f-text-2);"; ';
       html += '      cost.textContent = parseFloat(i.unit_cost)';
-      html += '      .toLocaleString("ru-RU") + " ₽/шт"; ';
+      html += '      .toFixed(2) + " ₽/шт"; ';
       html += '      left.appendChild(cost); ';
       html += '    } else { ';
       html += '      var rsn = document.createElement("div"); ';
@@ -4281,7 +4321,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       html += '      sum.style = "font-size:12px; ';
       html += '      color:var(--f-text-2); font-weight:400;"; ';
       html += '      sum.textContent = parseFloat(i.sum)';
-      html += '      .toLocaleString("ru-RU") + " ₽"; ';
+      html += '      .toFixed(2) + " ₽"; ';
       html += '      right.appendChild(sum); }';
       html += '    a.appendChild(left); a.appendChild(right); ';
       html += '    content.appendChild(a); });';
@@ -4332,7 +4372,6 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 12. ЭКРАН ОТЧЁТОВ ======
   app.get('/warehouse/reports', async (req, res) => {
     try {
