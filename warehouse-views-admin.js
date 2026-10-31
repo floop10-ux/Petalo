@@ -1,8 +1,10 @@
 const pool = require('./db');
+const { 
+  esc, fmtNum, translateReason, getIconSvg, 
+  getUnifiedMenu, metaSafari, fontLink, uiScript 
+} = require('./warehouse-views-core');
 
-function setupWarehouseAdminViews(app, bot, s3ctx, getAuth, 
-  fmtNum, translateReason, esc, getUnifiedMenu, 
-  metaSafari, fontLink, uiScript) {
+function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
 
   // ====== 1. ЭКРАН СМЕНЫ ======
   app.get('/warehouse/shift', async (req, res) => {
@@ -1468,6 +1470,359 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '</div>';
 
       html += getUnifiedMenu('bouquets');
+
+      html += '<script>';
+      html += 'var bId = ' + bId + ';';
+      html += 'var catalog = []; var recipe = [];';
+      html += 'var selectedItem = null;';
+
+      html += 'if (bId > 0) { ';
+      html += '  document.getElementById("pageTitle").textContent = ';
+      html += '  "Редактирование";';
+      html += '  fetch("/api/warehouse/bouquets/info?id=" + bId)';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if (d.ok) {';
+      html += '      document.getElementById("bqName").value = d.bouquet.name;';
+      html += '      document.getElementById("bqPrice").value = d.bouquet.price;';
+      html += '      if (d.bouquet.wh_linked) {';
+      html += '        document.getElementById("bqLinked").checked = true;';
+      html += '        toggleRecipe();';
+      html += '      }';
+      html += '      if (d.bouquet.photos && d.bouquet.photos.length > 0) {';
+      html += '        var p = d.bouquet.photos[0];';
+      html += '        var url = (typeof p === "string") ? p : (p.s3 || p.s3b);';
+      html += '        if (url) {';
+      html += '          document.getElementById("bqPhotoUrl").value = url;';
+      html += '          var img = document.getElementById("bqPreview");';
+      html += '          img.src = url; img.style.display = "block";';
+      html += '        }';
+      html += '      }';
+      html += '    }';
+      html += '  }).catch(function(){});';
+
+      html += '  fetch("/api/warehouse/bouquets/recipe?id=" + bId)';
+      html += '  .then(function(r){return r.json();}).then(function(d){ ';
+      html += '  if (d.ok) { recipe = d.items; renderRecipe(); } });';
+      html += '}';
+
+      html += 'fetch("/api/warehouse/items")';
+      html += '.then(function(r){return r.json();}).then(function(d){ ';
+      html += 'if (d.ok) catalog = d.items; });';
+
+      html += 'function toggleRecipe() {';
+      html += '  var isChecked = document.getElementById("bqLinked").checked;';
+      html += '  document.getElementById("recipeSection").style.display = ';
+      html += '  isChecked ? "block" : "none";';
+      html += '}';
+
+      html += 'document.addEventListener("click", function(e) {';
+      html += '  var dd = document.getElementById("ddList");';
+      html += '  var inp = document.getElementById("searchItem");';
+      html += '  if (dd && inp && e.target !== dd && ';
+      html += '  e.target !== inp && !dd.contains(e.target)) {';
+      html += '    dd.style.display = "none";';
+      html += '  }';
+      html += '});';
+
+      html += 'function onSearchInput() {';
+      html += '  var val = document.getElementById("searchItem").value;';
+      html += '  var dd = document.getElementById("ddList");';
+      html += '  var btn = document.getElementById("clearSearch");';
+      html += '  while(dd.firstChild) dd.removeChild(dd.firstChild);';
+      html += '  if (val.length > 0) { btn.style.display = "block"; }';
+      html += '  else { btn.style.display = "none"; }';
+      html += '  if (!val) { dd.style.display = "none"; return; }';
+      html += '  var found = catalog.filter(function(i) { ';
+      html += '    return i.name.toLowerCase().includes(val.toLowerCase()); ';
+      html += '  }).slice(0, 20);';
+      html += '  if (found.length === 0) { dd.style.display = "none"; return; }';
+      html += '  found.forEach(function(i) {';
+      html += '    var row = document.createElement("div"); ';
+      html += '    row.className = "dd-item";';
+      html += '    var nm = document.createElement("div"); ';
+      html += '    nm.className = "dd-name"; nm.textContent = i.name;';
+      html += '    var st = document.createElement("div"); ';
+      html += '    st.className = "dd-stock"; ';
+      html += '    var s = parseFloat(i.current_stock);';
+      html += '    st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
+      html += '    st.style.cssText = s > 0 ? ';
+      html += '    "color:var(--f-success)" : "color:var(--f-danger)";';
+      html += '    row.appendChild(nm); row.appendChild(st);';
+      html += '    row.onclick = function() {';
+      html += '      document.getElementById("searchItem").value = i.name;';
+      html += '      document.getElementById("clearSearch")';
+      html += '      .style.display = "none";';
+      html += '      selectedItem = i;';
+      html += '      dd.style.display = "none";';
+      html += '    };';
+      html += '    dd.appendChild(row);';
+      html += '  });';
+      html += '  dd.style.display = "block";';
+      html += '}';
+
+      html += 'function clearSearchText() {';
+      html += '  document.getElementById("searchItem").value = "";';
+      html += '  document.getElementById("clearSearch").style.display = "none";';
+      html += '  document.getElementById("ddList").style.display = "none";';
+      html += '  selectedItem = null;';
+      html += '}';
+
+      html += 'function addItem() {';
+      html += '  if (!selectedItem) { ';
+      html += '    showAlert("Внимание", "Выберите товар", false); return; }';
+      html += '  var q = parseFloat(document.getElementById("qtyAdd").value);';
+      html += '  if (!q || q <= 0) { ';
+      html += '    showAlert("Внимание", "Введите количество", false); return; }';
+      html += '  var ex = recipe.find(function(r) { ';
+      html += '    return r.shop_item_id === selectedItem.id; });';
+      html += '  if (ex) { ex.qty = parseFloat(ex.qty) + q; }';
+      html += '  else { ';
+      html += '    recipe.push({ shop_item_id: selectedItem.id, ';
+      html += '      name: selectedItem.name, ';
+      html += '      qty: q, unit: selectedItem.unit || "шт" }); ';
+      html += '  }';
+      html += '  clearSearchText();';
+      html += '  document.getElementById("qtyAdd").value = "";';
+      html += '  renderRecipe();';
+      html += '}';
+
+      html += 'function renderRecipe() {';
+      html += '  var list = document.getElementById("recipeList");';
+      html += '  while(list.firstChild) list.removeChild(list.firstChild);';
+      html += '  if (recipe.length === 0) { ';
+      html += '    list.textContent = "Состав пуст."; ';
+      html += '    return; }';
+      
+      html += '  recipe.forEach(function(item, idx) {';
+      html += '    var div = document.createElement("div"); ';
+      html += '    div.className = "b-row";';
+      html += '    var n = document.createElement("div"); ';
+      html += '    n.textContent = item.name;';
+      html += '    var ctrl = document.createElement("div"); ';
+      html += '    ctrl.className = "b-controls";';
+      html += '    var mn = document.createElement("button"); ';
+      html += '    mn.textContent = "-"; mn.className = "qty-btn"; ';
+      html += '    mn.onclick = function() { changeQty(idx, -1); };';
+      html += '    var inp = document.createElement("input"); ';
+      html += '    inp.type = "number"; inp.className = "qty-input"; ';
+      html += '    inp.value = item.qty; inp.step = "0.1";';
+      html += '    inp.onchange = function() { ';
+      html += '      var val = parseFloat(this.value); ';
+      html += '      if (!isNaN(val) && val > 0) { ';
+      html += '        recipe[idx].qty = val; ';
+      html += '      } else { renderRecipe(); }';
+      html += '    };';
+      html += '    var pl = document.createElement("button"); ';
+      html += '    pl.textContent = "+"; pl.className = "qty-btn"; ';
+      html += '    pl.onclick = function() { changeQty(idx, 1); };';
+      html += '    ctrl.appendChild(mn); ctrl.appendChild(inp); ';
+      html += '    ctrl.appendChild(pl);';
+      html += '    var del = document.createElement("span"); ';
+      html += '    del.textContent = "✕"; ';
+      html += '    del.style.cssText = "color:red; cursor:pointer; ';
+      html += '    font-size:18px; margin-left:10px;";';
+      html += '    del.onclick = function() { ';
+      html += '      recipe.splice(idx, 1); renderRecipe(); ';
+      html += '    };';
+      html += '    ctrl.appendChild(del);';
+      html += '    div.appendChild(n); div.appendChild(ctrl); ';
+      html += '    list.appendChild(div);';
+      html += '  });';
+      html += '}';
+
+      html += 'function changeQty(idx, delta) {';
+      html += '  recipe[idx].qty = parseFloat(recipe[idx].qty) + delta;';
+      html += '  if (recipe[idx].qty <= 0) {';
+      html += '    recipe.splice(idx, 1); renderRecipe();';
+      html += '  } else { renderRecipe(); }';
+      html += '}';
+
+      html += 'function uploadPhoto(input) {';
+      html += '  var f = input.files[0]; if (!f) return;';
+      html += '  var rd = new FileReader();';
+      html += '  rd.onload = function(e) {';
+      html += '    var img = new Image();';
+      html += '    img.onload = function() {';
+      html += '      var canvas = document.createElement("canvas");';
+      html += '      var MAX = 800; var w = img.width, h = img.height;';
+      html += '      if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }';
+      html += '      else { if (h > MAX) { w *= MAX / h; h = MAX; } }';
+      html += '      canvas.width = w; canvas.height = h;';
+      html += '      var ctx = canvas.getContext("2d");';
+      html += '      ctx.drawImage(img, 0, 0, w, h);';
+      html += '      var dataUrl = canvas.toDataURL("image/jpeg", 0.7);';
+      html += '      showAlert("Загрузка", "Отправляем фото...", true);';
+      html += '      fetch("/api/warehouse/upload", { method: "POST",';
+      html += '      headers: { "Content-Type": "application/json" },';
+      html += '      body: JSON.stringify({ image: dataUrl }) })';
+      html += '      .then(function(r){return r.json();}).then(function(d){';
+      html += '        if (d.ok) {';
+      html += '          document.getElementById("bqPhotoUrl").value = d.url;';
+      html += '          var prev = document.getElementById("bqPreview");';
+      html += '          prev.src = d.url; prev.style.display = "block";';
+      html += '        } else showAlert("Ошибка", "Фото не принято", false);';
+      html += '      }).catch(function(){ showAlert("Ошибка", "Сеть", false); });';
+      html += '    }; img.src = e.target.result;';
+      html += '  }; rd.readAsDataURL(f);';
+      html += '}';
+
+      html += 'function saveAll() {';
+      html += '  var isLinked = document.getElementById("bqLinked").checked;';
+      html += '  var pendingItem = document.getElementById("searchItem").value;';
+      html += '  var pendingQty = document.getElementById("qtyAdd").value;';
+      
+      html += '  if (isLinked && pendingItem && pendingQty && selectedItem) {';
+      html += '    var q = parseFloat(pendingQty);';
+      html += '    if (q > 0) {';
+      html += '      var ex = recipe.find(function(r) { ';
+      html += '        return r.shop_item_id === selectedItem.id; });';
+      html += '      if (ex) { ex.qty = parseFloat(ex.qty) + q; }';
+      html += '      else { recipe.push({ shop_item_id: selectedItem.id, ';
+      html += '        name: selectedItem.name, qty: q }); }';
+      html += '    }';
+      html += '  }';
+      
+      html += '  var name = document.getElementById("bqName").value;';
+      html += '  var price = parseFloat(document.getElementById("bqPrice").value);';
+      html += '  var photoUrl = document.getElementById("bqPhotoUrl").value;';
+      html += '  if (!name || !price) { ';
+      html += '    showAlert("Ошибка", "Заполните поля", false); return; }';
+      
+      html += '  var btn = document.getElementById("btnSave");';
+      html += '  btn.disabled = true; btn.innerText = "Сохранение...";';
+      
+      html += '  fetch("/api/warehouse/bouquet/save", { method: "POST",';
+      html += '  headers: { "Content-Type": "application/json" },';
+      html += '  body: JSON.stringify({ id: bId, name: name, price: price,';
+      html += '  photo_url: photoUrl, is_linked: isLinked }) })';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if (!d.ok) { btn.disabled = false; ';
+      html += '      btn.innerText = "Сохранить"; ';
+      html += '      showAlert("Ошибка", d.error, false); return; }';
+      
+      html += '    var newId = d.id;';
+      html += '    if (isLinked) {';
+      html += '      fetch("/api/warehouse/bouquets/recipe/save", { ';
+      html += '      method: "POST",';
+      html += '      headers: { "Content-Type": "application/json" },';
+      html += '      body: JSON.stringify({ bouquet_id: newId, ';
+      html += '      items: recipe }) })';
+      html += '      .then(function(r){return r.json();}).then(function(res){';
+      html += '        if (res.ok) { ';
+      html += '          window.location.href = "/warehouse/bouquets"; }';
+      html += '        else { btn.disabled = false; ';
+      html += '        btn.innerText = "Сохранить";';
+      html += '        showAlert("Ошибка рецепта", res.error, false); }';
+      html += '      }).catch(function(){ btn.disabled = false; ';
+      html += '      btn.innerText = "Сохранить"; ';
+      html += '      showAlert("Ошибка", "Сеть", false); });';
+      html += '    } else {';
+      html += '      window.location.href = "/warehouse/bouquets";';
+      html += '    }';
+      html += '  }).catch(function(){ btn.disabled = false;';
+      html += '  btn.innerText = "Сохранить"; ';
+      html += '  showAlert("Ошибка", "Сеть", false); });';
+      html += '}';
+      html += '<\/script></body></html>';
+      res.send(html);
+    } catch(e) { res.status(500).send('Ошибка сервера'); }
+  });
+  // ====== 8. ЭКРАН ЖУРНАЛА ======
+  app.get('/warehouse/audit', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      
+      let html = '<!DOCTYPE html><html><head>';
+      html += '<meta charset="UTF-8">';
+      html += metaSafari;
+      html += '<meta name="viewport" content="width=device-width, ';
+      html += 'initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+      html += fontLink;
+      html += uiScript;
+      html += '<style>';
+      html += 'body { padding: 0 16px 32px 16px; }';
+      
+      html += '.filters { display: flex; gap: 8px; margin-bottom: 16px; }';
+      html += '.filter { flex: 1; padding: 12px; ';
+      html += 'border: 1px solid var(--f-border); ';
+      html += 'border-radius: var(--r-md); background: #fff; text-align: center; ';
+      html += 'cursor: pointer; font-size: 14px; font-weight: 600; ';
+      html += 'color: var(--f-text); }';
+      html += '.filter.active { background: var(--f-brand); color: #fff; ';
+      html += 'border-color: var(--f-brand); }';
+      
+      html += '.date-label { font-size: 13px; font-weight: 600; ';
+      html += 'color: var(--f-text-2); margin-bottom: 8px; }';
+      html += '.date-row { display: flex; margin-bottom: 16px; }';
+      html += '.date-row input { width: 100%; padding: 12px; margin: 0; ';
+      html += 'border: 2px solid transparent; transition: border 0.2s; }';
+      html += '.date-row input.active-date { ';
+      html += 'border-color: var(--f-accent); }';
+      
+      html += '.log-card { background: #fff; border-radius: var(--r-lg); ';
+      html += 'padding: 16px; margin-bottom: 12px; cursor: pointer; ';
+      html += 'box-shadow: var(--sh-1); border-left: 4px solid #ddd; }';
+      html += '.log-card.sale { border-left-color: #3C7A89; }';
+      html += '.log-card.receipt { border-left-color: var(--f-success); }';
+      html += '.log-card.writeoff { border-left-color: var(--f-danger); }';
+      html += '.log-card.shift { border-left-color: #E67E22; }';
+      html += '.log-top { display: flex; justify-content: space-between; ';
+      html += 'align-items: center; margin-bottom: 8px; }';
+      html += '.log-title { font-weight: 800; font-size: 15px; ';
+      html += 'display: flex; align-items: center; }';
+      html += '.log-title svg { width: 18px; height: 18px; margin-right: 8px; }';
+      html += '.log-date { font-size: 12px; color: var(--f-text-2); }';
+      html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
+      html += '.log-link { font-size: 13px; color: #3C7A89; ';
+      html += 'margin-top: 8px; font-weight: 600; }';
+      html += '</style></head><body>';
+
+      html += '<div class="page-header">';
+      html += '<div class="page-header-left">';
+      html += '<a href="/warehouse-app" class="back-btn">←</a>';
+      html += '<h2 class="page-title">Журнал</h2></div>';
+      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '</div>';
+
+      html += '<div class="filters">';
+      html += '<div class="filter active" id="f-today" ';
+      html += 'onclick="setPeriod(&apos;today&apos;)">Сегодня</div>';
+      html += '<div class="filter" id="f-week" ';
+      html += 'onclick="setPeriod(&apos;week&apos;)">Неделя</div>';
+      html += '<div class="filter" id="f-month" ';
+      html += 'onclick="setPeriod(&apos;month&apos;)">Месяц</div>';
+      html += '</div>';
+      
+      html += '<div class="date-label">Или выберите конкретную дату:</div>';
+      html += '<div class="date-row">';
+      html += '<input type="date" id="auditDate" ';
+      html += 'onchange="setCustomDate(this.value)">';
+      html += '</div>';
+      html += '<div id="list">Загрузка...</div>';
+      
+      html += getUnifiedMenu('audit');
+
+      html += '<script>';
+      html += 'var currentPeriod = "today"; var currentDate = "";';
+      
+      html += 'function setPeriod(p) {';
+      html += '  currentPeriod = p; currentDate = "";';
+      html += '  var dInp = document.getElementById("auditDate");';
+      html += '  dInp.value = ""; dInp.classList.remove("active-date");';
+      html += '  document.querySelectorAll(".filter").forEach(function(el){';
+      html += '    el.classList.remove("active");});';
+      html += '  document.getElementById("f-" + p).classList.add("active");';
+      html += '  loadData();';
+      html += '}';
+      
+      html += 'function setCustomDate(val) {';
+      html += '  currentDate = val;';
+      html += '  var dInp = document.getElementById("auditDate");';
+      html += '  if (val) {';
+      html += '    dInp.classList.add("active-date");';
+      html += '    document.querySelectorAll(".filter").forEach(function(el){';
+      html += '      el.classList.remove("active");});';
       html += '  } else { setPeriod("today"); }';
       html += '  loadData();';
       html += '}';
@@ -1512,6 +1867,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '      emT.textContent = "Журнал пуст";';
       html += '      em.appendChild(emT); listEl.appendChild(em);';
       html += '      return; }';
+      
       html += '    d.logs.forEach(function(l) {';
       html += '      var div = document.createElement("div");';
       html += '      var acts = ["sale","receipt","writeoff","shift"];';
@@ -1522,6 +1878,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '      { day: "2-digit", month: "2-digit", ';
       html += '      hour: "2-digit", minute: "2-digit" });';
       html += '      var p = l.person || "Система";';
+      
       html += '      var top = document.createElement("div");';
       html += '      top.className = "log-top";';
       html += '      var titleDiv = document.createElement("div");';
@@ -1535,10 +1892,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth,
       html += '      dateDiv.textContent = ds;';
       html += '      top.appendChild(titleDiv); top.appendChild(dateDiv);';
       html += '      div.appendChild(top);';
+      
       html += '      var desc = document.createElement("div");';
       html += '      desc.className = "log-desc";';
       html += '      desc.textContent = l.details || "";';
       html += '      div.appendChild(desc);';
+      
       html += '      if (l.ref_id) {';
       html += '        var link = document.createElement("div");';
       html += '        link.className = "log-link";';
