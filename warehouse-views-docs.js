@@ -400,7 +400,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += 'border-radius: var(--r-md); font-family: inherit; ';
       html += 'font-size: 14px; box-shadow: var(--sh-1); margin: 0; }';
       
-      html += '.quick-dates { display: flex; gap: 6px; margin-bottom: 16px; }';
+      html += '.quick-dates { display: flex; gap: 6px; margin-bottom: 12px; }';
       html += '.q-btn { flex: 1; padding: 10px; ';
       html += 'border: 1px solid var(--f-border); ';
       html += 'border-radius: var(--r-md); background: #fff; ';
@@ -408,6 +408,12 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += 'cursor: pointer; color: var(--f-text); }';
       html += '.q-btn.active { background: var(--f-brand); color: #fff; ';
       html += 'border-color: var(--f-brand); }';
+
+      html += '.btn-export { display: block; width: 100%; padding: 12px; ';
+      html += 'background: #E8F5E9; color: var(--f-success); ';
+      html += 'text-align: center; border-radius: var(--r-md); ';
+      html += 'font-weight: 700; text-decoration: none; margin-bottom: 16px; ';
+      html += 'font-size: 14px; border: 1px solid var(--f-success); }';
 
       html += '.tabs { display: flex; gap: 6px; margin-bottom: 16px; ';
       html += 'overflow-x: auto; padding-bottom: 4px; }';
@@ -421,7 +427,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
 
       html += '.card { padding: 20px; border-radius: var(--r-lg); ';
       html += 'margin-bottom: 16px; text-align: center; }';
-      html += '.val { font-size: 28px; font-weight: 800; margin-bottom: 4px; }';
+      html += '.val { font-size: 26px; font-weight: 800; margin-bottom: 4px; }';
       html += '.val.blue { color: #3C7A89; } ';
       html += '.val.green { color: var(--f-success); } ';
       html += '.val.red { color: var(--f-danger); }';
@@ -429,7 +435,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       
       html += '.list-item { display: flex; justify-content: space-between; ';
       html += 'padding: 12px 0; border-bottom: 1px solid var(--f-border); ';
-      html += 'font-size: 15px; }';
+      html += 'font-size: 14px; }';
       html += '.list-item:last-child { border-bottom: none; }';
       
       html += '.chart-container { margin-top: 20px; overflow-x: auto; ';
@@ -444,8 +450,9 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '.bar.active { background: var(--f-brand); }';
       html += '.bar-lbl { font-size: 11px; color: var(--f-text-2); ';
       html += 'margin-top: 6px; font-weight: 600; }';
-      html += '.chart-info { font-size: 14px; font-weight: 700; ';
-      html += 'margin-top: 12px; color: var(--f-brand); height: 20px; }';
+      html += '.chart-info { font-size: 14px; font-weight: 600; ';
+      html += 'margin-top: 12px; color: var(--f-text); height: 40px; ';
+      html += 'line-height: 1.4; }';
       html += '</style></head><body>';
 
       html += '<div class="page-header">';
@@ -471,6 +478,9 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += 'onclick="setQuick(&apos;all&apos;)">Всё</div>';
       html += '</div>';
 
+      html += '<a href="#" id="btnExport" class="btn-export" ';
+      html += 'onclick="exportCSV(event)">📥 Скачать в Excel (CSV)</a>';
+
       html += '<div class="tabs">';
       html += '<div class="tab active" id="t-fin" ';
       html += 'onclick="setTab(&apos;fin&apos;)">Финансы</div>';
@@ -478,6 +488,10 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += 'onclick="setTab(&apos;loss&apos;)">Потери</div>';
       html += '<div class="tab" id="t-top" ';
       html += 'onclick="setTab(&apos;top&apos;)">Топ-5</div>';
+      html += '<div class="tab" id="t-abc" ';
+      html += 'onclick="setTab(&apos;abc&apos;)">ABC</div>';
+      html += '<div class="tab" id="t-frozen" ';
+      html += 'onclick="setTab(&apos;frozen&apos;)">Замороженные</div>';
       html += '<div class="tab" id="t-move" ';
       html += 'onclick="setTab(&apos;move&apos;)">Движение</div>';
       html += '</div>';
@@ -485,11 +499,19 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '<div id="content">Загрузка...</div>';
 
       html += getUnifiedMenu('reports');
-
       html += '<script>';
       html += 'var currentTab = "fin"; var reportData = null;';
       html += 'function fmtMoney(v) { ';
       html += 'return Math.round(v).toLocaleString("ru-RU") + " ₽"; }';
+
+      html += 'function exportCSV(e) {';
+      html += '  e.preventDefault();';
+      html += '  var st = document.getElementById("dateStart").value;';
+      html += '  var en = document.getElementById("dateEnd").value;';
+      html += '  var url = "/api/warehouse/reports/export";';
+      html += '  if (st && en) { url += "?start=" + st + "&end=" + en; }';
+      html += '  window.location.href = url;';
+      html += '}';
 
       html += 'function setCustom() {';
       html += '  document.querySelectorAll(".q-btn").forEach(function(b){';
@@ -547,12 +569,18 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '  }).catch(function(){ c.textContent = "Ошибка сети"; });';
       html += '}';
 
-      html += 'function showBarInfo(el, dateStr, sum) {';
+      html += 'function showBarInfo(el, dateStr, rev, cost) {';
       html += '  document.querySelectorAll(".bar").forEach(function(b){';
       html += '    b.classList.remove("active"); });';
       html += '  el.classList.add("active");';
-      html += '  document.getElementById("chartInfo").textContent = ';
-      html += '  dateStr + ": " + fmtMoney(sum);';
+      html += '  var profit = rev - cost;';
+      html += '  var margin = rev > 0 ? Math.round((profit / rev) * 100) : 0;';
+      html += '  var info = document.getElementById("chartInfo");';
+      html += '  info.innerHTML = "<div>" + dateStr + ": <b>" + ';
+      html += '  fmtMoney(rev) + "</b></div>";';
+      html += '  info.innerHTML += "<div style=\'font-size:12px; ";
+      html += '  color:#27ae60;\'>Маржа: " + fmtMoney(profit) + ';
+      html += '  " (" + margin + "%)</div>";';
       html += '}';
 
       html += 'function renderTab() {';
@@ -562,6 +590,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '  var f = reportData.finance; var l = reportData.losses;';
       
       html += '  if (currentTab === "fin") {';
+      
       html += '    var card1 = document.createElement("div"); ';
       html += '    card1.className = "card";';
       html += '    var v1 = document.createElement("div"); ';
@@ -580,15 +609,26 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '    v2.textContent = fmtMoney(f.profit);';
       html += '    var lbl2 = document.createElement("div"); ';
       html += '    lbl2.className = "lbl"; ';
-      html += '    lbl2.textContent = "Прибыль (Себест: " + ';
-      html += '    fmtMoney(f.cost) + ") · Маржа: " + f.margin_pct + "%";';
+      html += '    lbl2.textContent = "Прибыль · Маржа: " + ';
+      html += '    f.margin_pct + "%";';
       html += '    card2.appendChild(v2); card2.appendChild(lbl2); ';
       html += '    c.appendChild(card2);';
+
+      html += '    var cardAvg = document.createElement("div"); ';
+      html += '    cardAvg.className = "card";';
+      html += '    var vAvg = document.createElement("div"); ';
+      html += '    vAvg.className = "val"; vAvg.style.color = "#2c3e50";';
+      html += '    vAvg.textContent = fmtMoney(f.avg_check);';
+      html += '    var lblAvg = document.createElement("div"); ';
+      html += '    lblAvg.className = "lbl"; ';
+      html += '    lblAvg.textContent = "Средний чек";';
+      html += '    cardAvg.appendChild(vAvg); cardAvg.appendChild(lblAvg); ';
+      html += '    c.appendChild(cardAvg);';
 
       html += '    var card3 = document.createElement("div"); ';
       html += '    card3.className = "card";';
       html += '    var v3 = document.createElement("div"); ';
-      html += '    v3.className = "val"; v3.style.fontSize = "18px";';
+      html += '    v3.className = "val"; v3.style.fontSize = "16px";';
       html += '    v3.textContent = "Нал: " + fmtMoney(f.cash) + ';
       html += '    " | Карта: " + fmtMoney(f.card) + ';
       html += '    " | QR: " + fmtMoney(f.qr);';
@@ -631,10 +671,11 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '        var dayStr = parts.length === 3 ? ';
       html += '        parseInt(parts[2]) + "." + ';
       html += '        parseInt(parts[1]) : d.day;';
-      html += '        bar.onclick = (function(dateStr, sum, el) { ';
+      html += '        bar.onclick = (function(ds, rev, cost, el) { ';
       html += '          return function() { ';
-      html += '            showBarInfo(el, dateStr, sum); };';
-      html += '        })(dayStr, d.total, bar);';
+      html += '            showBarInfo(el, ds, rev, cost); };';
+      html += '        })(dayStr, parseFloat(d.total), ';
+      html += '        parseFloat(d.cost)||0, bar);';
       html += '        col.appendChild(bar);';
       html += '        var lbl = document.createElement("div");';
       html += '        lbl.className = "bar-lbl";';
@@ -713,6 +754,75 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '      });';
       html += '    }';
       html += '    c.appendChild(topCard);';
+
+      html += '  } else if (currentTab === "abc") {';
+      html += '    var abcData = reportData.abc;';
+      html += '    var abcCard = document.createElement("div"); ';
+      html += '    abcCard.className = "card"; abcCard.style.textAlign = "left";';
+      html += '    var groups = ["A", "B", "C"];';
+      html += '    var groupNames = {"A": "Группа А (80% выручки)", ';
+      html += '    "B": "Группа В (15% выручки)", "C": "Группа С (5% выручки)"};';
+      
+      html += '    groups.forEach(function(g) {';
+      html += '      if (abcData[g] && abcData[g].length > 0) {';
+      html += '        var h = document.createElement("div");';
+      html += '        h.style = "font-weight:800; margin:16px 0 8px 0; ';
+      html += '        color:var(--f-brand);";';
+      html += '        h.textContent = groupNames[g];';
+      html += '        abcCard.appendChild(h);';
+      html += '        abcData[g].forEach(function(it) {';
+      html += '          var row = document.createElement("div");';
+      html += '          row.className = "list-item";';
+      html += '          var n = document.createElement("span");';
+      html += '          n.textContent = it.name;';
+      html += '          var v = document.createElement("span");';
+      html += '          v.style = "font-weight:800;";';
+      html += '          v.textContent = fmtMoney(it.rev);';
+      html += '          row.appendChild(n); row.appendChild(v);';
+      html += '          abcCard.appendChild(row);';
+      html += '        });';
+      html += '      }';
+      html += '    });';
+      html += '    c.appendChild(abcCard);';
+
+      html += '  } else if (currentTab === "frozen") {';
+      html += '    var frozenData = reportData.frozen;';
+      html += '    var frozenCard = document.createElement("div"); ';
+      html += '    frozenCard.className = "card"; ';
+      html += '    frozenCard.style.textAlign = "left";';
+      
+      html += '    var totalFrozen = 0;';
+      html += '    frozenData.forEach(function(it){ ';
+      html += '      totalFrozen += parseFloat(it.total_cost) || 0; });';
+      html += '    var totalLbl = document.createElement("div");';
+      html += '    totalLbl.style = "font-size:16px; font-weight:800; ';
+      html += '    margin-bottom:16px; color:var(--f-brand);";';
+      html += '    totalLbl.textContent = "Всего заморожено: " + ';
+      html += '    fmtMoney(totalFrozen);';
+      html += '    frozenCard.appendChild(totalLbl);';
+      
+      html += '    if (frozenData.length === 0) {';
+      html += '      frozenCard.textContent = "Склад пуст.";';
+      html += '    } else {';
+      html += '      frozenData.forEach(function(it) {';
+      html += '        var row = document.createElement("div");';
+      html += '        row.className = "list-item";';
+      html += '        var n = document.createElement("div");';
+      html += '        n.innerHTML = "<b>" + it.name + "</b><br>";';
+      html += '        n.innerHTML += "<span style=\'font-size:12px; ";
+      html += '        color:#888;\'>" + fmtNum(it.current_stock) + ';
+      html += '        " шт</span>";';
+      html += '        var v = document.createElement("div");';
+      html += '        v.style = "font-weight:800; text-align:right;";';
+      html += '        v.innerHTML = fmtMoney(it.total_cost);';
+      html += '        v.innerHTML += "<br><span style=\'font-size:10px; ";
+      html += '        color:#888;\'>" + fmtMoney(it.avg_cost) + ';
+      html += '        " / шт</span>";';
+      html += '        row.appendChild(n); row.appendChild(v);';
+      html += '        frozenCard.appendChild(row);';
+      html += '      });';
+      html += '    }';
+      html += '    c.appendChild(frozenCard);';
 
       html += '  } else if (currentTab === "move") {';
       html += '    var m = reportData.movement;';
