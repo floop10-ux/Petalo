@@ -1,10 +1,12 @@
 const pool = require('./db');
 
 const {
-  SITE_URL, BOT_USERNAME, PRESET_SHOP,
-  esc, normalizePhone, isServiceAdmin,
-  isOwner, getRemainingDays, generateInviteCode,
-  generateShopId, isSubscriptionActive
+  SITE_URL, BOT_USERNAME, PRESET_SHOP, OWNER_CHAT_ID,
+  esc, normalizePhone, isServiceAdmin, isOwner,
+  getRemainingDays, generateInviteCode, generateShopId,
+  isSubscriptionActive, formatPrice, extractTagsFromName,
+  normalizeName, calculateOldPrice, isConfirmedRecently,
+  parseCaption, buildParseErrorText, computeAllTags
 } = require('./config');
 
 const {
@@ -17,8 +19,8 @@ const {
   getAllShopsAdmin, extendShopTrial, blockShop, unblockShop,
   getBouquetById, getBouquetsFromDb,
   updateBouquetField, updateBouquetFields,
-  addBouquetToDb, incrementShopStat,
-  removeAdminFromDb
+  addBouquetToDb, incrementShopStat, removeAdminFromDb,
+  searchBouquets
 } = require('./db-actions');
 
 const {
@@ -31,7 +33,10 @@ const {
   buildMyBouquetsMenu, buildSearchPrompt,
   buildRegFinalText, buildCountrySelect,
   buildHelpMenu, buildHelpGuide, buildHelpFAQ,
-  buildFaqAnswer, buildHelpSupport
+  buildFaqAnswer, buildHelpSupport,
+  showActiveBouquetsList, renderSearchResults, showBouquetCard,
+  showBouquetList, sendBouquetPreview, buildBouquetActionButtons,
+  showArchiveList, showArchiveItemCard, showArchiveCard
 } = require('./bot-ui');
 
 // ========== ГЛОБАЛЬНЫЕ СОСТОЯНИЯ ==========
@@ -54,6 +59,7 @@ const notifiedClicks = {};
 const awaitingAdminMessage = {};
 const awaitingAdminBlockReason = {};
 const lastNavByChat = {};
+const morningLaterSent = {};
 
 const NAV_TTL = 10 * 60 * 1000;
 
@@ -69,6 +75,55 @@ async function sendNav(bot, chatId, text, opts) {
   return sent;
 }
 
+async function refreshCheckList(bot, chatId, session) {
+  const total = session.bouquets.length;
+  const done = Object.keys(session.checked).length;
+  
+  if (done >= total) {
+    delete checkSessions[chatId];
+    const word = plural(total, 'букет', 'букета', 'букетов');
+    try {
+      await bot.editMessageText(
+        '🎉 <b>Проверка завершена!</b>\n\n' +
+        'Все ' + total + ' ' + word + ' проверены.',
+        {
+          chat_id: chatId,
+          message_id: session.listMessageId,
+          parse_mode: 'HTML'
+        }
+      );
+    } catch (e) {
+      bot.sendMessage(chatId,
+        '🎉 Проверка завершена! Все ' + total + ' букетов проверены.',
+        { parse_mode: 'HTML' }
+      ).catch(function(){});
+    }
+    return;
+  }
+  
+  const txt = buildCheckListText(session);
+  const kb = {
+    inline_keyboard: buildCheckListKeyboard(session)
+  };
+  
+  try {
+    await bot.editMessageText(txt, {
+      chat_id: chatId,
+      message_id: session.listMessageId,
+      parse_mode: 'HTML',
+      reply_markup: kb
+    });
+  } catch (e) {
+    try {
+      const msg = await bot.sendMessage(chatId, txt, {
+        parse_mode: 'HTML',
+        reply_markup: kb
+      });
+      session.listMessageId = msg.message_id;
+    } catch (e2) { /* ignore */ }
+  }
+}
+
 // ========== ОНБОРДИНГ ==========
 async function advanceOwnerOnboarding(bot, chatId, shopId) {
   const state = await getOwnerOnboardingState(shopId);
@@ -78,19 +133,19 @@ async function advanceOwnerOnboarding(bot, chatId, shopId) {
   let next = '';
 
   if (state.step === 'add_bouquet') {
-    txt = '🎉 <b>Отлично!</b> Первый букет добавлен.\n\nТеперь проверьте витрину — как её видят клиенты.';
+    txt = '🎉 <b>Отлично!</b> Первый букет добавлен.\n\nТеперь проверьте витрину.';
     next = 'view_shop';
     await bot.sendMessage(chatId, txt, {
       parse_mode: 'HTML',
       reply_markup: { inline_keyboard: [[{ text: '👀 Открыть витрину', url: SITE_URL + '/shop/' + shopId }]] }
     });
   } else if (state.step === 'view_shop') {
-    txt = '✏️ <b>А теперь попробуйте изменить цену</b>\n\nОткройте «✏️ Мои букеты», выберите букет и измените цену.';
+    txt = '✏️ <b>А теперь попробуйте изменить цену</b>\n\nОткройте «✏️ Мои букеты» и измените цену.';
     next = 'edit_price';
     const shop = await getShopFromDb(shopId);
     await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   } else if (state.step === 'edit_price') {
-    txt = '📥 <b>Уберём букет с витрины?</b>\n\nВ карточке букета нажмите «📥 Убрать с витрины».';
+    txt = '📥 <b>Уберём букет с витрины?</b>\n\nВ карточке букета нажмите «📥 Убрать».';
     next = 'hide_bouquet';
     const shop = await getShopFromDb(shopId);
     await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
@@ -100,17 +155,17 @@ async function advanceOwnerOnboarding(bot, chatId, shopId) {
     const shop = await getShopFromDb(shopId);
     await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   } else if (state.step === 'restore_bouquet') {
-    txt = '📦 <b>Отлично!</b>\n\nТеперь загляните в «📦 Склад» — там ваш товар. И заодно проверьте, что витрина выглядит как надо.';
+    txt = '📦 <b>Отлично!</b>\n\nТеперь загляните в «📦 Склад».';
     next = 'check_stock';
     const shop = await getShopFromDb(shopId);
     await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   } else if (state.step === 'check_stock') {
-    txt = '⚙️ <b>Последний шаг — настройки</b>\n\nЗайдите в «⚙️ Настройки» и посмотрите, что можно изменить.';
+    txt = '⚙️ <b>Последний шаг — настройки</b>\n\nЗайдите в «⚙️ Настройки».';
     next = 'settings_tour';
     const shop = await getShopFromDb(shopId);
     await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
   } else if (state.step === 'settings_tour') {
-    txt = '🎉 <b>Обучение завершено!</b>\n\nТеперь вы знаете, как пользоваться Flowind. Если будут вопросы — пишите /help.';
+    txt = '🎉 <b>Обучение завершено!</b>\n\nЕсли будут вопросы — /help.';
     next = 'done';
     await bot.sendMessage(chatId, txt, {
       parse_mode: 'HTML',
@@ -135,11 +190,11 @@ async function advanceFloristOnboarding(bot, chatId, shopId) {
     next = 'check_stock';
     await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(await getShopFromDb(shopId), chatId) });
   } else if (state.step === 'check_stock') {
-    txt = '📦 <b>Склад — это ваша база.</b>\n\nЧтобы получать уведомления о клиентах, нажмите «✅ Я сегодня работаю».';
+    txt = '📦 <b>Склад — это ваша база.</b>\n\nНажмите «✅ Я сегодня работаю».';
     next = 'on_shift';
     await bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: getMainKeyboard(await getShopFromDb(shopId), chatId) });
   } else if (state.step === 'on_shift') {
-    txt = '🎉 <b>Вы готовы к работе!</b>\n\nУведомления будут приходить, когда вы на смене.';
+    txt = '🎉 <b>Вы готовы к работе!</b>\n\nУведомления будут приходить.';
     next = 'done';
     await setFloristOnboardingPassed(chatId, shopId);
     await bot.sendMessage(chatId, txt, {
@@ -174,9 +229,6 @@ async function advanceOnboardingAfter(bot, chatId, shopId, action) {
     console.error('Onboarding error:', e.message);
   }
 }
-// Дополнительные импорты для этой и следующих частей
-const { formatPrice, extractTagsFromName } = require('./config');
-const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID ? Number(process.env.OWNER_CHAT_ID) : null;
 
 // ========== РЕГИСТРАЦИЯ ==========
 async function generateUniqueShopId() {
@@ -194,42 +246,29 @@ async function sendRegistrationStep(bot, chatId, state) {
     return;
   }
   if (state.step === 'country') {
-    const msg = await bot.sendMessage(
-      chatId, cfg.text, buildCountrySelect()
-    );
+    const msg = await bot.sendMessage(chatId, cfg.text, buildCountrySelect());
     state.messageId = msg.message_id;
     return;
   }
   const opts = { parse_mode: 'HTML' };
   if (cfg.skip) {
     opts.reply_markup = {
-      inline_keyboard: [[{ 
-        text: '⏭ Пропустить', callback_data: 'reg_skip' 
-      }]]
+      inline_keyboard: [[{ text: '⏭ Пропустить', callback_data: 'reg_skip' }]]
     };
   }
   const msg = await bot.sendMessage(chatId, cfg.text, opts);
   state.messageId = msg.message_id;
 }
 
-async function startRegistration(
-  bot, chatId, userName, userUsername
-) {
-  const existing = userToShop[chatId] || 
-    await findUserShop(chatId);
-  if (existing) {
-    return sendNav(bot, chatId, '❌ Уже привязаны к магазину.');
-  }
+async function startRegistration(bot, chatId, userName, userUsername) {
+  const existing = userToShop[chatId] || await findUserShop(chatId);
+  if (existing) return sendNav(bot, chatId, '❌ Уже привязаны к магазину.');
+  
   registrationState[chatId] = {
-    step: 'shopId',
-    data: {},
-    messageId: null,
-    userName: userName || null,
-    userUsername: userUsername || null
+    step: 'shopId', data: {}, messageId: null,
+    userName: userName || null, userUsername: userUsername || null
   };
-  await sendRegistrationStep(
-    bot, chatId, registrationState[chatId]
-  );
+  await sendRegistrationStep(bot, chatId, registrationState[chatId]);
 }
 
 async function regGoToNextStep(bot, chatId, state) {
@@ -242,9 +281,7 @@ async function regGoToNextStep(bot, chatId, state) {
 }
 
 async function regSkipCurrentStep(bot, chatId, state) {
-  if (state.step === 'shopId') {
-    state.data.shopId = await generateUniqueShopId();
-  }
+  if (state.step === 'shopId') state.data.shopId = await generateUniqueShopId();
   await regGoToNextStep(bot, chatId, state);
 }
 
@@ -253,31 +290,17 @@ async function regSaveValue(bot, chatId, state, text) {
   const value = text.trim();
 
   if (step === 'shopId') {
-    const clean = value.toLowerCase()
-      .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9_]/g, '');
+    const clean = value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     if (!clean || clean.length < 2) {
-      return bot.sendMessage(chatId, 
-        '❌ Только латинские буквы, цифры и _ ' +
-        '(минимум 2 символа). Попробуйте ещё ' +
-        'раз или нажмите «Пропустить».',
-        { parse_mode: 'HTML' }
-      );
+      return bot.sendMessage(chatId, '❌ Только латинские буквы, цифры и _ (мин. 2).', { parse_mode: 'HTML' });
     }
     if (await getShopFromDb(clean)) {
-      return bot.sendMessage(chatId,
-        '❌ Это имя уже занято. Попробуйте ' +
-        'другое или нажмите «Пропустить».',
-        { parse_mode: 'HTML' }
-      );
+      return bot.sendMessage(chatId, '❌ Имя уже занято.', { parse_mode: 'HTML' });
     }
     state.data.shopId = clean;
   } else if (step === 'displayName') {
     if (value.length < 2 || value.length > 60) {
-      return bot.sendMessage(chatId, 
-        '❌ Название должно быть от 2 до 60 ' +
-        'символов. Попробуйте ещё раз.'
-      );
+      return bot.sendMessage(chatId, '❌ От 2 до 60 символов.');
     }
     state.data.displayName = value;
   } else if (step === 'country') {
@@ -288,53 +311,20 @@ async function regSaveValue(bot, chatId, state, text) {
     state.data.hours = value;
   } else if (step === 'phone') {
     const norm = normalizePhone(value);
-    if (!norm) {
-      return bot.sendMessage(chatId,
-        '❌ Похоже на опечатку. Пришлите ' +
-        'номер целиком.\nНапример: ' +
-        '<i>+7 962 402-51-75</i>\n\n' +
-        'Или нажмите «Пропустить».',
-        { parse_mode: 'HTML' }
-      );
-    }
+    if (!norm) return bot.sendMessage(chatId, '❌ Пришлите номер целиком (+7 962 402-51-75).', { parse_mode: 'HTML' });
     state.data.phone = norm;
   } else if (step === 'telegram') {
     const clean = value.replace(/^@/, '').toLowerCase();
-    if (!/^[a-z0-9_]{3,32}$/.test(clean)) {
-      return bot.sendMessage(chatId,
-        '❌ Юзернейм — только латиница, ' +
-        'цифры, _ (от 3 до 32 символов). ' +
-        'Попробуйте ещё раз или нажмите ' +
-        '«Пропустить».',
-        { parse_mode: 'HTML' }
-      );
-    }
+    if (!/^[a-z0-9_]{3,32}$/.test(clean)) return bot.sendMessage(chatId, '❌ Латиница, цифры, _ (от 3 до 32).');
     state.data.telegramUsername = clean;
   } else if (step === 'whatsapp') {
     const norm = normalizePhone(value);
-    if (!norm) {
-      return bot.sendMessage(chatId,
-        '❌ Похоже на опечатку. Пришлите ' +
-        'номер целиком.\nНапример: ' +
-        '<i>+7 962 402-51-75</i>\n\n' +
-        'Или нажмите «Пропустить».',
-        { parse_mode: 'HTML' }
-      );
-    }
+    if (!norm) return bot.sendMessage(chatId, '❌ Пришлите номер целиком (+7 962 402-51-75).');
     state.data.whatsappPhone = norm;
   } else if (step === 'max') {
-    if (!/^https?:\/\/max\.ru\//.test(value)) {
-      return bot.sendMessage(chatId,
-        '❌ Ссылка должна начинаться с ' +
-        '<code>https://max.ru/u/...</code>\n\n' +
-        'Попробуйте ещё раз или нажмите ' +
-        '«Пропустить».',
-        { parse_mode: 'HTML' }
-      );
-    }
+    if (!/^https?:\/\/max\.ru\//.test(value)) return bot.sendMessage(chatId, '❌ Ссылка должна начинаться с https://max.ru/u/...');
     state.data.maxLink = value;
   }
-
   await regGoToNextStep(bot, chatId, state);
 }
 
@@ -353,30 +343,17 @@ async function regFinish(bot, chatId, state) {
 
   try {
     await createShopInDb({
-      shopId: d.shopId,
-      name: d.shopId,
-      displayName: d.displayName,
-      address: d.address || null,
-      hours: d.hours || null,
-      phone: d.phone || null,
-      telegramUsername: d.telegramUsername || null,
-      whatsappPhone: d.whatsappPhone || null,
-      maxLink: d.maxLink || null,
-      inviteCode,
-      trialStart: now.toISOString(),
-      trialEnd: trialEnd.toISOString(),
+      shopId: d.shopId, name: d.shopId, displayName: d.displayName,
+      address: d.address || null, hours: d.hours || null,
+      phone: d.phone || null, telegramUsername: d.telegramUsername || null,
+      whatsappPhone: d.whatsappPhone || null, maxLink: d.maxLink || null,
+      inviteCode, trialStart: now.toISOString(), trialEnd: trialEnd.toISOString(),
       country: d.country || null,
       settings: {
-        logo: null, cover: null,
-        background: { type: 'preset', id: 1 },
-        buttonColor: 'red',
-        currency: defaultCurrency,
-        markupPercent: 20, aiEnabled: false
+        logo: null, cover: null, background: { type: 'preset', id: 1 },
+        buttonColor: 'red', currency: defaultCurrency, markupPercent: 20, aiEnabled: false
       },
-      stats: { 
-        views: 0, orders: 0, calls: 0, 
-        startedAt: now.toISOString() 
-      }
+      stats: { views: 0, orders: 0, calls: 0, startedAt: now.toISOString() }
     });
     
     await addAdminToDb(chatId, d.shopId, 'owner', userName);
@@ -385,40 +362,22 @@ async function regFinish(bot, chatId, state) {
     await setOwnerOnboardingStep(d.shopId, 'add_bouquet');
 
     delete registrationState[chatId];
-    
-    await bot.sendMessage(
-      chatId, 
-      buildRegFinalText(d.shopId, d.displayName), 
-      { parse_mode: 'HTML' }
-    );
+    await bot.sendMessage(chatId, buildRegFinalText(d.shopId, d.displayName), { parse_mode: 'HTML' });
 
     if (OWNER_CHAT_ID && OWNER_CHAT_ID !== chatId) {
-      const tgRef = state.userUsername 
-        ? '@' + state.userUsername 
-        : 'chat_id ' + chatId;
+      const tgRef = state.userUsername ? '@' + state.userUsername : 'chat_id ' + chatId;
       const link = SITE_URL + '/shop/' + d.shopId;
-      
       let adminTxt = '🎉 <b>Новый магазин!</b>\n\n';
-      adminTxt += '🏪 «' + esc(d.displayName) + '»\n';
-      adminTxt += '🆔 <code>' + esc(d.shopId) + '</code>\n';
-      adminTxt += '👤 ' + esc(userName) + ' (' + esc(tgRef) + ')\n\n';
-      adminTxt += '🔗 ' + link + '\n\n';
-      adminTxt += '<i>Админ-панель — /admin</i>';
-      
-      bot.sendMessage(OWNER_CHAT_ID, adminTxt, { 
-        parse_mode: 'HTML' 
-      }).catch(function(){});
+      adminTxt += '🏪 «' + esc(d.displayName) + '»\n🆔 <code>' + esc(d.shopId) + '</code>\n';
+      adminTxt += '👤 ' + esc(userName) + ' (' + esc(tgRef) + ')\n\n🔗 ' + link;
+      bot.sendMessage(OWNER_CHAT_ID, adminTxt, { parse_mode: 'HTML' }).catch(function(){});
     }
   } catch (e) {
     console.error('Ошибка создания магазина:', e?.message || e);
     delete registrationState[chatId];
-    return bot.sendMessage(chatId, 
-      '❌ Ошибка при создании магазина. ' +
-      'Попробуйте ещё раз /register.'
-    );
+    return bot.sendMessage(chatId, '❌ Ошибка при создании магазина. Попробуйте ещё раз /register.');
   }
 }
-
 // ========== ГЛАВНАЯ ФУНКЦИЯ ПОДКЛЮЧЕНИЯ ==========
 function setupBotHandlers(bot, s3ctx) {
   const {
@@ -488,6 +447,7 @@ function setupBotHandlers(bot, s3ctx) {
 
     delete archiveSessions[chatId];
 
+    // Обработка инвайта
     if (param && param.startsWith('inv_')) {
       const inviteCode = param.replace('inv_', '').toUpperCase();
       const shopId = await getShopByInvite(inviteCode);
@@ -507,16 +467,12 @@ function setupBotHandlers(bot, s3ctx) {
           );
         }
 
-        const existing = await getFloristOnboardingState(
-          chatId, shopId
-        );
+        const existing = await getFloristOnboardingState(chatId, shopId);
         await addAdminToDb(chatId, shopId, 'florist', userName);
         userToShop[chatId] = shopId;
 
         if (!existing || !existing.passed) {
-          await setFloristOnboardingStep(
-            chatId, shopId, 'add_bouquet'
-          );
+          await setFloristOnboardingStep(chatId, shopId, 'add_bouquet');
         }
         
         const updatedShop = await getShopFromDb(shopId);
@@ -538,13 +494,12 @@ function setupBotHandlers(bot, s3ctx) {
 
     let shopId = userToShop[chatId] || await findUserShop(chatId);
 
+    // Автовход для главного админа (владельца бота)
     if (!shopId) {
       if (OWNER_CHAT_ID && chatId === OWNER_CHAT_ID) {
         const presetShop = await getShopFromDb(PRESET_SHOP.shopId);
         if (presetShop && presetShop.admins.length === 0) {
-          await addAdminToDb(
-            chatId, PRESET_SHOP.shopId, 'owner', userName
-          );
+          await addAdminToDb(chatId, PRESET_SHOP.shopId, 'owner', userName);
           await setUserOnShift(chatId, PRESET_SHOP.shopId, true);
           userToShop[chatId] = PRESET_SHOP.shopId;
           shopId = PRESET_SHOP.shopId;
@@ -552,6 +507,7 @@ function setupBotHandlers(bot, s3ctx) {
       }
     }
 
+    // Если магазин найден
     if (shopId) {
       const shop = await getShopFromDb(shopId);
       if (!shop) return bot.sendMessage(chatId, '❌ Магазин не найден.');
@@ -560,13 +516,10 @@ function setupBotHandlers(bot, s3ctx) {
       if (shop.blocked) {
         let blockText = '🚫 <b>Магазин заблокирован</b>\n\n';
         if (shop.blockedReason) {
-          blockText += 'Причина: <i>';
-          blockText += esc(shop.blockedReason) + '</i>\n\n';
+          blockText += 'Причина: <i>' + esc(shop.blockedReason) + '</i>\n\n';
         }
         blockText += 'Для разблокировки напишите: @floop10';
-        return bot.sendMessage(chatId, blockText, { 
-          parse_mode: 'HTML' 
-        });
+        return bot.sendMessage(chatId, blockText, { parse_mode: 'HTML' });
       }
 
       if (!isSubscriptionActive(shop)) {
@@ -577,9 +530,7 @@ function setupBotHandlers(bot, s3ctx) {
         return bot.sendMessage(chatId, subText, {
           parse_mode: 'HTML',
           reply_markup: {
-            inline_keyboard: [[{ 
-              text: '💳 Продлить', callback_data: 'menu_renew' 
-            }]]
+            inline_keyboard: [[{ text: '💳 Продлить', callback_data: 'menu_renew' }]]
           }
         });
       }
@@ -606,6 +557,7 @@ function setupBotHandlers(bot, s3ctx) {
       });
     }
 
+    // Если это новый пользователь без инвайта
     let welcome = '🌸 <b>Добро пожаловать в Flowind!</b>\n\n';
     welcome += 'Это витрина для цветочных магазинов.\n';
     welcome += 'Флорист добавляет букет через бота — ';
@@ -626,6 +578,7 @@ function setupBotHandlers(bot, s3ctx) {
       }
     });
   });
+
   // ====== /ADMIN ======
   bot.onText(/\/admin/, async (msg) => {
     const chatId = msg.chat.id;
@@ -672,9 +625,7 @@ function setupBotHandlers(bot, s3ctx) {
 
   // ====== /REGISTER ======
   bot.onText(/\/register/, async (msg) => {
-    await startRegistration(
-      bot, msg.chat.id, msg.from.first_name, msg.from.username
-    );
+    await startRegistration(bot, msg.chat.id, msg.from.first_name, msg.from.username);
   });
 
   // ====== /MIGRATE ======
@@ -685,16 +636,10 @@ function setupBotHandlers(bot, s3ctx) {
     
     const shop = await getShopFromDb(shopId);
     if (!shop) return;
-    if (!isOwner(shop, chatId)) {
-      return bot.sendMessage(chatId, '🚫 Только владелец.');
-    }
-    if (!S3_ENABLED) {
-      return bot.sendMessage(chatId, '❌ Yandex S3 не настроен.');
-    }
+    if (!isOwner(shop, chatId)) return bot.sendMessage(chatId, '🚫 Только владелец.');
+    if (!S3_ENABLED) return bot.sendMessage(chatId, '❌ Yandex S3 не настроен.');
     
-    await bot.sendMessage(chatId, 
-      '⏳ Начинаю миграцию фото в Yandex S3...'
-    );
+    await bot.sendMessage(chatId, '⏳ Начинаю миграцию фото в Yandex S3...');
     try {
       const { migratePhotosToS3 } = require('./photo-utils');
       const r = await migratePhotosToS3(shopId, bot, s3ctx);
@@ -704,13 +649,11 @@ function setupBotHandlers(bot, s3ctx) {
       txt += '❌ Ошибок: <b>' + r.failed + '</b>';
       return bot.sendMessage(chatId, txt, { parse_mode: 'HTML' });
     } catch (e) {
-      return bot.sendMessage(chatId, 
-        '❌ Ошибка во время миграции. Проверьте логи.'
-      );
+      return bot.sendMessage(chatId, '❌ Ошибка во время миграции. Проверьте логи.');
     }
   });
 
-  // ====== MESSAGE ======
+// ====== MESSAGE ======
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
@@ -796,8 +739,6 @@ function setupBotHandlers(bot, s3ctx) {
       if (!query) {
         return sendNav(bot, chatId, '❌ Пустой запрос.');
       }
-      const { renderSearchResults } = require('./bot-ui');
-      const { searchBouquets } = require('./db-actions');
       const res = await searchBouquets(shopId, query);
       return renderSearchResults(
         bot, chatId, shopId, query, res.results
@@ -1045,11 +986,10 @@ function setupBotHandlers(bot, s3ctx) {
       if (!isSubscriptionActive(shop)) {
         return sendNav(bot, chatId, '❌ Подписка истекла.');
       }
-      const { CHECK_SESSION_TTL } = require('./bot-ui');
       const existing = checkSessions[chatId];
       if (existing && 
           (Date.now() - (existing.lastActivity || 0)) < 
-          CHECK_SESSION_TTL) {
+          60 * 60 * 1000) {
         existing.lastActivity = Date.now();
         const t = buildCheckListText(existing);
         const kb = { 
@@ -1086,7 +1026,6 @@ function setupBotHandlers(bot, s3ctx) {
         bot, chatId, '⚙️ Настройки магазина:', 
         getSettingsMenu(shop, chatId)
       );
-      const { getOwnerOnboardingState } = require('./db-actions');
       const ownerState = await getOwnerOnboardingState(shopId);
       if (ownerState && !ownerState.passed && 
           ownerState.step === 'settings_tour') {
@@ -1192,8 +1131,6 @@ function setupBotHandlers(bot, s3ctx) {
 
     // 2. Добавление нового букета (с подписью)
     if (caption) {
-      const { parseCaption, buildParseErrorText, computeAllTags } = 
-        require('./config');
       const parsed = parseCaption(caption);
       
       if (!parsed.ok) {
@@ -1218,12 +1155,12 @@ function setupBotHandlers(bot, s3ctx) {
       }
 
       // Перенос кликов со старого удаленного букета с таким же названием
-      const norm = require('./config').normalizeName(finalName);
+      const norm = normalizeName(finalName);
       const all = await getBouquetsFromDb(shopId, true);
       let archivedClicks = 0;
       
       for (const old of all) {
-        if (old.deleted && require('./config').normalizeName(old.name) === norm) {
+        if (old.deleted && normalizeName(old.name) === norm) {
           archivedClicks += (old.clicks || 0);
         }
       }
@@ -1337,7 +1274,6 @@ function setupBotHandlers(bot, s3ctx) {
     
     bot.answerCallbackQuery(q.id).catch(function(){});
 
-    const { CHECK_SESSION_TTL } = require('./bot-ui');
     if (checkSessions[chatId]) {
       checkSessions[chatId].lastActivity = Date.now();
     }
@@ -1605,7 +1541,6 @@ function setupBotHandlers(bot, s3ctx) {
     
     if (data.startsWith('mb_active_')) {
       const page = parseInt(data.replace('mb_active_', '')) || 0;
-      const { showActiveBouquetsList } = require('./bot-ui');
       return showActiveBouquetsList(
         bot, chatId, shopId, page, q.message.message_id
       );
@@ -1620,7 +1555,7 @@ function setupBotHandlers(bot, s3ctx) {
         return sendNav(bot, chatId, '⚠️ Поиск устарел.');
       }
       const hidden = session.results.filter(
-        b => b.hidden || !require('./config').isConfirmedRecently(b)
+        b => b.hidden || !isConfirmedRecently(b)
       );
       if (hidden.length === 0) {
         return bot.answerCallbackQuery(q.id, { 
@@ -1641,7 +1576,6 @@ function setupBotHandlers(bot, s3ctx) {
       }).catch(function(){});
       bot.deleteMessage(chatId, q.message.message_id)
         .catch(function(){});
-      const { renderSearchResults } = require('./bot-ui');
       return renderSearchResults(
         bot, chatId, shopId, session.query, session.results
       );
@@ -1652,7 +1586,6 @@ function setupBotHandlers(bot, s3ctx) {
       if (!id || isNaN(id)) return;
       const b = await getBouquetById(shopId, id);
       if (!b) return sendNav(bot, chatId, '❌ Букет не найден.');
-      const { showBouquetCard } = require('./bot-ui');
       return showBouquetCard(bot, chatId, b, shopId);
     }
 
@@ -1704,12 +1637,6 @@ function setupBotHandlers(bot, s3ctx) {
     }
 
     // ====== АРХИВ ======
-    const { 
-      showArchiveList, 
-      showArchiveItemCard, 
-      showArchiveCard 
-    } = require('./bot-ui');
-    
     if (data === 'arch_mode_list') {
       const arch = await getArchivedBouquets(shopId);
       if (arch.length === 0) {
@@ -1930,63 +1857,12 @@ function setupBotHandlers(bot, s3ctx) {
       
       bot.deleteMessage(chatId, q.message.message_id)
         .catch(function(){});
-      const { showBouquetList } = require('./bot-ui');
       return showBouquetList(
         bot, chatId, shopId, action, headers[action] || '', page
       );
     }
 
     if (data === 'noop') return;
-    // ========== ОБНОВЛЕНИЕ СПИСКА ПРОВЕРКИ ==========
-    async function refreshCheckList(bot, chatId, session) {
-      const total = session.bouquets.length;
-      const done = Object.keys(session.checked).length;
-      
-      if (done >= total) {
-        delete checkSessions[chatId];
-        const word = plural(total, 'букет', 'букета', 'букетов');
-        try {
-          await bot.editMessageText(
-            '🎉 <b>Проверка завершена!</b>\n\n' +
-            'Все ' + total + ' ' + word + ' проверены.',
-            {
-              chat_id: chatId,
-              message_id: session.listMessageId,
-              parse_mode: 'HTML'
-            }
-          );
-        } catch (e) {
-          bot.sendMessage(chatId,
-            '🎉 Проверка завершена! Все ' + total + ' букетов проверены.',
-            { parse_mode: 'HTML' }
-          ).catch(function(){});
-        }
-        return;
-      }
-      
-      const txt = buildCheckListText(session);
-      const kb = {
-        inline_keyboard: buildCheckListKeyboard(session)
-      };
-      
-      try {
-        await bot.editMessageText(txt, {
-          chat_id: chatId,
-          message_id: session.listMessageId,
-          parse_mode: 'HTML',
-          reply_markup: kb
-        });
-      } catch (e) {
-        try {
-          const msg = await bot.sendMessage(chatId, txt, {
-            parse_mode: 'HTML',
-            reply_markup: kb
-          });
-          session.listMessageId = msg.message_id;
-        } catch (e2) { /* ignore */ }
-      }
-    }
-
     if (data === 'menu_close') {
       delete checkSessions[chatId];
       delete archiveSessions[chatId];
@@ -2035,7 +1911,7 @@ function setupBotHandlers(bot, s3ctx) {
           field: 'address'
         },
         hours: {
-          q: '🕐 Введите новые <b>часы работы</b>.\nПример: <i>Пн-Вс 10:00-21:00</i>',
+          q: '🕐 Введите новые <b>часы работы</b>.\nПример: <i>10:00-21:00</i>',
           field: 'hours'
         },
         phone: {
@@ -2064,9 +1940,7 @@ function setupBotHandlers(bot, s3ctx) {
     }
 
     // ========== ВАЛЮТА ==========
-    const {
-      getShopCurrency, findCurrencyByCode, CURRENCY_LIST
-    } = require('./config');
+    const { getShopCurrency, findCurrencyByCode, CURRENCY_LIST } = require('./config');
 
     if (data === 'menu_currency') {
       if (!owner) return;
@@ -2135,12 +2009,8 @@ function setupBotHandlers(bot, s3ctx) {
     // ========== КОМАНДА ==========
     if (data === 'menu_invite') {
       if (!owner) return;
-      const link = 'https://t.me/' + BOT_USERNAME + 
-        '?start=inv_' + shop.inviteCode;
-      return bot.sendMessage(chatId,
-        '🔑 Ссылка-приглашение:\n\n' + link +
-        '\n\nОтправьте её флористу.'
-      );
+      const link = 'https://t.me/' + BOT_USERNAME + '?start=inv_' + shop.inviteCode;
+      return bot.sendMessage(chatId, '🔑 Ссылка-приглашение:\n\n' + link + '\n\nОтправьте её флористу.');
     }
     
     if (data === 'menu_team') {
@@ -2148,35 +2018,22 @@ function setupBotHandlers(bot, s3ctx) {
       const others = shop.admins.filter(a => a.chatId !== chatId);
       
       if (others.length === 0) {
-        return bot.sendMessage(chatId,
-          '👥 <b>Команда магазина</b>\n\nПока только вы.',
-          {
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [[{ 
-                text: '↩️ Назад', callback_data: 'menu_back' 
-              }]]
-            }
-          }
-        );
+        return bot.sendMessage(chatId, '👥 <b>Команда</b>\n\nПока только вы.', {
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] }
+        });
       }
       
       const keyboard = others.map(a => {
         const dot = a.onShift ? '🟢' : '⚪';
-        return [{
-          text: dot + ' ' + (a.name || 'Флорист'),
-          callback_data: 'team_user_' + a.chatId
-        }];
+        return [{ text: dot + ' ' + (a.name || 'Флорист'), callback_data: 'team_user_' + a.chatId }];
       });
       keyboard.push([{ text: '↩️ Назад', callback_data: 'menu_back' }]);
       
-      return bot.sendMessage(chatId,
-        '👥 <b>Команда магазина</b> (' + others.length + ')',
-        {
-          parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: keyboard }
-        }
-      );
+      return bot.sendMessage(chatId, '👥 <b>Команда</b> (' + others.length + ')', {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: keyboard }
+      });
     }
     
     if (data.startsWith('team_user_')) {
@@ -2187,18 +2044,14 @@ function setupBotHandlers(bot, s3ctx) {
       
       const statusText = target.onShift ? '🟢 На смене' : '⚪ Выходной';
       let info = '🌸 <b>' + esc(target.name || 'Флорист') + '</b>\n\n';
-      info += 'Статус: ' + statusText + '\n';
-      info += 'Присоединился: ';
+      info += 'Статус: ' + statusText + '\nПрисоединился: ';
       info += new Date(target.joinedAt).toLocaleDateString();
       
       return bot.sendMessage(chatId, info, {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
-            [{
-              text: '🗑 Удалить доступ',
-              callback_data: 'kick_' + targetChatId
-            }],
+            [{ text: '🗑 Удалить доступ', callback_data: 'kick_' + targetChatId }],
             [{ text: '↩️ Назад', callback_data: 'menu_team' }]
           ]
         }
@@ -2211,10 +2064,7 @@ function setupBotHandlers(bot, s3ctx) {
       return bot.sendMessage(chatId, '⚠️ Удалить доступ?', {
         reply_markup: {
           inline_keyboard: [
-            [{
-              text: '🗑 Да',
-              callback_data: 'confirmkick_' + targetChatId
-            }],
+            [{ text: '🗑 Да', callback_data: 'confirmkick_' + targetChatId }],
             [{ text: '↩️ Отмена', callback_data: 'menu_team' }]
           ]
         }
@@ -2231,19 +2081,14 @@ function setupBotHandlers(bot, s3ctx) {
       delete userToShop[targetChatId];
       
       bot.editMessageText('✅ Доступ для «' + name + '» удалён.', {
-        chat_id: chatId,
-        message_id: q.message.message_id
+        chat_id: chatId, message_id: q.message.message_id
       }).catch(function(){});
       
-      bot.sendMessage(targetChatId,
-        '🚫 Ваш доступ к витрине «' + shop.displayName + '» удалён.'
-      ).catch(function(){});
+      bot.sendMessage(targetChatId, '🚫 Ваш доступ к витрине «' + shop.displayName + '» удалён.').catch(function(){});
       return;
     }
 
     // ========== СТАТИСТИКА ==========
-    const { normalizeName } = require('./config');
-
     if (data === 'menu_stats') {
       if (!owner) return;
       const all = await getBouquetsFromDb(shopId, true);
@@ -2252,50 +2097,28 @@ function setupBotHandlers(bot, s3ctx) {
       for (const b of all) {
         const key = normalizeName(b.name);
         if (!key) continue;
-        if (!clickMap[key]) {
-          clickMap[key] = { name: b.name, clicks: 0, hasActive: false };
-        }
+        if (!clickMap[key]) clickMap[key] = { name: b.name, clicks: 0, hasActive: false };
         clickMap[key].clicks += (b.clicks || 0);
-        if (!b.deleted) {
-          clickMap[key].name = b.name;
-          clickMap[key].hasActive = true;
-        }
+        if (!b.deleted) { clickMap[key].name = b.name; clickMap[key].hasActive = true; }
       }
       
-      const top = Object.values(clickMap)
-        .filter(x => x.clicks > 0)
-        .sort((a, b) => b.clicks - a.clicks)
-        .slice(0, 5);
-        
+      const top = Object.values(clickMap).filter(x => x.clicks > 0).sort((a, b) => b.clicks - a.clicks).slice(0, 5);
       const stats = shop.stats;
-      const orders = stats.orders || 0;
-      const calls = stats.calls || 0;
-      const total = orders + calls;
+      const orders = stats.orders || 0; const calls = stats.calls || 0; const total = orders + calls;
       
       let txt = '📊 <b>Статистика</b>\n\n';
-      txt += '📩 Хотели написать: <b>' + orders + '</b>\n';
-      txt += '📞 Хотели позвонить: <b>' + calls + '</b>\n';
-      txt += '📈 Всего заявок: <b>' + total + '</b>\n';
-      txt += '\n<i>Здесь только реальные клики клиентов.</i>\n';
+      txt += '📩 Хотели написать: <b>' + orders + '</b>\n📞 Хотели позвонить: <b>' + calls + '</b>\n📈 Всего заявок: <b>' + total + '</b>\n\n';
       
       if (top.length > 0) {
-        txt += '\n🔥 <b>Топ-5 по заявкам:</b>\n';
+        txt += '🔥 <b>Топ-5 по заявкам:</b>\n';
         for (let i = 0; i < top.length; i++) {
-          const x = top[i];
-          const medal = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][i];
-          const mark = x.hasActive ? '' : ' (архив)';
-          txt += medal + ' ' + esc(x.name) + ' — ';
-          txt += x.clicks + mark + '\n';
+          const x = top[i]; const medal = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][i]; const mark = x.hasActive ? '' : ' (архив)';
+          txt += medal + ' ' + esc(x.name) + ' — ' + x.clicks + mark + '\n';
         }
-      } else {
-        txt += '\n<i>Пока ни одной заявки. Поделитесь ссылкой!</i>';
-      }
+      } else { txt += '<i>Пока ни одной заявки.</i>'; }
       
       return bot.sendMessage(chatId, txt, {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]]
-        }
+        parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] }
       });
     }
 
@@ -2303,29 +2126,16 @@ function setupBotHandlers(bot, s3ctx) {
     if (data === 'menu_markup') {
       if (!owner) return;
       const current = shop.settings.markupPercent || 0;
-      let txt = '💰 <b>Наценка</b>\n\nСейчас: <b>';
-      txt += current + '%</b>\n\n';
-      if (current === 0) {
-        txt += 'При 0% витрина показывает одну цену.';
-      } else {
-        txt += 'Пример: 1000 → <s>';
-        txt += calculateOldPrice(1000, current) + '</s> <b>1000</b>';
-      }
+      let txt = '💰 <b>Наценка</b>\n\nСейчас: <b>' + current + '%</b>\n\n';
+      if (current === 0) txt += 'При 0% витрина показывает одну цену.';
+      else txt += 'Пример: 1000 → <s>' + calculateOldPrice(1000, current) + '</s> <b>1000</b>';
       
       return bot.sendMessage(chatId, txt, {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
-            [
-              { text: '0%', callback_data: 'markup_set_0' },
-              { text: '10%', callback_data: 'markup_set_10' },
-              { text: '15%', callback_data: 'markup_set_15' }
-            ],
-            [
-              { text: '20%', callback_data: 'markup_set_20' },
-              { text: '30%', callback_data: 'markup_set_30' },
-              { text: '50%', callback_data: 'markup_set_50' }
-            ],
+            [{ text: '0%', callback_data: 'markup_set_0' }, { text: '10%', callback_data: 'markup_set_10' }, { text: '15%', callback_data: 'markup_set_15' }],
+            [{ text: '20%', callback_data: 'markup_set_20' }, { text: '30%', callback_data: 'markup_set_30' }, { text: '50%', callback_data: 'markup_set_50' }],
             [{ text: '✏️ Своё', callback_data: 'markup_custom' }],
             [{ text: '↩️ Назад', callback_data: 'menu_back' }]
           ]
@@ -2338,14 +2148,9 @@ function setupBotHandlers(bot, s3ctx) {
       const percent = parseInt(data.replace('markup_set_', ''));
       shop.settings.markupPercent = percent;
       await saveShopSettings(shopId, shop.settings);
-      
       bot.editMessageText('✅ <b>Наценка: ' + percent + '%</b>', {
-        chat_id: chatId,
-        message_id: q.message.message_id,
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]]
-        }
+        chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] }
       }).catch(function(){});
       return;
     }
@@ -2353,13 +2158,9 @@ function setupBotHandlers(bot, s3ctx) {
     if (data === 'markup_custom') {
       if (!owner) return;
       awaitingMarkup[chatId] = true;
-      return bot.sendMessage(chatId,
-        '💰 Напишите процент числом (0–200).\n<i>Отмена — /cancel</i>',
-        {
-          parse_mode: 'HTML',
-          reply_markup: getMainKeyboard(shop, chatId)
-        }
-      );
+      return bot.sendMessage(chatId, '💰 Напишите процент числом (0–200).\n<i>Отмена — /cancel</i>', {
+        parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId)
+      });
     }
 
     // ========== СТАТУС ==========
@@ -2371,115 +2172,73 @@ function setupBotHandlers(bot, s3ctx) {
       const myShift = me && me.onShift ? '🟢 На смене' : '⚪ Не на смене';
       
       let txt = '📋 <b>' + esc(shop.displayName) + '</b>\n\n';
-      txt += '👤 ' + myRole + ' · ' + myShift + '\n';
-      txt += '👥 Команда: ' + shop.admins.length + '\n';
-      txt += '📦 Букетов: ' + active + '\n';
-      txt += '💰 Наценка: ' + shop.settings.markupPercent + '%\n';
-      txt += '📅 Триал: ' + days + ' дней';
+      txt += '👤 ' + myRole + ' · ' + myShift + '\n👥 Команда: ' + shop.admins.length + '\n';
+      txt += '📦 Букетов: ' + active + '\n💰 Наценка: ' + shop.settings.markupPercent + '%\n📅 Триал: ' + days + ' дней';
       
-      const kb = owner
-        ? { inline_keyboard: [[{ 
-            text: '↩️ Назад', callback_data: 'menu_back' 
-          }]] }
-        : { inline_keyboard: [[{ 
-            text: '❌ Закрыть', callback_data: 'menu_close' 
-          }]] };
-        
-      return bot.sendMessage(chatId, txt, {
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
+      const kb = owner ? { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } : { inline_keyboard: [[{ text: '❌ Закрыть', callback_data: 'menu_close' }]] };
+      return bot.sendMessage(chatId, txt, { parse_mode: 'HTML', reply_markup: kb });
     }
     
     if (data === 'menu_renew') {
-      return bot.sendMessage(chatId, '💳 Продление: @floop10', {
-        reply_markup: {
-          inline_keyboard: [[{ 
-            text: '↩️ Назад', callback_data: 'menu_back' 
-          }]]
-        }
-      });
+      return bot.sendMessage(chatId, '💳 Продление: @floop10', { reply_markup: { inline_keyboard: [[{ text: '↩️ Назад', callback_data: 'menu_back' }]] } });
     }
 
     // ========== ВИЗУАЛ ==========
-    const {
-      findColorById, findPresetById, 
-      isPresetBackground, hasAnyBackground, hasAnyLogo
-    } = require('./storefront');
+    const { findColorById, findPresetById, isPresetBackground, hasAnyBackground } = require('./storefront');
 
     if (data === 'menu_logo') {
       if (!owner) return;
-      const cur = shop.settings.logo 
-        ? '🎨 Логотип установлен.' 
-        : '🎨 Логотип не установлен.';
+      const cur = shop.settings.logo ? '🎨 Логотип установлен.' : '🎨 Логотип не установлен.';
       return bot.sendMessage(chatId, cur, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '📷 Загрузить', callback_data: 'setlogo_now' }],
-            [{ text: '🗑 Убрать', callback_data: 'resetlogo_now' }],
-            [{ text: '↩️ Назад', callback_data: 'menu_back' }]
-          ]
-        }
+        reply_markup: { inline_keyboard: [
+          [{ text: '📷 Загрузить', callback_data: 'setlogo_now' }],
+          [{ text: '🗑 Убрать', callback_data: 'resetlogo_now' }],
+          [{ text: '↩️ Назад', callback_data: 'menu_back' }]
+        ] }
       });
     }
     
     if (data === 'menu_cover') {
       if (!owner) return;
-      const cur = shop.settings.cover 
-        ? '🖼 Обложка установлена.' 
-        : '🖼 Обложка не установлена.';
+      const cur = shop.settings.cover ? '🖼 Обложка установлена.' : '🖼 Обложка не установлена.';
       return bot.sendMessage(chatId, cur, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '📷 Загрузить', callback_data: 'setcover_now' }],
-            [{ text: '🗑 Убрать', callback_data: 'resetcover_now' }],
-            [{ text: '↩️ Назад', callback_data: 'menu_back' }]
-          ]
-        }
+        reply_markup: { inline_keyboard: [
+          [{ text: '📷 Загрузить', callback_data: 'setcover_now' }],
+          [{ text: '🗑 Убрать', callback_data: 'resetcover_now' }],
+          [{ text: '↩️ Назад', callback_data: 'menu_back' }]
+        ] }
       });
     }
     
     if (data === 'setcover_now') {
       if (!owner) return;
       awaitingUpload[chatId] = 'cover';
-      return bot.sendMessage(chatId,
-        '📷 Отправьте картинку для обложки.\n\n' +
-        '<i>Рекомендуем горизонтальное фото. Ширина от 800 px.</i>',
-        { parse_mode: 'HTML' }
-      );
+      return bot.sendMessage(chatId, '📷 Отправьте картинку для обложки.\n\n<i>Горизонтальное фото, от 800 px.</i>', { parse_mode: 'HTML' });
     }
     
     if (data === 'resetcover_now') {
       if (!owner) return;
       shop.settings.cover = null;
       await saveShopSettings(shopId, shop.settings);
-      bot.editMessageText('✅ Обложка убрана.', {
-        chat_id: chatId,
-        message_id: q.message.message_id
-      }).catch(function(){});
+      bot.editMessageText('✅ Обложка убрана.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
       return;
     }
     
     if (data === 'menu_background') {
       if (!owner) return;
       let curText = '🖼 Фон не установлен.';
-      
       if (isPresetBackground(shop.settings.background)) {
         const p = findPresetById(shop.settings.background.id);
         if (p) curText = '🖼 Сейчас: ' + p.emoji + ' ' + p.name;
-      } else if (hasAnyBackground(shop)) {
-        curText = '🖼 Свой фон установлен.';
-      }
+      } else if (hasAnyBackground(shop)) { curText = '🖼 Свой фон установлен.'; }
       
       return bot.sendMessage(chatId, curText, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🎨 Выбрать из готовых', callback_data: 'bg_presets' }],
-            [{ text: '📷 Загрузить свой', callback_data: 'setbg_now' }],
-            [{ text: '🗑 Убрать фон', callback_data: 'resetbg_now' }],
-            [{ text: '↩️ Назад', callback_data: 'menu_back' }]
-          ]
-        }
+        reply_markup: { inline_keyboard: [
+          [{ text: '🎨 Выбрать из готовых', callback_data: 'bg_presets' }],
+          [{ text: '📷 Загрузить свой', callback_data: 'setbg_now' }],
+          [{ text: '🗑 Убрать фон', callback_data: 'resetbg_now' }],
+          [{ text: '↩️ Назад', callback_data: 'menu_back' }]
+        ] }
       });
     }
     
@@ -2492,28 +2251,17 @@ function setupBotHandlers(bot, s3ctx) {
       for (let i = 0; i < PRESET_BACKGROUNDS.length; i += 2) {
         const row = [];
         const b1 = PRESET_BACKGROUNDS[i];
-        row.push({
-          text: b1.emoji + ' ' + b1.id + '. ' + b1.name,
-          callback_data: 'bg_view_' + b1.id
-        });
+        row.push({ text: b1.emoji + ' ' + b1.id + '. ' + b1.name, callback_data: 'bg_view_' + b1.id });
         if (i + 1 < PRESET_BACKGROUNDS.length) {
           const b2 = PRESET_BACKGROUNDS[i + 1];
-          row.push({
-            text: b2.emoji + ' ' + b2.id + '. ' + b2.name,
-            callback_data: 'bg_view_' + b2.id
-          });
+          row.push({ text: b2.emoji + ' ' + b2.id + '. ' + b2.name, callback_data: 'bg_view_' + b2.id });
         }
         rows.push(row);
       }
       rows.push([{ text: '⬅️ Назад', callback_data: 'menu_background' }]);
       
       try {
-        await bot.editMessageText(txt, {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: rows }
-        });
+        await bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } });
       } catch (e) { /* ignore */ }
       return;
     }
@@ -2523,20 +2271,14 @@ function setupBotHandlers(bot, s3ctx) {
       const pid = parseInt(data.replace('bg_view_', ''));
       const preset = findPresetById(pid);
       if (!preset) return;
-      
       let txt = preset.emoji + ' <b>' + preset.name + '</b>\n\nПрименить?';
-      
       try {
         await bot.editMessageText(txt, {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '✅ Применить', callback_data: 'bg_apply_' + pid }],
-              [{ text: '⬅️ Выбрать другой', callback_data: 'bg_presets' }]
-            ]
-          }
+          chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: [
+            [{ text: '✅ Применить', callback_data: 'bg_apply_' + pid }],
+            [{ text: '⬅️ Выбрать другой', callback_data: 'bg_presets' }]
+          ] }
         });
       } catch (e) { /* ignore */ }
       return;
@@ -2547,20 +2289,12 @@ function setupBotHandlers(bot, s3ctx) {
       const pid = parseInt(data.replace('bg_apply_', ''));
       const preset = findPresetById(pid);
       if (!preset) return;
-      
       shop.settings.background = { type: 'preset', id: pid };
       await saveShopSettings(shopId, shop.settings);
-      
-      let txt = '✅ Фон применён!\n\n' + preset.emoji + ' ' + preset.name;
-      
       try {
-        await bot.editMessageText(txt, {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [[{ text: '🏠 Готово', callback_data: 'menu_close' }]]
-          }
+        await bot.editMessageText('✅ Фон применён!\n\n' + preset.emoji + ' ' + preset.name, {
+          chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: [[{ text: '🏠 Готово', callback_data: 'menu_close' }]] }
         });
       } catch (e) { /* ignore */ }
       return;
@@ -2582,10 +2316,7 @@ function setupBotHandlers(bot, s3ctx) {
       if (!owner) return;
       shop.settings.logo = null;
       await saveShopSettings(shopId, shop.settings);
-      bot.editMessageText('✅ Логотип убран.', {
-        chat_id: chatId,
-        message_id: q.message.message_id
-      }).catch(function(){});
+      bot.editMessageText('✅ Логотип убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
       return;
     }
     
@@ -2593,10 +2324,7 @@ function setupBotHandlers(bot, s3ctx) {
       if (!owner) return;
       shop.settings.background = null;
       await saveShopSettings(shopId, shop.settings);
-      bot.editMessageText('✅ Фон убран.', {
-        chat_id: chatId,
-        message_id: q.message.message_id
-      }).catch(function(){});
+      bot.editMessageText('✅ Фон убран.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
       return;
     }
 
@@ -2605,37 +2333,24 @@ function setupBotHandlers(bot, s3ctx) {
       if (!owner) return;
       const current = shop.settings.buttonColor || 'red';
       const curObj = findColorById(current) || findColorById('red');
-      
-      let txt = '🔘 <b>Цвет кнопки</b>\n\n';
-      txt += 'Сейчас: ' + curObj.emoji + ' ' + curObj.name + '\n\n';
+      let txt = '🔘 <b>Цвет кнопки</b>\n\nСейчас: ' + curObj.emoji + ' ' + curObj.name + '\n\n';
       
       const { BUTTON_COLORS } = require('./storefront');
       const rows = [];
       for (let i = 0; i < BUTTON_COLORS.length; i += 2) {
         const row = [];
         const c1 = BUTTON_COLORS[i];
-        row.push({
-          text: c1.emoji + ' ' + c1.name,
-          callback_data: 'btncol_view_' + c1.id
-        });
+        row.push({ text: c1.emoji + ' ' + c1.name, callback_data: 'btncol_view_' + c1.id });
         if (i + 1 < BUTTON_COLORS.length) {
           const c2 = BUTTON_COLORS[i + 1];
-          row.push({
-            text: c2.emoji + ' ' + c2.name,
-            callback_data: 'btncol_view_' + c2.id
-          });
+          row.push({ text: c2.emoji + ' ' + c2.name, callback_data: 'btncol_view_' + c2.id });
         }
         rows.push(row);
       }
       rows.push([{ text: '↩️ Назад', callback_data: 'menu_back' }]);
       
       try {
-        await bot.editMessageText(txt, {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: rows }
-        });
+        await bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } });
       } catch (e) { /* ignore */ }
       return;
     }
@@ -2645,20 +2360,14 @@ function setupBotHandlers(bot, s3ctx) {
       const cid = data.replace('btncol_view_', '');
       const col = findColorById(cid);
       if (!col) return;
-      
       let txt = col.emoji + ' <b>' + col.name + '</b>\n\nПрименить?';
-      
       try {
         await bot.editMessageText(txt, {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '✅ Применить', callback_data: 'btncol_apply_' + cid }],
-              [{ text: '⬅️ Выбрать другой', callback_data: 'menu_buttoncolor' }]
-            ]
-          }
+          chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: [
+            [{ text: '✅ Применить', callback_data: 'btncol_apply_' + cid }],
+            [{ text: '⬅️ Выбрать другой', callback_data: 'menu_buttoncolor' }]
+          ] }
         });
       } catch (e) { /* ignore */ }
       return;
@@ -2669,20 +2378,12 @@ function setupBotHandlers(bot, s3ctx) {
       const cid = data.replace('btncol_apply_', '');
       const col = findColorById(cid);
       if (!col) return;
-      
       shop.settings.buttonColor = cid;
       await saveShopSettings(shopId, shop.settings);
-      
-      let txt = '✅ Цвет обновлён!\n\n' + col.emoji + ' ' + col.name;
-      
       try {
-        await bot.editMessageText(txt, {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [[{ text: '🏠 Готово', callback_data: 'menu_close' }]]
-          }
+        await bot.editMessageText('✅ Цвет обновлён!\n\n' + col.emoji + ' ' + col.name, {
+          chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: [[{ text: '🏠 Готово', callback_data: 'menu_close' }]] }
         });
       } catch (e) { /* ignore */ }
       return;
@@ -2692,60 +2393,36 @@ function setupBotHandlers(bot, s3ctx) {
     if (data === 'check_start') {
       const bouquets = await getCheckableBouquets(shopId);
       if (bouquets.length === 0) {
-        bot.editMessageText('🌿 На витрине нет букетов.', {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          parse_mode: 'HTML'
-        }).catch(function(){});
+        bot.editMessageText('🌿 На витрине нет букетов.', { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML' }).catch(function(){});
         return;
       }
       
       checkSessions[chatId] = {
-        shopId,
-        bouquets,
-        checked: {},
-        order: [],
-        listMessageId: q.message.message_id,
-        currentPage: 0,
-        lastActivity: Date.now()
+        shopId, bouquets, checked: {}, order: [],
+        listMessageId: q.message.message_id, currentPage: 0, lastActivity: Date.now()
       };
       
       const session = checkSessions[chatId];
       const txt = buildCheckListText(session);
       const kb = { inline_keyboard: buildCheckListKeyboard(session) };
       
-      bot.editMessageText(txt, {
-        chat_id: chatId,
-        message_id: q.message.message_id,
-        parse_mode: 'HTML',
-        reply_markup: kb
-      }).catch(function(){});
-      
+      bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: kb }).catch(function(){});
       await advanceOnboardingAfter(bot, chatId, shopId, 'check_stock');
       return;
     }
 
     if (data === 'check_cancel') {
       delete checkSessions[chatId];
-      bot.editMessageText('❌ Проверка отменена.', {
-        chat_id: chatId,
-        message_id: q.message.message_id
-      }).catch(function(){});
+      bot.editMessageText('❌ Проверка отменена.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
       return;
     }
 
     if (data === 'check_finish') {
       delete checkSessions[chatId];
       try {
-        await bot.editMessageText('✅ Проверка завершена.', {
-          chat_id: chatId,
-          message_id: q.message.message_id,
-          reply_markup: getMainKeyboard(shop, chatId)
-        });
+        await bot.editMessageText('✅ Проверка завершена.', { chat_id: chatId, message_id: q.message.message_id, reply_markup: getMainKeyboard(shop, chatId) });
       } catch (e) {
-        bot.sendMessage(chatId, '✅ Проверка завершена.', {
-          reply_markup: getMainKeyboard(shop, chatId)
-        }).catch(function(){});
+        bot.sendMessage(chatId, '✅ Проверка завершена.', { reply_markup: getMainKeyboard(shop, chatId) }).catch(function(){});
       }
       await advanceOnboardingAfter(bot, chatId, shopId, 'check_stock');
       return;
@@ -2754,10 +2431,7 @@ function setupBotHandlers(bot, s3ctx) {
     if (data.startsWith('check_page_')) {
       const session = checkSessions[chatId];
       if (!session) {
-        bot.editMessageText('⚠️ Сессия истекла. Начните заново.', {
-          chat_id: chatId,
-          message_id: q.message.message_id
-        }).catch(function(){});
+        bot.editMessageText('⚠️ Сессия истекла. Начните заново.', { chat_id: chatId, message_id: q.message.message_id }).catch(function(){});
         return;
       }
       const newPage = parseInt(data.replace('check_page_', ''));
@@ -2766,13 +2440,7 @@ function setupBotHandlers(bot, s3ctx) {
       
       const txt = buildCheckListText(session);
       const kb = { inline_keyboard: buildCheckListKeyboard(session) };
-      
-      bot.editMessageText(txt, {
-        chat_id: chatId,
-        message_id: q.message.message_id,
-        parse_mode: 'HTML',
-        reply_markup: kb
-      }).catch(function(){});
+      bot.editMessageText(txt, { chat_id: chatId, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: kb }).catch(function(){});
       return;
     }
 
@@ -2787,11 +2455,8 @@ function setupBotHandlers(bot, s3ctx) {
       session.currentBouquetId = id;
       session.lastActivity = Date.now();
       const already = session.checked[id];
-      const headerText = already
-        ? '📷 <b>Проверка (уже отмечен)</b>'
-        : '📷 <b>Проверка наличия</b>';
+      const headerText = already ? '📷 <b>Проверка (уже отмечен)</b>' : '📷 <b>Проверка наличия</b>';
         
-      const { sendBouquetPreview } = require('./bot-ui');
       return sendBouquetPreview(bot, chatId, b, headerText, [
         [{ text: '✅ Есть', callback_data: 'check_yes_' + b.id }],
         [{ text: '📥 Убрать', callback_data: 'check_no_' + b.id }],
@@ -2808,16 +2473,10 @@ function setupBotHandlers(bot, s3ctx) {
     if (data.startsWith('check_yes_')) {
       const session = checkSessions[chatId];
       if (!session) return sendNav(bot, chatId, '⚠️ Сессия прервана.');
-      
       const id = parseInt(data.split('_')[2]);
       if (!session.bouquets.find(x => x.id === id)) return;
       
-      await updateBouquetFields(id, {
-        confirmed_at: new Date().toISOString(),
-        hidden: false,
-        reminded: false
-      });
-      
+      await updateBouquetFields(id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
       session.checked[id] = 'yes';
       session.order = [id, ...session.order.filter(x => x !== id)];
       session.currentBouquetId = null;
@@ -2830,12 +2489,10 @@ function setupBotHandlers(bot, s3ctx) {
     if (data.startsWith('check_no_')) {
       const session = checkSessions[chatId];
       if (!session) return sendNav(bot, chatId, '⚠️ Сессия прервана.');
-      
       const id = parseInt(data.split('_')[2]);
       if (!session.bouquets.find(x => x.id === id)) return;
       
       await updateBouquetField(id, 'hidden', true);
-      
       session.checked[id] = 'no';
       session.order = [id, ...session.order.filter(x => x !== id)];
       session.currentBouquetId = null;
@@ -2846,46 +2503,28 @@ function setupBotHandlers(bot, s3ctx) {
     }
 
     // ========== ИЗМЕНИТЬ ЦЕНУ ==========
-    const { buildBouquetActionButtons } = require('./bot-ui');
-
     if (data.startsWith('editprice_ok_')) {
       const id = parseInt(data.split('_')[2]);
       const b = await getBouquetById(shopId, id);
       if (!b) return;
       
       awaitingPrice[chatId] = b.id;
+      let t = '✏️ Напишите новую цену для букета <b>№' + b.shopNumber + '</b>.\n';
+      t += 'Текущая: <b>' + formatPrice(b.price, shop) + '</b>\n<i>Отмена — /cancel</i>';
       
-      let t = '✏️ Напишите новую цену для ';
-      t += 'букета <b>№' + b.shopNumber + '</b>.\n';
-      t += 'Текущая: <b>' + formatPrice(b.price, shop) + '</b>\n';
-      t += '<i>Отмена — /cancel</i>';
-      
-      return bot.sendMessage(chatId, t, {
-        parse_mode: 'HTML',
-        reply_markup: getMainKeyboard(shop, chatId)
-      });
+      return bot.sendMessage(chatId, t, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
     }
 
     if (data.startsWith('editprice_no_')) {
       bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
-      const { showBouquetList } = require('./bot-ui');
-      return showBouquetList(
-        bot, chatId, shopId, 'editprice',
-        '✏️ <b>Какой букет изменить цену?</b>\nНажмите на номер.',
-        0
-      );
+      return showBouquetList(bot, chatId, shopId, 'editprice', '✏️ <b>Какой букет изменить цену?</b>\nНажмите на номер.', 0);
     }
 
     if (data.startsWith('editprice_')) {
       const id = parseInt(data.split('_')[1]);
       const b = await getBouquetById(shopId, id);
       if (!b) return sendNav(bot, chatId, '❌ Букет не найден.');
-      
-      const btns = buildBouquetActionButtons(
-        b, '✅ Да, менять цену', 
-        'editprice_ok_' + b.id, 'editprice_no_' + b.id
-      );
-      const { sendBouquetPreview } = require('./bot-ui');
+      const btns = buildBouquetActionButtons(b, '✅ Да, менять цену', 'editprice_ok_' + b.id, 'editprice_no_' + b.id);
       return sendBouquetPreview(bot, chatId, b, '✏️ <b>Изменить цену?</b>', btns);
     }
 
@@ -2896,38 +2535,22 @@ function setupBotHandlers(bot, s3ctx) {
       if (!b) return;
       
       awaitingName[chatId] = b.id;
+      let t = '📝 Напишите новое название для <b>№' + b.shopNumber + '</b>.\n';
+      t += 'Текущее: <b>' + esc(b.name) + '</b>\n<i>Точка в начале — закрепить.</i>';
       
-      let t = '📝 Напишите новое название для <b>№';
-      t += b.shopNumber + '</b>.\n';
-      t += 'Текущее: <b>' + esc(b.name) + '</b>\n';
-      t += '<i>Точка в начале — закрепить. Отмена — /cancel</i>';
-      
-      return bot.sendMessage(chatId, t, {
-        parse_mode: 'HTML',
-        reply_markup: getMainKeyboard(shop, chatId)
-      });
+      return bot.sendMessage(chatId, t, { parse_mode: 'HTML', reply_markup: getMainKeyboard(shop, chatId) });
     }
 
     if (data.startsWith('rename_no_')) {
       bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
-      const { showBouquetList } = require('./bot-ui');
-      return showBouquetList(
-        bot, chatId, shopId, 'rename',
-        '📝 <b>Какой букет переименовать?</b>\nНажмите на номер.',
-        0
-      );
+      return showBouquetList(bot, chatId, shopId, 'rename', '📝 <b>Какой букет переименовать?</b>\nНажмите на номер.', 0);
     }
 
     if (data.startsWith('rename_')) {
       const id = parseInt(data.split('_')[1]);
       const b = await getBouquetById(shopId, id);
       if (!b) return sendNav(bot, chatId, '❌ Букет не найден.');
-      
-      const btns = buildBouquetActionButtons(
-        b, '✅ Да, менять название', 
-        'rename_ok_' + b.id, 'rename_no_' + b.id
-      );
-      const { sendBouquetPreview } = require('./bot-ui');
+      const btns = buildBouquetActionButtons(b, '✅ Да, менять название', 'rename_ok_' + b.id, 'rename_no_' + b.id);
       return sendBouquetPreview(bot, chatId, b, '📝 <b>Переименовать?</b>', btns);
     }
 
@@ -2937,11 +2560,7 @@ function setupBotHandlers(bot, s3ctx) {
       const id = parseInt(data.split('_')[1]);
       const b = await getBouquetById(shopId, id);
       if (!b) return;
-      
-      const btns = buildBouquetActionButtons(
-        b, '🗑 Да, удалить', 'confirmdel_' + b.id, 'canceldel'
-      );
-      const { sendBouquetPreview } = require('./bot-ui');
+      const btns = buildBouquetActionButtons(b, '🗑 Да, удалить', 'confirmdel_' + b.id, 'canceldel');
       return sendBouquetPreview(bot, chatId, b, '🗑 <b>Удалить букет?</b>', btns);
     }
 
@@ -2953,23 +2572,12 @@ function setupBotHandlers(bot, s3ctx) {
       
       await updateBouquetField(id, 'deleted', true);
       bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
-      
-      const { showBouquetList } = require('./bot-ui');
-      return showBouquetList(
-        bot, chatId, shopId, 'askdel',
-        '✅ <b>Букет №' + num + ' удалён.</b>\n\n🗑 Какой ещё?',
-        0
-      );
+      return showBouquetList(bot, chatId, shopId, 'askdel', '✅ <b>Букет №' + num + ' удалён.</b>\n\n🗑 Какой ещё?', 0);
     }
 
     if (data === 'canceldel') {
       bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
-      const { showBouquetList } = require('./bot-ui');
-      return showBouquetList(
-        bot, chatId, shopId, 'askdel',
-        '🗑 <b>Какой букет удалить?</b>\nНажмите на номер.',
-        0
-      );
+      return showBouquetList(bot, chatId, shopId, 'askdel', '🗑 <b>Какой букет удалить?</b>\nНажмите на номер.', 0);
     }
 
     // ========== ПРОДЛЕНИЕ ==========
@@ -2977,26 +2585,16 @@ function setupBotHandlers(bot, s3ctx) {
       const id = parseInt(data.split('_')[1]);
       const b = await getBouquetById(shopId, id);
       
-      await updateBouquetFields(id, {
-        confirmed_at: new Date().toISOString(),
-        hidden: false,
-        reminded: false
-      });
-      
+      await updateBouquetFields(id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
       if (!b) return sendNav(bot, chatId, '🌿 Продлено.');
       
-      let t = '🌿 <b>Продлено!</b>\n\n';
-      t += 'Букет <b>№' + b.shopNumber + '</b> — ';
-      t += '<b>' + formatPrice(b.price, shop) + '</b>\n';
-      t += 'Будет на витрине ещё 3 дня.';
-      
+      let t = '🌿 <b>Продлено!</b>\n\nБукет <b>№' + b.shopNumber + '</b> — <b>' + formatPrice(b.price, shop) + '</b>\nБудет на витрине ещё 3 дня.';
       return bot.sendMessage(chatId, t, { parse_mode: 'HTML' });
     }
 
     if (data === 'morning_later') {
       bot.deleteMessage(chatId, q.message.message_id).catch(function(){});
-      const { getNowMoscow } = require('./config');
-      const key = shopId + ':' + getNowMoscow().toISOString().slice(0, 10);
+      const key = shopId + ':' + require('./config').getNowMoscow().toISOString().slice(0, 10);
       morningLaterSent[key] = Date.now();
       return;
     }
@@ -3004,11 +2602,7 @@ function setupBotHandlers(bot, s3ctx) {
     // ========== СТАРЫЕ ВЕТКИ ==========
     if (data.startsWith('confirm_')) {
       const id = parseInt(data.split('_')[1]);
-      await updateBouquetFields(id, {
-        confirmed_at: new Date().toISOString(),
-        hidden: false,
-        reminded: false
-      });
+      await updateBouquetFields(id, { confirmed_at: new Date().toISOString(), hidden: false, reminded: false });
       const b = await getBouquetById(shopId, id);
       return sendNav(bot, chatId, '✅ Букет №' + (b ? b.shopNumber : id) + ' подтверждён.');
     }
@@ -3022,19 +2616,11 @@ function setupBotHandlers(bot, s3ctx) {
 
     if (data.startsWith('show_')) {
       const id = parseInt(data.split('_')[1]);
-      await updateBouquetFields(id, {
-        hidden: false,
-        confirmed_at: new Date().toISOString(),
-        reminded: false
-      });
+      await updateBouquetFields(id, { hidden: false, confirmed_at: new Date().toISOString(), reminded: false });
       const b = await getBouquetById(shopId, id);
       return sendNav(bot, chatId, '✅ Букет №' + (b ? b.shopNumber : id) + ' возвращён.');
     }
   });
 }
 
-module.exports = { 
-  setupBotHandlers, 
-  checkSessions, 
-  morningLaterSent 
-};
+module.exports = { setupBotHandlers, checkSessions, morningLaterSent };
