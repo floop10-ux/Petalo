@@ -319,7 +319,6 @@ const {
   getUnifiedMenu, metaSafari, fontLink, uiScript 
 } = require('./warehouse-views-core');
 
-function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
 
   // ====== 1. ЭКРАН СМЕНЫ ======
   app.get('/warehouse/shift', async (req, res) => {

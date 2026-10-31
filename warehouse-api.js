@@ -42,6 +42,12 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     'IF NOT EXISTS alternatives JSONB DEFAULT \'[]\'::jsonb'
   ).catch(function(){});
 
+  // Миграция для режима "Только предзаказ"
+  pool.query(
+    'ALTER TABLE bouquets ADD COLUMN ' +
+    'IF NOT EXISTS preorder_only BOOLEAN DEFAULT FALSE'
+  ).catch(function(){});
+
   pool.query(
     'UPDATE wh_writeoffs SET doc_id = \'legacy_\' || shop_id ' +
     '|| \'_\' || extract(epoch from date)::int WHERE doc_id IS NULL'
@@ -976,6 +982,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
+
   // ====== ПРОВЕДЕНИЕ НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/save-all', async (req, res) => {
     const client = await pool.connect();
@@ -1274,7 +1281,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message }); 
     }
   });
-
   // ====== БУКЕТЫ (ДЛЯ ВИТРИНЫ И КАССЫ) ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
@@ -1283,9 +1289,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const shopId = auth.shopId;
       
-      // Получаем базовую информацию по букетам и их рецептам
       const r = await pool.query(
-        'SELECT b.id, b.name, b.price, b.photos, ' +
+        'SELECT b.id, b.name, b.price, b.photos, b.preorder_only, ' +
         'r.shop_item_id, r.qty as recipe_qty, r.alternatives, ' +
         'i.current_stock ' +
         'FROM bouquets b ' +
@@ -1295,20 +1300,19 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'AND b.deleted = FALSE', [shopId]
       );
       
-      // Группируем по букетам
       let bouquetsMap = {};
       for (const row of r.rows) {
         if (!bouquetsMap[row.id]) {
           bouquetsMap[row.id] = {
             id: row.id, name: row.name, price: row.price,
-            photos: row.photos, all_in_stock: true
+            photos: row.photos, all_in_stock: true,
+            preorder_only: row.preorder_only
           };
         }
         
         if (row.shop_item_id) {
           let totalStock = parseFloat(row.current_stock) || 0;
           
-          // Если есть альтернативы, суммируем их остатки
           if (row.alternatives && row.alternatives.length > 0) {
             const altRes = await pool.query(
               'SELECT COALESCE(SUM(current_stock), 0) as total ' +
@@ -1334,7 +1338,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         }
         return {
           id: b.id, name: b.name, price: b.price,
-          photo_url: photoUrl, all_in_stock: b.all_in_stock
+          photo_url: photoUrl, all_in_stock: b.all_in_stock,
+          preorder_only: b.preorder_only
         };
       });
       
@@ -1415,7 +1420,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const r = await pool.query(
         'SELECT b.id, b.name, b.price, b.photos, b.wh_linked, ' +
-        'b.deleted, ' +
+        'b.deleted, b.preorder_only, ' +
         '(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) ' +
         '|| \' x\' || TRIM(TRAILING \'.\' FROM TRIM(TRAILING \'0\' ' +
         'FROM rcp.qty::text)), \', \') ' +
@@ -1438,7 +1443,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         return {
           id: b.id, name: b.name, price: b.price,
           photo_url: photoUrl, wh_linked: b.wh_linked,
-          recipe_text: b.recipe_text, deleted: b.deleted
+          recipe_text: b.recipe_text, deleted: b.deleted,
+          preorder_only: b.preorder_only
         };
       });
       res.json({ ok: true, bouquets: result });
@@ -1489,8 +1495,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       const r = await pool.query(
-        'SELECT id, name, price, photos, wh_linked FROM bouquets ' +
-        'WHERE id = $1 AND shop_id = $2',
+        'SELECT id, name, price, photos, wh_linked, preorder_only ' +
+        'FROM bouquets WHERE id = $1 AND shop_id = $2',
         [req.query.id, auth.shopId]
       );
       if (r.rows.length === 0) return res.json({ ok: false });
@@ -1510,6 +1516,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       const photoUrl = req.body.photo_url;
       const isLinked = req.body.is_linked === true;
+      const isPreorder = req.body.is_preorder === true;
       
       if (!name || !price || price <= 0) {
         return res.json({ ok: false, error: 'Неверные данные' });
@@ -1521,15 +1528,16 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         if (photoUrl) {
           await pool.query(
             'UPDATE bouquets SET name = $1, price = $2, photos = $3, ' +
-            'wh_linked = $4 WHERE id = $5 AND shop_id = $6',
-            [name, price, JSON.stringify(photos), isLinked, bId, 
-             auth.shopId]
+            'wh_linked = $4, preorder_only = $5 WHERE id = $6 ' +
+            'AND shop_id = $7',
+            [name, price, JSON.stringify(photos), isLinked, 
+             isPreorder, bId, auth.shopId]
           );
         } else {
           await pool.query(
-            'UPDATE bouquets SET name = $1, price = $2, wh_linked = $3 ' +
-            'WHERE id = $4 AND shop_id = $5',
-            [name, price, isLinked, bId, auth.shopId]
+            'UPDATE bouquets SET name = $1, price = $2, wh_linked = $3, ' +
+            'preorder_only = $4 WHERE id = $5 AND shop_id = $6',
+            [name, price, isLinked, isPreorder, bId, auth.shopId]
           );
         }
       } else {
@@ -1540,11 +1548,12 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         const shopNumber = shopNumberRes.rows[0].next;
         const ins = await pool.query(
           'INSERT INTO bouquets (shop_id, shop_number, name, price, ' +
-          'photos, chat_id, confirmed_at, wh_linked, deleted) ' +
-          'VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, FALSE) ' +
+          'photos, chat_id, confirmed_at, wh_linked, preorder_only, ' +
+          'deleted) ' +
+          'VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, FALSE) ' +
           'RETURNING id',
           [auth.shopId, shopNumber, name, price, 
-           JSON.stringify(photos), auth.chatId, isLinked]
+           JSON.stringify(photos), auth.chatId, isLinked, isPreorder]
         );
         finalId = ins.rows[0].id;
       }
@@ -1610,6 +1619,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
   // ====== ЖУРНАЛ ======
   app.get('/api/warehouse/audit', async (req, res) => {
     try {
