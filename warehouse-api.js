@@ -22,6 +22,23 @@ async function logAction(shopId, chatId, action, details, refId) {
 }
 
 function setupWarehouseApi(app, bot, s3ctx, getAuth) {
+
+app.get('/api/warehouse/force-migrate', async (req, res) => {
+    try {
+      await pool.query(
+        'ALTER TABLE bouquets ADD COLUMN ' +
+        'IF NOT EXISTS preorder_only BOOLEAN DEFAULT FALSE'
+      );
+      await pool.query(
+        'ALTER TABLE wh_bouquet_recipes ADD COLUMN ' +
+        'IF NOT EXISTS alternatives JSONB DEFAULT \'[]\'::jsonb'
+      );
+      res.send('✅ Миграции применены успешно!');
+    } catch (e) {
+      res.status(500).send('❌ Ошибка: ' + e.message);
+    }
+  });
+
   // ====== МИГРАЦИИ ======
   pool.query(
     'ALTER TABLE wh_writeoffs ADD COLUMN ' +
