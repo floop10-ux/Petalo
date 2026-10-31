@@ -576,11 +576,12 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '  var profit = rev - cost;';
       html += '  var margin = rev > 0 ? Math.round((profit / rev) * 100) : 0;';
       html += '  var info = document.getElementById("chartInfo");';
-      html += '  info.innerHTML = "<div>" + dateStr + ": <b>" + ';
+      html += '  var htmlStr = "<div>" + dateStr + ": <b>" + ';
       html += '  fmtMoney(rev) + "</b></div>";';
-      html += '  info.innerHTML += "<div style=\'font-size:12px; ";
-      html += '  color:#27ae60;\'>Маржа: " + fmtMoney(profit) + ';
+      html += '  htmlStr += "<div style=&quot;font-size:12px; ';
+      html += '  color:#27ae60;&quot;>Маржа: " + fmtMoney(profit) + ';
       html += '  " (" + margin + "%)</div>";';
+      html += '  info.innerHTML = htmlStr;';
       html += '}';
 
       html += 'function renderTab() {';
@@ -809,14 +810,14 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '        row.className = "list-item";';
       html += '        var n = document.createElement("div");';
       html += '        n.innerHTML = "<b>" + it.name + "</b><br>";';
-      html += '        n.innerHTML += "<span style=\'font-size:12px; ";
-      html += '        color:#888;\'>" + fmtNum(it.current_stock) + ';
+      html += '        n.innerHTML += "<span style=&quot;font-size:12px; ';
+      html += '        color:#888;&quot;>" + fmtNum(it.current_stock) + ';
       html += '        " шт</span>";';
       html += '        var v = document.createElement("div");';
       html += '        v.style = "font-weight:800; text-align:right;";';
       html += '        v.innerHTML = fmtMoney(it.total_cost);';
-      html += '        v.innerHTML += "<br><span style=\'font-size:10px; ";
-      html += '        color:#888;\'>" + fmtMoney(it.avg_cost) + ';
+      html += '        v.innerHTML += "<br><span style=&quot;font-size:10px; ';
+      html += '        color:#888;&quot;>" + fmtMoney(it.avg_cost) + ';
       html += '        " / шт</span>";';
       html += '        row.appendChild(n); row.appendChild(v);';
       html += '        frozenCard.appendChild(row);';
