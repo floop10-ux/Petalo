@@ -22,23 +22,6 @@ async function logAction(shopId, chatId, action, details, refId) {
 }
 
 function setupWarehouseApi(app, bot, s3ctx, getAuth) {
-
-app.get('/api/warehouse/force-migrate', async (req, res) => {
-    try {
-      await pool.query(
-        'ALTER TABLE bouquets ADD COLUMN ' +
-        'IF NOT EXISTS preorder_only BOOLEAN DEFAULT FALSE'
-      );
-      await pool.query(
-        'ALTER TABLE wh_bouquet_recipes ADD COLUMN ' +
-        'IF NOT EXISTS alternatives JSONB DEFAULT \'[]\'::jsonb'
-      );
-      res.send('✅ Миграции применены успешно!');
-    } catch (e) {
-      res.status(500).send('❌ Ошибка: ' + e.message);
-    }
-  });
-
   // ====== МИГРАЦИИ ======
   pool.query(
     'ALTER TABLE wh_writeoffs ADD COLUMN ' +
@@ -502,6 +485,7 @@ app.get('/api/warehouse/force-migrate', async (req, res) => {
       res.json({ ok: false, error: e.message });
     }
   });
+
   // ====== МУЛЬТИТОЧКИ (ПЕРЕКЛЮЧЕНИЕ МАГАЗИНОВ) ======
   app.get('/api/warehouse/my-shops', async (req, res) => {
     try {
@@ -551,7 +535,6 @@ app.get('/api/warehouse/force-migrate', async (req, res) => {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== ПРОДАЖИ ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
@@ -618,7 +601,6 @@ app.get('/api/warehouse/force-migrate', async (req, res) => {
         var item = items[i];
         var qty = parseFloat(String(item.qty).replace(',', '.'));
         
-        // ЗАЩИТА ОТ x0
         if (!qty || qty <= 0) continue;
         
         await client.query(
@@ -692,7 +674,6 @@ app.get('/api/warehouse/force-migrate', async (req, res) => {
         const item = items[i];
         const qty = parseFloat(String(item.qty).replace(',', '.'));
         
-        // ЗАЩИТА ОТ x0
         if (!qty || qty <= 0) continue;
 
         await client.query(
@@ -1331,10 +1312,12 @@ app.get('/api/warehouse/force-migrate', async (req, res) => {
           let totalStock = parseFloat(row.current_stock) || 0;
           
           if (row.alternatives && row.alternatives.length > 0) {
+            const altIds = row.alternatives.map(function(a) { 
+              return typeof a === 'object' ? a.shop_item_id : a; 
+            });
             const altRes = await pool.query(
               'SELECT COALESCE(SUM(current_stock), 0) as total ' +
-              'FROM wh_shop_items WHERE id = ANY($1)', 
-              [row.alternatives]
+              'FROM wh_shop_items WHERE id = ANY($1)', [altIds]
             );
             totalStock += parseFloat(altRes.rows[0].total);
           }
@@ -1406,12 +1389,15 @@ app.get('/api/warehouse/force-migrate', async (req, res) => {
       for (const it of r.rows) {
         let altsData = [];
         if (it.alternatives && it.alternatives.length > 0) {
+           const altIds = it.alternatives.map(function(a) { 
+             return typeof a === 'object' ? a.shop_item_id : a; 
+           });
            const altQuery = await pool.query(
              'SELECT i.id, i.current_stock, i.retail_price, ' +
              'COALESCE(i.custom_name, w.name) AS name ' +
              'FROM wh_shop_items i ' +
              'JOIN wh_items w ON w.id = i.item_id ' +
-             'WHERE i.id = ANY($1)', [it.alternatives]
+             'WHERE i.id = ANY($1)', [altIds]
            );
            altsData = altQuery.rows;
         }
@@ -2356,6 +2342,6 @@ app.get('/api/warehouse/force-migrate', async (req, res) => {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-}
+  }
 
 module.exports = { setupWarehouseApi };
