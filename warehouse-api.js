@@ -35,6 +35,13 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     'ALTER TABLE wh_sales ADD COLUMN ' +
     'IF NOT EXISTS status VARCHAR(20) DEFAULT \'active\''
   ).catch(function(){});
+  
+  // Миграция для альтернативных ингредиентов
+  pool.query(
+    'ALTER TABLE wh_bouquet_recipes ADD COLUMN ' +
+    'IF NOT EXISTS alternatives JSONB DEFAULT \'[]\'::jsonb'
+  ).catch(function(){});
+
   pool.query(
     'UPDATE wh_writeoffs SET doc_id = \'legacy_\' || shop_id ' +
     '|| \'_\' || extract(epoch from date)::int WHERE doc_id IS NULL'
@@ -106,7 +113,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       if (!login || !password) return res.json({ ok: false });
 
-      const hash = crypto.createHash('sha256').update(password).digest('hex');
+      const hash = crypto.createHash('sha256')
+        .update(password).digest('hex');
       
       const r = await pool.query(
         'SELECT chat_id, role, shop_id FROM admins WHERE login = $1 ' +
@@ -371,7 +379,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ИСТОРИЯ ТОВАРА (с фильтром от x0) ======
+  // ====== ИСТОРИЯ ТОВАРА ======
   app.get('/api/warehouse/item/history', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -471,6 +479,56 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ ok: false, error: e.message });
     }
   });
+  // ====== МУЛЬТИТОЧКИ (ПЕРЕКЛЮЧЕНИЕ МАГАЗИНОВ) ======
+  app.get('/api/warehouse/my-shops', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const r = await pool.query(
+        'SELECT a.shop_id, s.display_name, a.role ' +
+        'FROM admins a ' +
+        'JOIN shops s ON s.shop_id = a.shop_id ' +
+        'WHERE a.chat_id = $1',
+        [auth.chatId]
+      );
+      
+      res.json({ ok: true, shops: r.rows, active: auth.shopId });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.post('/api/warehouse/switch-shop', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const newShopId = req.body.shopId;
+      
+      const check = await pool.query(
+        'SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2',
+        [auth.chatId, newShopId]
+      );
+      
+      if (check.rows.length === 0) {
+        return res.status(403).json({ ok: false, error: 'Нет доступа' });
+      }
+      
+      const token = getAuthCookie(auth.chatId, newShopId);
+      res.cookie('wh_auth', token, { 
+        maxAge: 30 * 24 * 60 * 60 * 1000, 
+        httpOnly: true, 
+        secure: true, 
+        sameSite: 'none' 
+      });
+      
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ====== ПРОДАЖИ ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
@@ -1217,27 +1275,56 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== БУКЕТЫ ======
+  // ====== БУКЕТЫ (ДЛЯ ВИТРИНЫ И КАССЫ) ======
   app.get('/api/warehouse/bouquets', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
       const shopId = auth.shopId;
+      
+      // Получаем базовую информацию по букетам и их рецептам
       const r = await pool.query(
         'SELECT b.id, b.name, b.price, b.photos, ' +
-        'EXISTS (' +
-        '  SELECT 1 FROM wh_bouquet_recipes r ' +
-        '  JOIN wh_shop_items i ON i.id = r.shop_item_id ' +
-        '  WHERE r.bouquet_id = b.id AND i.current_stock < r.qty' +
-        ') AS missing_ingredients ' +
+        'r.shop_item_id, r.qty as recipe_qty, r.alternatives, ' +
+        'i.current_stock ' +
         'FROM bouquets b ' +
+        'LEFT JOIN wh_bouquet_recipes r ON r.bouquet_id = b.id ' +
+        'LEFT JOIN wh_shop_items i ON i.id = r.shop_item_id ' +
         'WHERE b.shop_id = $1 AND b.wh_linked = TRUE ' +
-        'AND b.deleted = FALSE ' +
-        'ORDER BY b.name ASC', [shopId]
+        'AND b.deleted = FALSE', [shopId]
       );
       
-      const result = r.rows.map(function(b) {
+      // Группируем по букетам
+      let bouquetsMap = {};
+      for (const row of r.rows) {
+        if (!bouquetsMap[row.id]) {
+          bouquetsMap[row.id] = {
+            id: row.id, name: row.name, price: row.price,
+            photos: row.photos, all_in_stock: true
+          };
+        }
+        
+        if (row.shop_item_id) {
+          let totalStock = parseFloat(row.current_stock) || 0;
+          
+          // Если есть альтернативы, суммируем их остатки
+          if (row.alternatives && row.alternatives.length > 0) {
+            const altRes = await pool.query(
+              'SELECT COALESCE(SUM(current_stock), 0) as total ' +
+              'FROM wh_shop_items WHERE id = ANY($1)', 
+              [row.alternatives]
+            );
+            totalStock += parseFloat(altRes.rows[0].total);
+          }
+          
+          if (totalStock < parseFloat(row.recipe_qty)) {
+            bouquetsMap[row.id].all_in_stock = false;
+          }
+        }
+      }
+      
+      const result = Object.values(bouquetsMap).map(function(b) {
         let photoUrl = null;
         if (b.photos && b.photos.length > 0) {
           const p = b.photos[0];
@@ -1247,14 +1334,18 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         }
         return {
           id: b.id, name: b.name, price: b.price,
-          photo_url: photoUrl, all_in_stock: !b.missing_ingredients
+          photo_url: photoUrl, all_in_stock: b.all_in_stock
         };
       });
       
       res.json({ ok: true, bouquets: result });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      console.error('API bouquets:', e.message);
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
+  // РАЗВОРАЧИВАНИЕ БУКЕТА В КАССЕ (с альтернативами)
   app.post('/api/warehouse/bouquet/expand', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1277,7 +1368,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
       
       const r = await pool.query(
-        'SELECT r.shop_item_id, r.qty, i.current_stock, ' +
+        'SELECT r.shop_item_id, r.qty, r.alternatives, i.current_stock, ' +
         'i.retail_price, COALESCE(i.custom_name, w.name) AS name ' +
         'FROM wh_bouquet_recipes r ' +
         'JOIN wh_shop_items i ON i.id = r.shop_item_id ' +
@@ -1288,15 +1379,32 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (r.rows.length === 0) {
         return res.json({ ok: false, error: 'Рецепт пуст' });
       }
-      
-      let missing = [];
-      r.rows.forEach(function(it) {
-        if (parseFloat(it.current_stock) < parseFloat(it.qty)) {
-          missing.push(it.name);
+
+      let ingredients = [];
+      for (const it of r.rows) {
+        let altsData = [];
+        if (it.alternatives && it.alternatives.length > 0) {
+           const altQuery = await pool.query(
+             'SELECT i.id, i.current_stock, i.retail_price, ' +
+             'COALESCE(i.custom_name, w.name) AS name ' +
+             'FROM wh_shop_items i ' +
+             'JOIN wh_items w ON w.id = i.item_id ' +
+             'WHERE i.id = ANY($1)', [it.alternatives]
+           );
+           altsData = altQuery.rows;
         }
-      });
+        
+        ingredients.push({
+          shop_item_id: it.shop_item_id,
+          qty: it.qty,
+          current_stock: it.current_stock,
+          retail_price: it.retail_price,
+          name: it.name,
+          alternatives: altsData
+        });
+      }
       
-      res.json({ ok: true, ingredients: r.rows, missing: missing });
+      res.json({ ok: true, ingredients: ingredients });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
@@ -1449,7 +1557,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       const r = await pool.query(
-        'SELECT r.id, r.shop_item_id, r.qty, ' +
+        'SELECT r.id, r.shop_item_id, r.qty, r.alternatives, ' +
         'COALESCE(shi.custom_name, i.name) as name, ' +
         'i.unit, shi.current_stock FROM wh_bouquet_recipes r ' +
         'JOIN wh_shop_items shi ON shi.id = r.shop_item_id ' +
@@ -1484,13 +1592,14 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const qty = parseFloat(
-          String(it.qty).replace(',', '.')
-        );
+        const qty = parseFloat(String(it.qty).replace(',', '.'));
+        const alts = Array.isArray(it.alternatives) ? it.alternatives : [];
+        
         await client.query(
           'INSERT INTO wh_bouquet_recipes ' +
-          '(bouquet_id, shop_item_id, qty) VALUES ($1, $2, $3)', 
-          [bId, it.shop_item_id, qty]
+          '(bouquet_id, shop_item_id, qty, alternatives) ' +
+          'VALUES ($1, $2, $3, $4)', 
+          [bId, it.shop_item_id, qty, JSON.stringify(alts)]
         );
       }
       await client.query('COMMIT'); client.release();
