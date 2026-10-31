@@ -52,7 +52,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<style>';
       html += 'body { padding: 0 16px 80px 16px; }';
       
-      // СТИЛИ ДЛЯ МОДАЛКИ АЛЬТЕРНАТИВ
+      // МОДАЛКА АЛЬТЕРНАТИВ
       html += '.alt-modal-overlay { position: fixed; top: 0; left: 0; ';
       html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.5); ';
       html += 'display: none; z-index: 3500; align-items: center; ';
@@ -67,14 +67,15 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '.alt-group { margin-bottom: 16px; background: #fafaf8; ';
       html += 'padding: 12px; border-radius: 12px; ';
       html += 'border: 1px solid #eee; }';
-      html += '.alt-group-title { font-weight: 800; margin-bottom: 8px; ';
-      html += 'font-size: 14px; }';
+      html += '.alt-group-title { font-weight: 800; ';
+      html += 'margin-bottom: 8px; font-size: 14px; }';
       html += '.alt-ctrl { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 8px; }';
       html += '.alt-ctrl span { font-size: 12px; color: #666; }';
       html += '.alt-ctrl input { width: 70px !important; padding: 6px; ';
       html += 'margin: 0; text-align: center; font-weight: bold; }';
-      
+
+      // ОСТАЛЬНЫЕ СТИЛИ
       html += '.search-wrapper { position: relative; margin-bottom: 16px; }';
       html += '.search { width: 100%; padding: 14px 16px; border: none; ';
       html += 'border-radius: var(--r-md); box-sizing: border-box; ';
@@ -340,13 +341,12 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'onclick="openPrecheck()">Принять</button>';
       html += '</div></div></div>';
 
-      // МОДАЛКА АЛЬТЕРНАТИВ (только каркас, без сложных строк)
       html += '<div class="alt-modal-overlay" id="altModal">';
       html += '<div class="alt-modal">';
       html += '<h3>Не хватает ингредиентов!</h3>';
       html += '<p style="font-size:13px; color:#666; ';
       html += 'text-align:center; margin-bottom:16px;">';
-      html += 'Вы можете заменить часть основного цветка на альтернативу.</p>';
+      html += 'Вы можете заменить часть цветка на альтернативу.</p>';
       html += '<div id="altModalContent"></div>';
       html += '<button class="btn-submit ready" style="margin-top:16px;" ';
       html += 'onclick="confirmAlternatives()">Добавить в чек</button>';
@@ -356,7 +356,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'onclick="closeAltModal()">Отмена</button>';
       html += '</div></div>';
 
-      // МОДАЛКИ ПРЕДПРОСМОТРА И УСПЕХА
       html += '<div class="sheet-overlay" id="precheckModal" ';
       html += 'style="z-index:3000; align-items:center; ';
       html += 'justify-content:center;">';
@@ -430,7 +429,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'Готово</button></div></div>';
 
       html += getUnifiedMenu('sale');
-
       html += '<script>';
       html += 'var allItems = []; var currentCat = 0; ';
       html += 'var bouquetsMode = false; var bouquetsList = [];';
@@ -448,6 +446,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  gridCols = parseInt(';
       html += 'localStorage.getItem("wh_sale_grid_cols"));';
       html += '}';
+      
       html += 'function initGrid() {';
       html += '  var g = document.getElementById("itemsGrid");';
       html += '  g.className = "grid grid-" + gridCols;';
@@ -456,13 +455,305 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  var btn = document.getElementById("btn-grid-" + gridCols);';
       html += '  if (btn) btn.classList.add("active");';
       html += '}';
+      
       html += 'function setGridCols(cols) {';
       html += '  gridCols = cols; ';
       html += 'localStorage.setItem("wh_sale_grid_cols", cols);';
       html += '  initGrid();';
       html += '}';
       html += 'initGrid();';
-      // ПРОДОЛЖЕНИЕ СКРИПТА КАССЫ (после addItemToCartInternal)
+
+      html += 'fetch("/api/warehouse/categories")';
+      html += '.then(function(r) { return r.json(); })';
+      html += '.then(function(d) {';
+      html += '  if (d.ok) {';
+      html += '    var cl = document.getElementById("catList");';
+      html += '    var bouqBtn = document.getElementById("cat-bouquets");';
+      html += '    d.categories.forEach(function(c) {';
+      html += '      var b = document.createElement("button");';
+      html += '      b.className = "cat-btn"; b.id = "cat-" + c.id;';
+      html += '      b.innerText = c.name;';
+      html += '      b.onclick = function() { setCat(c.id); };';
+      html += '      cl.insertBefore(b, bouqBtn);';
+      html += '    });';
+      html += '  }';
+      html += '}).catch(function() {});';
+
+      html += 'fetch("/api/warehouse/items?t=" + Date.now())';
+      html += '.then(function(r) { return r.json(); })';
+      html += '.then(function(d) { ';
+      html += '  if (d.ok) { allItems = d.items; render(); } ';
+      html += '  else { ';
+      html += '    var g = document.getElementById("itemsGrid"); ';
+      html += '    var ed = document.createElement("div"); ';
+      html += '    ed.style.color = "red"; ';
+      html += '    ed.style.textAlign = "center"; ';
+      html += '    ed.style.padding = "20px"; ';
+      html += '    ed.style.gridColumn = "1/-1"; ';
+      html += '    ed.textContent = d.error || "Ошибка загрузки"; ';
+      html += '    g.appendChild(ed); ';
+      html += '  }';
+      html += '}).catch(function(e) { ';
+      html += '  var g = document.getElementById("itemsGrid"); ';
+      html += '  var ed = document.createElement("div"); ';
+      html += '  ed.style.color = "red"; ';
+      html += '  ed.style.textAlign = "center"; ';
+      html += '  ed.style.padding = "20px"; ';
+      html += '  ed.style.gridColumn = "1/-1"; ';
+      html += '  ed.textContent = "Сеть: " + e.message; ';
+      html += '  g.appendChild(ed); ';
+      html += '});';
+
+      html += 'function onSearchInput() {';
+      html += '  var val = document.getElementById("search").value;';
+      html += '  var btn = document.getElementById("clearSearch");';
+      html += '  if (val.length > 0) { btn.style.display = "block"; }';
+      html += '  else { btn.style.display = "none"; }';
+      html += '  filterItems();';
+      html += '}';
+      
+      html += 'function clearSearchText() {';
+      html += '  document.getElementById("search").value = "";';
+      html += '  document.getElementById("clearSearch").style.display = ';
+      html += '  "none";';
+      html += '  filterItems();';
+      html += '}';
+
+      html += 'function toggleBouquetsMode() {';
+      html += '  bouquetsMode = !bouquetsMode;';
+      html += '  var bqBtn = document.getElementById("cat-bouquets");';
+      html += '  var allBtns = document.querySelectorAll(".cat-btn");';
+      html += '  if (bouquetsMode) {';
+      html += '    allBtns.forEach(function(el) { ';
+      html += '      el.classList.remove("active"); });';
+      html += '    bqBtn.classList.add("active"); currentCat = -1;';
+      html += '    document.getElementById("search").value = ""; ';
+      html += '    document.getElementById("clearSearch")';
+      html += '    .style.display = "none";';
+      html += '    loadBouquets();';
+      html += '  } else {';
+      html += '    bqBtn.classList.remove("active"); currentCat = 0;';
+      html += '    document.getElementById("cat-0").classList.add("active"); ';
+      html += '    filterItems();';
+      html += '  }';
+      html += '}';
+
+      html += 'function loadBouquets() {';
+      html += '  var g = document.getElementById("itemsGrid"); ';
+      html += '  while(g.firstChild) g.removeChild(g.firstChild);';
+      html += '  var ld = document.createElement("div"); ';
+      html += '  ld.style = "grid-column:1/-1; text-align:center; ';
+      html += '  padding:20px; color:#888;"; ld.innerText = "Загрузка...";';
+      html += '  g.appendChild(ld);';
+      html += '  fetch("/api/warehouse/bouquets")';
+      html += '  .then(function(r) { return r.json(); })';
+      html += '  .then(function(d) {';
+      html += '    if (!d.ok) { ';
+      html += '      while(g.firstChild) g.removeChild(g.firstChild);';
+      html += '      var er = document.createElement("div"); ';
+      html += '      er.style = "grid-column:1/-1; text-align:center; ';
+      html += '      padding:20px; color:red;"; er.innerText = "Ошибка";';
+      html += '      g.appendChild(er); return; }';
+      html += '    bouquetsList = d.bouquets; renderBouquets(bouquetsList);';
+      html += '  }).catch(function() {});';
+      html += '}';
+
+      html += 'function renderBouquets(list) {';
+      html += '  var g = document.getElementById("itemsGrid"); ';
+      html += '  while(g.firstChild) g.removeChild(g.firstChild);';
+      html += '  if (list.length === 0) {';
+      html += '    var em = document.createElement("div"); ';
+      html += '    em.style = "grid-column:1/-1; text-align:center; ';
+      html += '    padding:20px; color:#888;";';
+      html += '    em.innerText = "Нет связанных букетов"; ';
+      html += '    g.appendChild(em); return;';
+      html += '  }';
+      html += '  list.forEach(function(b) {';
+      html += '    var d = document.createElement("div"); ';
+      html += '    d.className = "card bouquet";';
+      html += '    if (b.photo_url) { ';
+      html += '      var img = document.createElement("img"); ';
+      html += '      img.src = b.photo_url; d.appendChild(img); } ';
+      html += '    else { ';
+      html += '      var ph = document.createElement("div"); ';
+      html += '      ph.className = "ph"; ph.innerHTML = svgPh; ';
+      html += '      d.appendChild(ph); }';
+      html += '    var nm = document.createElement("div"); ';
+      html += '    nm.className = "name"; nm.textContent = b.name; ';
+      html += '    d.appendChild(nm);';
+      html += '    var tag = document.createElement("div"); ';
+      html += '    tag.className = "bouquet-tag";';
+      html += '    var ok = b.all_in_stock !== false;';
+      html += '    tag.textContent = ok ? "✓ в наличии" : "⚠ нет ингр.";';
+      html += '    if (!ok) tag.style.color = "red";';
+      html += '    d.appendChild(tag);';
+      html += '    d.onclick = function() { addBouquetToCart(b); };';
+      html += '    g.appendChild(d);';
+      html += '  });';
+      html += '}';
+
+      html += 'var pendingBouquetItems = [];';
+      
+      html += 'function addBouquetToCart(b) {';
+      html += '  fetch("/api/warehouse/bouquet/expand", { ';
+      html += '  method: "POST", headers: { "Content-Type": ';
+      html += '  "application/json" }, body: JSON.stringify({ ';
+      html += '  bouquet_id: b.id }) })';
+      html += '  .then(function(r) { return r.json(); })';
+      html += '  .then(function(d) {';
+      html += '    if (!d.ok) { showAlert("Ошибка", d.error || ';
+      html += '    "Не удалось", false); return; }';
+      
+      html += '    var hasMissing = false;';
+      html += '    d.ingredients.forEach(function(it) {';
+      html += '      var totalStock = parseFloat(it.current_stock);';
+      html += '      it.alternatives.forEach(function(a) { ';
+      html += '        totalStock += parseFloat(a.current_stock); });';
+      html += '      if (totalStock < parseFloat(it.qty)) hasMissing = true;';
+      html += '    });';
+      
+      html += '    if (hasMissing) {';
+      html += '      pendingBouquetItems = d.ingredients;';
+      html += '      buildAltModal();';
+      html += '      document.getElementById("altModal").classList.add("open");';
+      html += '    } else {';
+      html += '      d.ingredients.forEach(function(it) {';
+      html += '        addItemToCartInternal(it.shop_item_id, it.name, it.qty, it.retail_price);';
+      html += '      });';
+      html += '      recalculateTotals(); openSheet();';
+      html += '    }';
+      html += '  }).catch(function() { showAlert("Ошибка сети", ';
+      html += '  "Проверьте интернет", false); });';
+      html += '}';
+
+      html += 'function buildAltModal() {';
+      html += '  var content = document.getElementById("altModalContent");';
+      html += '  while(content.firstChild) content.removeChild(content.firstChild);';
+      
+      html += '  pendingBouquetItems.forEach(function(it, idx) {';
+      html += '    var mainStock = parseFloat(it.current_stock);';
+      html += '    var needed = parseFloat(it.qty);';
+      
+      html += '    if (mainStock < needed) {';
+      html += '      var group = document.createElement("div");';
+      html += '      group.className = "alt-group";';
+      
+      html += '      var title = document.createElement("div");';
+      html += '      title.className = "alt-group-title";';
+      html += '      title.textContent = it.name + " (Нужно: " + needed + ")";';
+      html += '      group.appendChild(title);';
+      
+      html += '      var ctrl1 = document.createElement("div");';
+      html += '      ctrl1.className = "alt-ctrl";';
+      html += '      var span1 = document.createElement("span");';
+      html += '      span1.textContent = "Взять основного:";';
+      html += '      var input1 = document.createElement("input");';
+      html += '      input1.type = "number";';
+      html += '      input1.id = "main_qty_" + idx;';
+      html += '      input1.value = Math.max(0, mainStock);';
+      html += '      input1.onchange = function() { checkTotal(idx); };';
+      html += '      ctrl1.appendChild(span1); ctrl1.appendChild(input1);';
+      html += '      group.appendChild(ctrl1);';
+      
+      html += '      if (it.alternatives.length > 0) {';
+      html += '        var altTitle = document.createElement("div");';
+      html += '        altTitle.className = "alt-group-title";';
+      html += '        altTitle.style = "color:#E67E22; font-size:12px; margin-top:8px;";';
+      html += '        altTitle.textContent = "Альтернативы:";';
+      html += '        group.appendChild(altTitle);';
+      
+      html += '        it.alternatives.forEach(function(alt, aIdx) {';
+      html += '          var ctrl2 = document.createElement("div");';
+      html += '          ctrl2.className = "alt-ctrl";';
+      html += '          var span2 = document.createElement("span");';
+      html += '          span2.textContent = alt.name + " (есть " + alt.current_stock + "):";';
+      html += '          var input2 = document.createElement("input");';
+      html += '          input2.type = "number";';
+      html += '          input2.id = "alt_" + idx + "_" + aIdx;';
+      html += '          input2.value = aIdx === 0 ? (needed - Math.max(0, mainStock)) : 0;';
+      html += '          input2.onchange = function() { checkTotal(idx); };';
+      html += '          ctrl2.appendChild(span2); ctrl2.appendChild(input2);';
+      html += '          group.appendChild(ctrl2);';
+      html += '        });';
+      html += '      }';
+      
+      html += '      var warn = document.createElement("div");';
+      html += '      warn.id = "warn_" + idx;';
+      html += '      warn.style = "color:red; font-size:11px; margin-top:4px;";';
+      html += '      group.appendChild(warn);';
+      
+      html += '      content.appendChild(group);';
+      html += '      checkTotal(idx);';
+      html += '    }';
+      html += '  });';
+      html += '}';
+
+      html += 'function checkTotal(idx) {';
+      html += '  var it = pendingBouquetItems[idx];';
+      html += '  var needed = parseFloat(it.qty);';
+      html += '  var mainInput = document.getElementById("main_qty_" + idx);';
+      html += '  if (!mainInput) return;';
+      html += '  var total = parseFloat(mainInput.value) || 0;';
+      html += '  it.alternatives.forEach(function(alt, aIdx) {';
+      html += '    var altInput = document.getElementById("alt_" + idx + "_" + aIdx);';
+      html += '    if (altInput) total += parseFloat(altInput.value) || 0;';
+      html += '  });';
+      html += '  var warn = document.getElementById("warn_" + idx);';
+      html += '  if (total < needed) {';
+      html += '    warn.textContent = "Не хватает: " + (needed - total);';
+      html += '  } else {';
+      html += '    warn.textContent = "";';
+      html += '  }';
+      html += '}';
+
+      html += 'function confirmAlternatives() {';
+      html += '  var valid = true;';
+      html += '  pendingBouquetItems.forEach(function(it, idx) {';
+      html += '    var needed = parseFloat(it.qty);';
+      html += '    var mainInput = document.getElementById("main_qty_" + idx);';
+      html += '    if (mainInput) {';
+      html += '      var total = parseFloat(mainInput.value) || 0;';
+      html += '      it.alternatives.forEach(function(alt, aIdx) {';
+      html += '        var altInput = document.getElementById("alt_" + idx + "_" + aIdx);';
+      html += '        if (altInput) total += parseFloat(altInput.value) || 0;';
+      html += '      });';
+      html += '      if (total < needed) valid = false;';
+      html += '    }';
+      html += '  });';
+      
+      html += '  if (!valid) { showAlert("Ошибка", "Выбрано меньше, чем нужно", false); return; }';
+      
+      html += '  pendingBouquetItems.forEach(function(it, idx) {';
+      html += '    var mainInput = document.getElementById("main_qty_" + idx);';
+      html += '    if (!mainInput) {';
+      html += '      addItemToCartInternal(it.shop_item_id, it.name, it.qty, it.retail_price);';
+      html += '    } else {';
+      html += '      var mainQty = parseFloat(mainInput.value) || 0;';
+      html += '      if (mainQty > 0) addItemToCartInternal(it.shop_item_id, it.name, mainQty, it.retail_price);';
+      html += '      it.alternatives.forEach(function(alt, aIdx) {';
+      html += '        var altInput = document.getElementById("alt_" + idx + "_" + aIdx);';
+      html += '        if (altInput) {';
+      html += '          var altQty = parseFloat(altInput.value) || 0;';
+      html += '          if (altQty > 0) addItemToCartInternal(alt.id, alt.name, altQty, alt.retail_price);';
+      html += '        }';
+      html += '      });';
+      html += '    }';
+      html += '  });';
+      
+      html += '  closeAltModal();';
+      html += '  recalculateTotals(); openSheet();';
+      html += '}';
+
+      html += 'function closeAltModal() {';
+      html += '  document.getElementById("altModal").classList.remove("open");';
+      html += '}';
+
+      html += 'function addItemToCartInternal(id, name, qty, retail) {';
+      html += '  var ex = cart.find(function(c) { return c.id === id; });';
+      html += '  if (ex) { ex.qty += qty; }';
+      html += '  else { cart.push({ id: id, name: name, qty: qty, retail: retail || 0 }); }';
+      html += '}';
+
       html += 'function setCat(id) {';
       html += '  bouquetsMode = false; ';
       html += '  document.getElementById("cat-bouquets")';
@@ -1025,7 +1316,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 6. ЭКРАН СПИСКА НАКЛАДНЫХ (ПРИХОДЫ) ======
   app.get('/warehouse/receipts', async (req, res) => {
     try {
