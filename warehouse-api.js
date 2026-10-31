@@ -62,6 +62,14 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
   ).catch(function(){});
 
   // ====== АВТОРИЗАЦИЯ ======
+  function getAuthCookie(chatId, shopId) {
+    const secret = process.env.WH_COOKIE_SECRET || 'fallback_secret';
+    const payload = chatId + '.' + shopId;
+    const hmac = crypto.createHmac('sha256', secret)
+      .update(payload).digest('hex');
+    return payload + '.' + hmac;
+  }
+
   app.post('/api/warehouse/auth', async (req, res) => {
     try {
       const shopId = req.body.shopId;
@@ -73,9 +81,54 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
 
       if (r.rows.length === 0) return res.json({ ok: false });
+      
+      const chatId = r.rows[0].chat_id;
+      const token = getAuthCookie(chatId, shopId);
+      
+      res.cookie('wh_auth', token, { 
+        maxAge: 30 * 24 * 60 * 60 * 1000, 
+        httpOnly: true, 
+        secure: true, 
+        sameSite: 'none' 
+      });
+      
       res.json({ ok: true, role: r.rows[0].role });
     } catch (e) { 
       console.error('Auth error:', e.message);
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
+  app.post('/api/warehouse/auth-owner', async (req, res) => {
+    try {
+      const login = String(req.body.login || '').trim();
+      const password = String(req.body.password || '');
+      
+      if (!login || !password) return res.json({ ok: false });
+
+      const hash = crypto.createHash('sha256').update(password).digest('hex');
+      
+      const r = await pool.query(
+        'SELECT chat_id, role, shop_id FROM admins WHERE login = $1 ' +
+        'AND password_hash = $2', [login, hash]
+      );
+
+      if (r.rows.length === 0) return res.json({ ok: false });
+      
+      const chatId = r.rows[0].chat_id;
+      const shopId = r.rows[0].shop_id;
+      const token = getAuthCookie(chatId, shopId);
+      
+      res.cookie('wh_auth', token, { 
+        maxAge: 30 * 24 * 60 * 60 * 1000, 
+        httpOnly: true, 
+        secure: true, 
+        sameSite: 'none' 
+      });
+      
+      res.json({ ok: true, role: r.rows[0].role });
+    } catch (e) { 
+      console.error('Auth-owner error:', e.message);
       res.status(500).json({ ok: false }); 
     }
   });
@@ -1246,6 +1299,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ ok: true, ingredients: r.rows, missing: missing });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
+
   app.get('/api/warehouse/bouquets/all', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1447,7 +1501,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== ЖУРНАЛ ======
   app.get('/api/warehouse/audit', async (req, res) => {
     try {
@@ -1557,7 +1610,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const daily = await pool.query(
         'SELECT DATE(s.date) as day, ' +
         'SUM(s.real_price) as total, ' +
-        'SUM((SELECT SUM(si.qty * si.cost_at_sale) FROM wh_sale_items si WHERE si.sale_id = s.id)) as cost ' +
+        'SUM((SELECT SUM(si.qty * si.cost_at_sale) ' +
+        'FROM wh_sale_items si WHERE si.sale_id = s.id)) as cost ' +
         'FROM wh_sales s WHERE s.shop_id = $1 ' + fSales +
         'AND s.status = \'active\' ' +
         'GROUP BY DATE(s.date) ORDER BY DATE(s.date) DESC', pSales
@@ -1565,7 +1619,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
 
       const abcRaw = await pool.query(
         'SELECT COALESCE(shi.custom_name, i.name) as name, ' +
-        'SUM(si.qty * (s.real_price / (SELECT SUM(qty) FROM wh_sale_items WHERE sale_id = s.id))) as total_rev ' +
+        'SUM(si.qty * (s.real_price / (SELECT SUM(qty) ' +
+        'FROM wh_sale_items WHERE sale_id = s.id))) as total_rev ' +
         'FROM wh_sale_items si ' +
         'JOIN wh_sales s ON s.id = si.sale_id ' +
         'JOIN wh_shop_items shi ON shi.id = si.shop_item_id ' +
@@ -1576,7 +1631,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       
       let abc = { A: [], B: [], C: [] };
-      let abcTotal = abcRaw.rows.reduce((sum, r) => sum + parseFloat(r.total_rev), 0);
+      let abcTotal = abcRaw.rows.reduce(
+        (sum, r) => sum + parseFloat(r.total_rev), 0
+      );
       let runningSum = 0;
       
       abcRaw.rows.forEach(function(r) {
@@ -1622,7 +1679,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         finance: {
           revenue: revenue, cost: costVal, profit: profit,
           margin_pct: marginPct,
-          avg_check: rev.rows[0].count > 0 ? (revenue / rev.rows[0].count) : 0,
+          avg_check: rev.rows[0].count > 0 ? 
+            (revenue / rev.rows[0].count) : 0,
           cash: parseFloat(rev.rows[0].cash) || 0,
           card: parseFloat(rev.rows[0].card) || 0,
           qr: parseFloat(rev.rows[0].qr) || 0,
@@ -1643,7 +1701,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-  // ====== ЭКСПОРТ ОТЧЁТА В CSV (ДЛЯ EXCEL) ======
+
+  // ====== ЭКСПОРТ ОТЧЁТА В CSV ======
   app.get('/api/warehouse/reports/export', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1968,7 +2027,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ИСТОРИЯ СМЕНЫ (с оплатами для возвратов) ======
+  // ====== ИСТОРИЯ СМЕНЫ ======
   app.get('/api/warehouse/history', async (req, res) => {
     try {
       const auth = getAuth(req);
