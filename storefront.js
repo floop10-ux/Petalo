@@ -220,6 +220,12 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
     priceHtml = priceStr;
   }
 
+  // Плашка предзаказа
+  let preorderBadge = '';
+  if (bouquet.preorder_only) {
+    preorderBadge = '<div style="display:inline-block; background:#FFF0EC; color:#E1846D; font-size:13px; font-weight:800; padding:6px 16px; border-radius:20px; margin-bottom:16px;">Только предзаказ</div>';
+  }
+
   const bouquetNameJs = JSON.stringify(bouquet.name);
   const bouquetUrlJs = JSON.stringify(bouquetUrl);
   const noContacts = '<div style="color:#888;padding:10px;">Контакты временно недоступны</div>';
@@ -254,6 +260,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += '<div>' + mainPhotoHtml + '</div>\n';
   html += thumbsHtml + '\n';
   html += '<h1>' + bouquetNameEsc + '</h1>\n';
+  html += preorderBadge + '\n';
   html += '<div class="price">' + priceHtml + '</div>\n';
   html += '<div class="card">';
   html += buttonsHTML || noContacts;
@@ -583,6 +590,32 @@ function sendClickNotification(shop, bouquet, type, bot) {
   }).catch(function(){});
 }
 
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+function plural(n, one, few, many) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 19) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
+
+function formatConfirmedAt(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const diffMs = now - d;
+  const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+  
+  if (diffHrs < 1) return 'только что';
+  if (diffHrs < 24) return diffHrs + ' ч. назад';
+  
+  const diffDays = Math.floor(diffHrs / 24);
+  if (diffDays === 1) return 'вчера';
+  return diffDays + ' дн. назад';
+}
+
 // ========== EXPRESS-РОУТЫ ==========
 function setupStorefront(app, bot, s3ctx) {
   const { s3, YC_BUCKET } = s3ctx;
@@ -640,7 +673,6 @@ function setupStorefront(app, bot, s3ctx) {
       return res.status(404).send('not found');
     }
   });
-
   app.get('/contact/:shopId/:bouquetId', async (req, res) => {
     try {
       const shop = await getShopFromDb(req.params.shopId);
@@ -794,8 +826,7 @@ function setupStorefront(app, bot, s3ctx) {
     }
   });
 
-
-// Главная витрина магазина
+  // Главная витрина магазина
   app.get('/shop/:shopId', async (req, res) => {
     try {
       const { isSubscriptionActive } = require('./config');
@@ -824,7 +855,51 @@ function setupStorefront(app, bot, s3ctx) {
       const tagFilter = req.query.tag || 'all';
 
       const all = await getBouquetsFromDb(shop.shopId);
-      let active = all.filter(isConfirmedRecently);
+      
+      // Загружаем остатки и рецепты для проверки
+      const shopItems = await pool.query(
+        'SELECT id, current_stock FROM wh_shop_items WHERE shop_id = $1',
+        [shop.shopId]
+      );
+      const stockMap = {};
+      shopItems.rows.forEach(function(r) { 
+        stockMap[r.id] = parseFloat(r.current_stock) || 0; 
+      });
+
+      const recipesQ = await pool.query(
+        'SELECT r.bouquet_id, r.qty, r.alternatives, r.shop_item_id ' +
+        'FROM wh_bouquet_recipes r ' +
+        'JOIN wh_shop_items i ON i.id = r.shop_item_id ' +
+        'WHERE i.shop_id = $1', [shop.shopId]
+      );
+      const recipeMap = {};
+      recipesQ.rows.forEach(function(r) {
+        if (!recipeMap[r.bouquet_id]) recipeMap[r.bouquet_id] = [];
+        recipeMap[r.bouquet_id].push(r);
+      });
+
+      let active = all.filter(function(b) {
+        if (!isConfirmedRecently(b)) return false;
+        if (b.whLinked && !b.preorderOnly) {
+          const rList = recipeMap[b.id] || [];
+          for (let i = 0; i < rList.length; i++) {
+            const it = rList[i];
+            let totalStock = stockMap[it.shop_item_id] || 0;
+            if (it.alternatives && it.alternatives.length > 0) {
+              const altIds = it.alternatives.map(function(a) {
+                return typeof a === 'object' ? a.shop_item_id : a;
+              });
+              altIds.forEach(function(id) {
+                totalStock += stockMap[id] || 0;
+              });
+            }
+            if (totalStock < parseFloat(it.qty)) {
+              return false;
+            }
+          }
+        }
+        return true;
+      });
 
       const tagCounts = {};
       for (const b of active) {
@@ -1008,8 +1083,7 @@ function setupStorefront(app, bot, s3ctx) {
       const cardExtra = useTwoColumns
         ? 'width:100%;box-sizing:border-box;min-width:0;'
         : 'max-width:320px;';
-
-      let cards = '';
+        let cards = '';
       if (active.length === 0) {
         cards = '<div style="text-align:center;padding:50px;';
         cards += 'font-size:20px;color:#888;grid-column:1/-1;">';
@@ -1079,10 +1153,10 @@ function setupStorefront(app, bot, s3ctx) {
           const bouquetUrl = SITE_URL + '/shop/' + 
             shop.shopId + '/b/' + b.id;
           const contactUrl = '/contact/' + shop.shopId + '/' + b.id;
-          const bouquetUrlJs = JSON.stringify(bouquetUrl);
-          const bouquetNameJs = JSON.stringify(b.name);
-          const bouquetPriceJs = b.price;
-
+          
+          const urlEsc = escAttr(bouquetUrl);
+          const nameEsc = escAttr(b.name);
+          
           const titleFS = useTwoColumns ? '14px' : '17px';
           const priceFS = useTwoColumns ? '20px' : '26px';
           const oldFS = useTwoColumns ? '13px' : '16px';
@@ -1093,6 +1167,15 @@ function setupStorefront(app, bot, s3ctx) {
               'margin:2px 0 6px;font-weight:600;">✓ Обновлено ' +
               esc(confirmedLine) + '</div>'
             : '';
+
+          let preorderBadge = '';
+          if (b.preorderOnly) {
+            preorderBadge = '<div style="display:inline-block;';
+            preorderBadge += 'background:#FFF0EC;color:#E1846D;';
+            preorderBadge += 'font-size:11px;font-weight:800;';
+            preorderBadge += 'padding:2px 8px;border-radius:10px;';
+            preorderBadge += 'margin-top:6px;">Только предзаказ</div>';
+          }
 
           const btnGrad = 'linear-gradient(135deg,' + 
             btnColors.color + ',' + btnColors.dark + ')';
@@ -1118,6 +1201,7 @@ function setupStorefront(app, bot, s3ctx) {
           card += '-webkit-box-orient:vertical;overflow:hidden;';
           card += 'font-weight:600;color:#2c3e50;">';
           card += esc(b.name) + '</h3>';
+          
           card += '<p style="font-size:' + priceFS + ';font-weight:800;';
           card += 'color:#2c3e50;margin:4px 0 4px;';
           card += 'letter-spacing:-0.5px;">';
@@ -1130,6 +1214,7 @@ function setupStorefront(app, bot, s3ctx) {
           }
           card += formatPrice(b.price, shop) + '</p>';
           card += confirmedHTML;
+          card += preorderBadge;
           card += '<div style="margin-top:auto;padding-top:8px;">';
           card += '<a href="' + contactUrl + '" style="display:block;';
           card += 'margin:8px auto 0;background:' + btnGrad + ';';
@@ -1138,9 +1223,9 @@ function setupStorefront(app, bot, s3ctx) {
           card += 'text-align:center;font-size:14px;';
           card += 'box-shadow:' + btnShadow + ';">📞 Связаться</a>';
           card += '<div style="margin-top:6px;">';
-          card += '<a href="#" onclick=\'shareBouquet(event, ' + 
-            bouquetUrlJs + ', ' + bouquetNameJs + ', ' + 
-            bouquetPriceJs + '); return false;\' style="';
+          card += '<a href="#" onclick="shareBouquet(event, &quot;' + 
+            urlEsc + '&quot;, &quot;' + nameEsc + '&quot;, ' + 
+            b.price + '); return false;" style="';
           card += 'display:inline-block;color:#999;font-size:11px;';
           card += 'text-decoration:none;padding:5px 10px;';
           card += 'border-radius:14px;background:#f7f3ee;">';
