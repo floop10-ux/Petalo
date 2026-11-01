@@ -33,11 +33,21 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '.card { padding: 20px; border-radius: var(--r-lg); ';
       html += 'margin-bottom: 16px; background: #fff; ';
       html += 'box-shadow: var(--sh-1); }';
+      
+      // Ровная сетка для оплат
+      html += '.pay-grid { display: flex; gap: 8px; margin-top: 12px; }';
+      html += '.pay-box { flex: 1; background: #F8F9FA; padding: 10px; ';
+      html += 'border-radius: var(--r-md); text-align: center; }';
+      html += '.pay-lbl { font-size: 11px; color: var(--f-text-2); ';
+      html += 'font-weight: 600; text-transform: uppercase; }';
+      html += '.pay-val { font-size: 15px; font-weight: 800; margin-top: 4px; }';
+
       html += '.stat-row { display: flex; justify-content: space-between; ';
       html += 'margin-bottom: 12px; font-size: 15px; font-weight: 500; }';
       html += '.total-rev { font-size: 24px; font-weight: 800; ';
       html += 'margin-top: 16px; padding-top: 16px; color: var(--f-brand);';
       html += 'border-top: 2px solid var(--f-border); }';
+      
       html += '.btn-shift { width: 100%; padding: 16px; border: none; ';
       html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 700; ';
       html += 'font-family: inherit; margin-top: 12px; }';
@@ -47,6 +57,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '.btn-cash { background: #FFF3E0; color: #E1846D; }';
       html += '.btn-grid { display: grid; grid-template-columns: 1fr 1fr; ';
       html += 'gap: 10px; margin-bottom: 16px; }';
+      
       html += '.modal { display: none; position: fixed; top: 0; left: 0; ';
       html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.5); ';
       html += 'align-items: center; justify-content: center; z-index: 2000; }';
@@ -54,6 +65,16 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'border-radius: 20px; width: 90%; max-width: 340px; }';
       html += '.modal-title { font-size: 20px; font-weight: 800; ';
       html += 'text-align: center; margin-bottom: 16px; }';
+      
+      // Стили для списка операций
+      html += '.op-item { display: flex; justify-content: space-between; ';
+      html += 'font-size: 13px; padding: 10px 0; ';
+      html += 'border-bottom: 1px dashed #eee; }';
+      html += '.op-item:last-child { border-bottom: none; }';
+      html += '.op-in { color: var(--f-success); font-weight: 800; }';
+      html += '.op-out { color: var(--f-danger); font-weight: 800; }';
+      html += '.op-comment { font-size: 12px; color: #666; ';
+      html += 'margin-top: 2px; font-style: italic; }';
       html += '</style></head><body>';
 
       html += '<div class="page-header">';
@@ -63,7 +84,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
-      // Инициализируем данные по умолчанию
       let shiftStatsData = { 
         cash: 0, card: 0, qr: 0, total: 0, 
         count: 0, expected: 0 
@@ -102,7 +122,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
         const cashOut = parseFloat(shift.cash_out) || 0;
         const expected = start + cash + cashIn - cashOut;
 
-        // Сохраняем данные для JS
         shiftStatsData = { 
           cash: cash, card: card, qr: qr, 
           total: total, count: count, expected: expected 
@@ -114,9 +133,16 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
         
         html += '<div class="stat-row"><span>Выручка:</span>';
         html += '<b>' + total + ' ₽</b></div>';
-        html += '<div class="stat-row" style="font-size:13px;color:#888;">';
-        html += '<span>Нал: ' + cash + ' ₽ | Карта: ' + card + ' ₽</span>';
-        html += '<span>QR: ' + qr + ' ₽</span></div>';
+        
+        // Ровная сетка
+        html += '<div class="pay-grid">';
+        html += '<div class="pay-box"><div class="pay-lbl">Нал</div>';
+        html += '<div class="pay-val">' + cash + ' ₽</div></div>';
+        html += '<div class="pay-box"><div class="pay-lbl">Карта</div>';
+        html += '<div class="pay-val">' + card + ' ₽</div></div>';
+        html += '<div class="pay-box"><div class="pay-lbl">QR</div>';
+        html += '<div class="pay-val">' + qr + ' ₽</div></div>';
+        html += '</div>';
         
         html += '<div class="total-rev"><span>Чеков: </span>';
         html += '<span>' + count + '</span></div>';
@@ -139,6 +165,13 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
         html += '<span>' + expected + ' ₽</span></div>';
         html += '</div>';
         html += '</div>'; // end card
+
+        // Контейнер для списка операций
+        html += '<div class="card" id="cashOpsCard" style="display:none;">';
+        html += '<h3 style="margin-top:0; font-size:16px; font-weight:800; ';
+        html += 'margin-bottom:8px;">Движение наличных</h3>';
+        html += '<div id="cashOpsList"></div>';
+        html += '</div>';
 
         html += '<div class="btn-grid">';
         html += '<button class="btn-shift btn-x" ';
@@ -172,6 +205,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '</div>';
       html += '<label>Сумма (₽)</label>';
       html += '<input type="number" id="cashAmount" inputmode="numeric">';
+      
+      // Поле для комментария
+      html += '<label style="margin-top:8px;">Комментарий</label>';
+      html += '<input type="text" id="cashComment" ';
+      html += 'placeholder="Оплата курьеру, мусор и т.д.">';
+      
       html += '<button class="btn-shift btn-open" onclick="doCashOp()">Выполнить</button>';
       html += '<button class="btn-shift" style="background:#eee;color:#555;" ';
       html += 'onclick="document.getElementById(\'cashModal\').style.display=\'none\'">';
@@ -210,6 +249,38 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'var curCashType = "in";';
       html += 'var shiftStats = ' + JSON.stringify(shiftStatsData) + ';';
 
+      // Функция загрузки операций
+      html += 'function loadCashOps() {';
+      html += '  fetch("/api/warehouse/shift/ops")';
+      html += '  .then(function(r){return r.json();}).then(function(d){';
+      html += '    if(d.ok && d.ops && d.ops.length > 0) {';
+      html += '      document.getElementById("cashOpsCard")';
+      html += '      .style.display = "block";';
+      html += '      var list = document.getElementById("cashOpsList");';
+      html += '      while(list.firstChild) list.removeChild(list.firstChild);';
+      html += '      d.ops.forEach(function(op){';
+      html += '        var row = document.createElement("div");';
+      html += '        row.className = "op-item";';
+      html += '        var left = document.createElement("div");';
+      html += '        var typeTxt = op.type === "in" ? "Внесено" : "Изъято";';
+      html += '        var opClass = op.type === "in" ? "op-in" : "op-out";';
+      html += '        var sign = op.type === "in" ? "+" : "-";';
+      html += '        left.innerHTML = "<div>" + typeTxt + "</div>";';
+      html += '        if(op.comment) {';
+      html += '          left.innerHTML += "<div class=\'op-comment\'>" + ';
+      html += '          op.comment + "</div>";';
+      html += '        }';
+      html += '        var right = document.createElement("div");';
+      html += '        right.className = opClass;';
+      html += '        right.textContent = sign + op.amount + " ₽";';
+      html += '        row.appendChild(left); row.appendChild(right);';
+      html += '        list.appendChild(row);';
+      html += '      });';
+      html += '    }';
+      html += '  }).catch(function(){});';
+      html += '}';
+      html += 'loadCashOps();';
+
       html += 'function openShift() {';
       html += '  var v = document.getElementById("startCash").value || 0;';
       html += '  fetch("/api/warehouse/shift", { method: "POST", ';
@@ -234,6 +305,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'function showCashModal() {';
       html += '  setCashType("in");';
       html += '  document.getElementById("cashAmount").value = "";';
+      html += '  document.getElementById("cashComment").value = "";';
       html += '  document.getElementById("cashModal").style.display = "flex";';
       html += '}';
 
@@ -250,10 +322,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
 
       html += 'function doCashOp() {';
       html += '  var amt = document.getElementById("cashAmount").value;';
+      html += '  var cmt = document.getElementById("cashComment").value;';
       html += '  if(!amt || amt <= 0) return;';
       html += '  fetch("/api/warehouse/shift/cash", { method: "POST", ';
       html += '  headers: { "Content-Type": "application/json" }, ';
-      html += '  body: JSON.stringify({ type: curCashType, amount: amt }) })';
+      html += '  body: JSON.stringify({ type: curCashType, ';
+      html += '  amount: amt, comment: cmt }) })';
       html += '  .then(function(r){return r.json();}).then(function(d){';
       html += '    if(d.ok) location.reload();';
       html += '    else showAlert("Ошибка", d.error, false);';
