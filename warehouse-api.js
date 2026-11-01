@@ -36,19 +36,16 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     'IF NOT EXISTS status VARCHAR(20) DEFAULT \'active\''
   ).catch(function(){});
   
-  // Миграция для альтернативных ингредиентов
   pool.query(
     'ALTER TABLE wh_bouquet_recipes ADD COLUMN ' +
     'IF NOT EXISTS alternatives JSONB DEFAULT \'[]\'::jsonb'
   ).catch(function(){});
 
-  // Миграция для режима "Только предзаказ"
   pool.query(
     'ALTER TABLE bouquets ADD COLUMN ' +
     'IF NOT EXISTS preorder_only BOOLEAN DEFAULT FALSE'
   ).catch(function(){});
 
-  // Миграции для инкассации (Внесение / Изъятие)
   pool.query(
     'ALTER TABLE wh_shifts ADD COLUMN ' +
     'IF NOT EXISTS cash_in NUMERIC(10,2) DEFAULT 0'
@@ -57,6 +54,20 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     'ALTER TABLE wh_shifts ADD COLUMN ' +
     'IF NOT EXISTS cash_out NUMERIC(10,2) DEFAULT 0'
   ).catch(function(){});
+
+  // Новая таблица для истории кассовых операций
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS wh_cash_ops (
+      id SERIAL PRIMARY KEY,
+      shift_id INTEGER REFERENCES wh_shifts(id) ON DELETE CASCADE,
+      shop_id VARCHAR(50),
+      chat_id BIGINT,
+      type VARCHAR(20),
+      amount NUMERIC(10,2),
+      comment TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `).catch(function(){});
 
   pool.query(
     'UPDATE wh_writeoffs SET doc_id = \'legacy_\' || shop_id ' +
@@ -1987,6 +1998,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const chatId = auth.chatId;
       const type = req.body.type; // 'in' или 'out'
       const amount = parseFloat(req.body.amount);
+      const comment = req.body.comment || '';
       
       if (!amount || amount <= 0) {
         return res.json({ ok: false, error: 'Неверная сумма' });
@@ -2003,22 +2015,62 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
       const shiftId = shiftRes.rows[0].id;
 
+      // Запись в историю операций
+      await pool.query(
+        'INSERT INTO wh_cash_ops (shift_id, shop_id, chat_id, ' +
+        'type, amount, comment) VALUES ($1, $2, $3, $4, $5, $6)',
+        [shiftId, shopId, chatId, type, amount, comment]
+      );
+
+      // Обновление итогов смены
       if (type === 'in') {
         await pool.query(
-          'UPDATE wh_shifts SET cash_in = cash_in + $1 WHERE id = $2',
+          'UPDATE wh_shifts SET cash_in = cash_in + $1 ' +
+          'WHERE id = $2',
           [amount, shiftId]
         );
         await logAction(shopId, chatId, 'cash_in', 
-          'Внесение наличных: ' + amount + ' ₽', shiftId);
+          'Внесение: ' + amount + ' ₽. ' + comment, shiftId);
       } else {
         await pool.query(
-          'UPDATE wh_shifts SET cash_out = cash_out + $1 WHERE id = $2',
+          'UPDATE wh_shifts SET cash_out = cash_out + $1 ' +
+          'WHERE id = $2',
           [amount, shiftId]
         );
         await logAction(shopId, chatId, 'cash_out', 
-          'Изъятие наличных: ' + amount + ' ₽', shiftId);
+          'Изъятие: ' + amount + ' ₽. ' + comment, shiftId);
       }
       res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.get('/api/warehouse/shift/ops', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const shopId = auth.shopId; 
+      const chatId = auth.chatId;
+
+      const shiftRes = await pool.query(
+        'SELECT id FROM wh_shifts WHERE shop_id = $1 ' +
+        'AND chat_id = $2 AND status = \'open\' LIMIT 1',
+        [shopId, chatId]
+      );
+      
+      if (shiftRes.rows.length === 0) {
+        return res.json({ ok: true, ops: [] });
+      }
+      const shiftId = shiftRes.rows[0].id;
+
+      const r = await pool.query(
+        'SELECT type, amount, comment, created_at ' +
+        'FROM wh_cash_ops WHERE shift_id = $1 ' +
+        'ORDER BY created_at DESC',
+        [shiftId]
+      );
+      res.json({ ok: true, ops: r.rows });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });
     }
