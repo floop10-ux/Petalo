@@ -48,6 +48,16 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     'IF NOT EXISTS preorder_only BOOLEAN DEFAULT FALSE'
   ).catch(function(){});
 
+  // Миграции для инкассации (Внесение / Изъятие)
+  pool.query(
+    'ALTER TABLE wh_shifts ADD COLUMN ' +
+    'IF NOT EXISTS cash_in NUMERIC(10,2) DEFAULT 0'
+  ).catch(function(){});
+  pool.query(
+    'ALTER TABLE wh_shifts ADD COLUMN ' +
+    'IF NOT EXISTS cash_out NUMERIC(10,2) DEFAULT 0'
+  ).catch(function(){});
+
   pool.query(
     'UPDATE wh_writeoffs SET doc_id = \'legacy_\' || shop_id ' +
     '|| \'_\' || extract(epoch from date)::int WHERE doc_id IS NULL'
@@ -1921,7 +1931,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         );
       } else {
         const shiftRes = await pool.query(
-          'SELECT id, start_cash, open_time FROM wh_shifts ' +
+          'SELECT id, start_cash, cash_in, cash_out, open_time ' +
+          'FROM wh_shifts ' +
           'WHERE shop_id = $1 AND chat_id = $2 ' +
           'AND status = \'open\' ORDER BY open_time DESC LIMIT 1',
           [shopId, chatId]
@@ -1939,8 +1950,14 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         const st = salesRes.rows[0];
         const cash = parseFloat(st.c || 0);
         const total = parseFloat(st.t || 0);
-        const expected = parseFloat(shift.start_cash) + cash;
+        
+        const startCash = parseFloat(shift.start_cash);
+        const cashIn = parseFloat(shift.cash_in) || 0;
+        const cashOut = parseFloat(shift.cash_out) || 0;
+        
+        const expected = startCash + cash + cashIn - cashOut;
         const actual = parseFloat(req.body.val);
+        
         if (isNaN(actual)) {
           return res.json({ ok: false, error: 'Некорректная сумма' });
         }
@@ -1955,6 +1972,71 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         );
         await logAction(shopId, chatId, 'shift',
           'Закрыта смена. Расхождение: ' + discrepancy);
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.post('/api/warehouse/shift/cash', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const shopId = auth.shopId; 
+      const chatId = auth.chatId;
+      const type = req.body.type; // 'in' или 'out'
+      const amount = parseFloat(req.body.amount);
+      
+      if (!amount || amount <= 0) {
+        return res.json({ ok: false, error: 'Неверная сумма' });
+      }
+
+      const shiftRes = await pool.query(
+        'SELECT id FROM wh_shifts WHERE shop_id = $1 ' +
+        'AND chat_id = $2 AND status = \'open\' LIMIT 1',
+        [shopId, chatId]
+      );
+      
+      if (shiftRes.rows.length === 0) {
+        return res.json({ ok: false, error: 'Смена не открыта' });
+      }
+      const shiftId = shiftRes.rows[0].id;
+
+      if (type === 'in') {
+        await pool.query(
+          'UPDATE wh_shifts SET cash_in = cash_in + $1 WHERE id = $2',
+          [amount, shiftId]
+        );
+        await logAction(shopId, chatId, 'cash_in', 
+          'Внесение наличных: ' + amount + ' ₽', shiftId);
+      } else {
+        await pool.query(
+          'UPDATE wh_shifts SET cash_out = cash_out + $1 WHERE id = $2',
+          [amount, shiftId]
+        );
+        await logAction(shopId, chatId, 'cash_out', 
+          'Изъятие наличных: ' + amount + ' ₽', shiftId);
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.post('/api/warehouse/shift/verify-pin', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const pin = String(req.body.pin);
+
+      const r = await pool.query(
+        'SELECT chat_id FROM admins WHERE shop_id = $1 ' +
+        'AND warehouse_pin = $2', [auth.shopId, pin]
+      );
+
+      if (r.rows.length === 0) {
+        return res.json({ ok: false, error: 'Неверный PIN' });
       }
       res.json({ ok: true });
     } catch (e) {
