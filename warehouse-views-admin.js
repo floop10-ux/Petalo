@@ -63,6 +63,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
+      // Инициализируем данные по умолчанию
+      let shiftStatsData = { 
+        cash: 0, card: 0, qr: 0, total: 0, 
+        count: 0, expected: 0 
+      };
+
       if (shiftRes.rows.length === 0) {
         html += '<div class="card">';
         html += '<h3 style="margin-top:0; font-size:20px; font-weight:800; ';
@@ -84,6 +90,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
           [shopId, shift.open_time]
         );
         const st = salesRes.rows[0];
+        
         const cash = parseFloat(st.c || 0);
         const card = parseFloat(st.k || 0);
         const qr = parseFloat(st.q || 0);
@@ -94,6 +101,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
         const cashIn = parseFloat(shift.cash_in) || 0;
         const cashOut = parseFloat(shift.cash_out) || 0;
         const expected = start + cash + cashIn - cashOut;
+
+        // Сохраняем данные для JS
+        shiftStatsData = { 
+          cash: cash, card: card, qr: qr, 
+          total: total, count: count, expected: expected 
+        };
 
         html += '<div class="card">';
         html += '<h3 style="margin-top:0; font-size:18px; font-weight:800; ';
@@ -125,7 +138,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
         html += '<span>Ожидается в кассе:</span>';
         html += '<span>' + expected + ' ₽</span></div>';
         html += '</div>';
-
         html += '</div>'; // end card
 
         html += '<div class="btn-grid">';
@@ -196,23 +208,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
 
       html += '<script>';
       html += 'var curCashType = "in";';
-      html += 'var expectedCash = ' + (shiftRes.rows.length > 0 ? 
-        (parseFloat(shiftRes.rows[0].start_cash) + 
-         parseFloat(shiftRes.rows[0].cash_in || 0) - 
-         parseFloat(shiftRes.rows[0].cash_out || 0)) : 0) + ';';
-      html += 'var shiftStats = { cash: 0, card: 0, qr: 0, total: 0 };';
-
-      if (shiftRes.rows.length > 0) {
-        const shift = shiftRes.rows[0];
-        html += 'shiftStats = ' + JSON.stringify({
-          cash: parseFloat(st.c || 0), card: parseFloat(st.k || 0),
-          qr: parseFloat(st.q || 0), total: parseFloat(st.t || 0),
-          count: parseInt(st.cnt || 0),
-          expected: parseFloat(shift.start_cash) + parseFloat(st.c || 0) + 
-                    parseFloat(shift.cash_in || 0) - 
-                    parseFloat(shift.cash_out || 0)
-        }) + ';';
-      }
+      html += 'var shiftStats = ' + JSON.stringify(shiftStatsData) + ';';
 
       html += 'function openShift() {';
       html += '  var v = document.getElementById("startCash").value || 0;';
@@ -320,9 +316,9 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       
       html += '.btn-invite { width: 100%; background: var(--f-success); ';
       html += 'color: #fff; border: none; padding: 16px; ';
-      html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
-      html += 'margin-bottom: 20px; display: flex; align-items: center; ';
-      html += 'justify-content: center; gap: 8px; }';
+      html += 'border-radius: var(--r-md); font-size: 16px; ';
+      html += 'font-weight: 800; margin-bottom: 20px; display: flex; ';
+      html += 'align-items: center; justify-content: center; gap: 8px; }';
       html += '.card { padding: 16px; border-radius: var(--r-lg); } ';
       html += '.name { font-size: 18px; font-weight: 800; margin-bottom: 4px; } ';
       html += '.sales { font-size: 15px; color: var(--f-success); ';
@@ -370,7 +366,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '  if (d.inviteCode) { ';
       html += '    globalInvite = "https://t.me/flowind_rus_bot?start=inv_" + ';
       html += '    d.inviteCode; ';
-      html += '    document.getElementById("btnInvite").style.display = "flex"; ';
+      html += '    document.getElementById("btnInvite")';
+      html += '    .style.display = "flex"; ';
       html += '  }';
       html += '  if (!d.staff || d.staff.length === 0) { ';
       html += '    var em = document.createElement("div"); ';
@@ -382,12 +379,14 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    return; }';
       
       html += '  d.staff.forEach(function(f){ ';
-      html += '    var c = document.createElement("div"); c.className = "card"; ';
+      html += '    var c = document.createElement("div"); ';
+      html += '    c.className = "card"; ';
       html += '    var name = f.name || "Флорист"; ';
       html += '    var nDiv = document.createElement("div"); ';
       html += '    nDiv.className = "name"; nDiv.textContent = name; ';
       html += '    c.appendChild(nDiv);';
-      html += '    var sum = parseFloat(f.total_sales).toLocaleString("ru-RU"); ';
+      html += '    var sum = parseFloat(f.total_sales)';
+      html += '    .toLocaleString("ru-RU"); ';
       html += '    var sDiv = document.createElement("div"); ';
       html += '    sDiv.className = "sales"; sDiv.textContent = "Продано: " + ';
       html += '    sum + " ₽"; c.appendChild(sDiv);';
@@ -437,7 +436,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       
       html += 'function makeCheck(label, field, checked, chatId) { ';
       html += 'var r = document.createElement("div"); r.className = "row"; ';
-      html += 'var sp = document.createElement("span"); sp.textContent = label; ';
+      html += 'var sp = document.createElement("span"); ';
+      html += 'sp.textContent = label; ';
       html += 'r.appendChild(sp); var cb = document.createElement("input"); ';
       html += 'cb.type = "checkbox"; cb.checked = checked; ';
       html += 'cb.onchange = function(){setRights(chatId, field, cb.checked);}; ';
@@ -457,8 +457,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '}';
 
       html += 'function delStaff(id) { ';
-      html += '  showConfirm("Удаление", "Уволить флориста? Он потеряет доступ.", ';
-      html += '  function() {';
+      html += '  showConfirm("Удаление", "Уволить флориста? Он потеряет ';
+      html += '  доступ.", function() {';
       html += '    fetch("/api/warehouse/florist/delete", { method: "POST", ';
       html += '    headers: { "Content-Type": "application/json" }, ';
       html += '    body: JSON.stringify({ chatId: id }) })';
@@ -560,14 +560,16 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    "Ошибка загрузки"; return; ';
       html += '  } ';
       html += '  var s = d.settings; shopSettings = s;';
-      html += '  document.getElementById("ownerLogin").value = d.currentLogin;';
+      html += '  document.getElementById("ownerLogin").value = ';
+      html += '  d.currentLogin;';
       
       html += '  var nOpts = [{k:"notif_discount",t:"Уведомлять о скидках"},';
       html += '  {k:"notif_cancel",t:"Уведомлять об отмене"},';
       html += '  {k:"notif_writeoff",t:"Уведомлять о списаниях"}]; ';
       html += '  var nb = document.getElementById("notifs");';
       html += '  nOpts.forEach(function(o){ ';
-      html += '    var r = document.createElement("div"); r.className = "row"; ';
+      html += '    var r = document.createElement("div"); ';
+      html += '    r.className = "row"; ';
       html += '    var sp = document.createElement("span"); ';
       html += '    sp.textContent = o.t; r.appendChild(sp); ';
       html += '    var cb = document.createElement("input"); ';
@@ -576,7 +578,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    cb.onchange = function(){saveSet(o.k, cb.checked);}; ';
       html += '    r.appendChild(cb); nb.appendChild(r); });';
       
-      html += '  var vOpts = [{v:"all",t:"Все товары (включая нулевые)"},';
+      html += '  var vOpts = [{v:"all",t:"Все товары (с нулевыми)"},';
       html += '  {v:"nonzero",t:"Только ненулевые"},';
       html += '  {v:"pos",t:"Только в наличии"}]; ';
       html += '  var currentV = s.inv_view || "pos"; ';
@@ -584,7 +586,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '  vOpts.forEach(function(o){ ';
       html += '    var lb = document.createElement("label"); ';
       html += '    lb.className = "radio-lbl";';
-      html += '    var rb = document.createElement("input"); rb.type = "radio"; ';
+      html += '    var rb = document.createElement("input"); ';
+      html += '    rb.type = "radio"; ';
       html += '    rb.name = "inv_view"; rb.value = o.v; ';
       html += '    rb.checked = (currentV === o.v); ';
       html += '    rb.onchange = function(){saveSet("inv_view", o.v);}; ';
@@ -738,7 +741,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '</div>';
       html += '</div>';
 
-      html += '<div class="totals-banner" id="totalsBanner" style="display:none;">';
+      html += '<div class="totals-banner" id="totalsBanner" ';
+      html += 'style="display:none;">';
       html += '<span id="totSales">Выручка: 0 ₽</span>';
       html += '<span id="totCount">Чеков: 0</span>';
       html += '<span id="totLoss">Списания: 0 шт</span>';
@@ -799,7 +803,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '  var url = "/api/warehouse/history?date=" + selectedDate;';
       html += '  if (filter) url += "&chat_id=" + filter;';
       
-      html += '  fetch(url).then(function(r){return r.json();}).then(function(d){';
+      html += '  fetch(url).then(function(r){return r.json();})';
+      html += '  .then(function(d){';
       html += '    if (!d.ok) { listEl.textContent = "Ошибка API"; return; }';
       html += '    rawHistory = d.history || [];';
       html += '    renderList();';
@@ -1172,8 +1177,9 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       
       html += '.btn-add { width: 100%; background: var(--f-brand); ';
       html += 'color: #fff; border: none; padding: 16px; ';
-      html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
-      html += 'margin-bottom: 20px; box-shadow: 0 4px 12px rgba(6,76,73,0.2); }';
+      html += 'border-radius: var(--r-md); font-size: 16px; ';
+      html += 'font-weight: 800; margin-bottom: 20px; ';
+      html += 'box-shadow: 0 4px 12px rgba(6,76,73,0.2); }';
       
       html += '.search { width: 100%; padding: 14px 16px; border: none; ';
       html += 'border-radius: var(--r-md); margin-bottom: 16px; ';
@@ -1276,7 +1282,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '</div>';
 
       html += '<button class="btn-add" onclick="window.location.href=';
-      html += '\'/warehouse/bouquet/edit\'">+ Создать новый букет</button>';
+      html += '&quot;/warehouse/bouquet/edit&quot;">';
+      html += '+ Создать новый букет</button>';
 
       html += '<input type="text" class="search" id="search" ';
       html += 'placeholder="Поиск по названию..." oninput="render()">';
@@ -1284,14 +1291,14 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '<div class="controls">';
       html += '  <div class="view-toggles">';
       html += '    <button class="view-btn active" id="btn-v-grid" ';
-      html += 'onclick="setView(\'grid\')"><svg viewBox="0 0 24 24" ';
+      html += 'onclick="setView(&quot;grid&quot;)"><svg viewBox="0 0 24 24" ';
       html += 'fill="none" stroke="currentColor" stroke-width="2">';
       html += '<rect x="3" y="3" width="7" height="7"/>';
       html += '<rect x="14" y="3" width="7" height="7"/>';
       html += '<rect x="14" y="14" width="7" height="7"/>';
       html += '<rect x="3" y="14" width="7" height="7"/></svg></button>';
       html += '    <button class="view-btn" id="btn-v-list" ';
-      html += 'onclick="setView(\'list\')"><svg viewBox="0 0 24 24" ';
+      html += 'onclick="setView(&quot;list&quot;)"><svg viewBox="0 0 24 24" ';
       html += 'fill="none" stroke="currentColor" stroke-width="2">';
       html += '<line x1="8" y1="6" x2="21" y2="6"/>';
       html += '<line x1="8" y1="12" x2="21" y2="12"/>';
@@ -1304,13 +1311,13 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
 
       html += '<div class="filters">';
       html += '<button class="f-btn active" id="f-all" ';
-      html += 'onclick="setFilter(\'all\')">Все</button>';
+      html += 'onclick="setFilter(&quot;all&quot;)">Все</button>';
       html += '<button class="f-btn" id="f-active" ';
-      html += 'onclick="setFilter(\'active\')">На витрине</button>';
+      html += 'onclick="setFilter(&quot;active&quot;)">На витрине</button>';
       html += '<button class="f-btn" id="f-inactive" ';
-      html += 'onclick="setFilter(\'inactive\')">Сняты</button>';
+      html += 'onclick="setFilter(&quot;inactive&quot;)">Сняты</button>';
       html += '<button class="f-btn" id="f-deleted" ';
-      html += 'onclick="setFilter(\'deleted\')">В корзине</button>';
+      html += 'onclick="setFilter(&quot;deleted&quot;)">В корзине</button>';
       html += '</div>';
 
       html += '<div id="list" class="b-grid">Загрузка...</div>';
@@ -1368,7 +1375,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '  var container = document.getElementById("list");';
       html += '  while(container.firstChild) ';
       html += '  container.removeChild(container.firstChild);';
-      html += '  var q = document.getElementById("search").value.toLowerCase();';
+      html += '  var q = document.getElementById("search").value';
+      html += '  .toLowerCase();';
       
       html += '  var filtered = allBouquets.filter(function(b) {';
       html += '    var matchQ = b.name.toLowerCase().includes(q);';
@@ -1992,9 +2000,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
 
       html += 'function saveAll() {';
       html += '  var isLinked = document.getElementById("bqLinked").checked;';
-      html += '  var isPreorder = document.getElementById("bqPreorder").checked;';
-      html += '  var pendingItem = document.getElementById("searchItem").value;';
-      html += '  var pendingQty = document.getElementById("qtyAdd").value;';
+      html += '  var isPreorder = ';
+      html += '  document.getElementById("bqPreorder").checked;';
+      html += '  var pendingItem = ';
+      html += '  document.getElementById("searchItem").value;';
+      html += '  var pendingQty = ';
+      html += '  document.getElementById("qtyAdd").value;';
       
       html += '  if (isLinked && pendingItem && pendingQty && selectedItem) {';
       html += '    var q = parseFloat(pendingQty);';
@@ -2011,7 +2022,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '  var name = document.getElementById("bqName").value;';
       html += '  var price = parseFloat(';
       html += '  document.getElementById("bqPrice").value);';
-      html += '  var photoUrl = document.getElementById("bqPhotoUrl").value;';
+      html += '  var photoUrl = ';
+      html += '  document.getElementById("bqPhotoUrl").value;';
       html += '  if (!name || !price) { ';
       html += '    showAlert("Ошибка", "Заполните поля", false); return; }';
       
@@ -2084,9 +2096,9 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '.filters { display: flex; gap: 8px; margin-bottom: 16px; }';
       html += '.filter { flex: 1; padding: 12px; ';
       html += 'border: 1px solid var(--f-border); ';
-      html += 'border-radius: var(--r-md); background: #fff; text-align: center; ';
-      html += 'cursor: pointer; font-size: 14px; font-weight: 600; ';
-      html += 'color: var(--f-text); }';
+      html += 'border-radius: var(--r-md); background: #fff; ';
+      html += 'text-align: center; cursor: pointer; font-size: 14px; ';
+      html += 'font-weight: 600; color: var(--f-text); }';
       html += '.filter.active { background: var(--f-brand); color: #fff; ';
       html += 'border-color: var(--f-brand); }';
       
@@ -2109,7 +2121,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'align-items: center; margin-bottom: 8px; }';
       html += '.log-title { font-weight: 800; font-size: 15px; ';
       html += 'display: flex; align-items: center; }';
-      html += '.log-title svg { width: 18px; height: 18px; margin-right: 8px; }';
+      html += '.log-title svg { width: 18px; height: 18px; ';
+      html += 'margin-right: 8px; }';
       html += '.log-date { font-size: 12px; color: var(--f-text-2); }';
       html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
       html += '.log-link { font-size: 13px; color: #3C7A89; ';
@@ -2132,7 +2145,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'onclick="setPeriod(&apos;month&apos;)">Месяц</div>';
       html += '</div>';
       
-      html += '<div class="date-label">Или выберите конкретную дату:</div>';
+      html += '<div class="date-label">Или выберите дату:</div>';
       html += '<div class="date-row">';
       html += '<input type="date" id="auditDate" ';
       html += 'onchange="setCustomDate(this.value)">';
@@ -2166,24 +2179,29 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '}';
       
       html += 'function getActionIcon(action) {';
-      html += '  var c = "class=\'svg-ico\' viewBox=\'0 0 24 24\' ';
-      html += 'fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\'";';
+      html += '  var c = "class=&quot;svg-ico&quot; ';
+      html += '  viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; ';
+      html += '  stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;";';
       html += '  if (action === "sale") return "<svg " + c + ';
-      html += '  "><rect x=\'2\' y=\'5\' width=\'20\' height=\'14\' ';
-      html += '  rx=\'2\'/><line x1=\'2\' y1=\'10\' x2=\'22\' y2=\'10\'/></svg>";';
+      html += '  "><rect x=&quot;2&quot; y=&quot;5&quot; width=&quot;20';
+      html += '  &quot; height=&quot;14&quot; rx=&quot;2&quot;/><line ';
+      html += '  x1=&quot;2&quot; y1=&quot;10&quot; x2=&quot;22&quot; ';
+      html += '  y2=&quot;10&quot;/></svg>";';
       html += '  if (action === "receipt") return "<svg " + c + ';
-      html += '  "><path d=\'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 ';
-      html += '  0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 ';
-      html += '  2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\'/></svg>";';
+      html += '  "><path d=&quot;M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 ';
+      html += '  2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 ';
+      html += '  4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z&quot;/></svg>";';
       html += '  if (action === "writeoff" || action === "cancel") ';
-      html += '  return "<svg " + c + "><polyline points=\'3 6 5 6 21 ';
-      html += '  6\'/><path d=\'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2';
-      html += '  V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\'/></svg>";';
+      html += '  return "<svg " + c + "><polyline points=&quot;3 6 5 6 ';
+      html += '  21 6&quot;/><path d=&quot;M19 6v14a2 2 0 0 1-2 2H7a2 ';
+      html += '  2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 ';
+      html += '  2v2&quot;/></svg>";';
       html += '  if (action === "shift") return "<svg " + c + ';
-      html += '  "><circle cx=\'12\' cy=\'12\' r=\'10\'/><polyline ';
-      html += '  points=\'12 6 12 12 16 14\'/></svg>";';
-      html += '  return "<svg " + c + "><circle cx=\'12\' cy=\'12\' ';
-      html += '  r=\'3\'/></svg>";';
+      html += '  "><circle cx=&quot;12&quot; cy=&quot;12&quot; ';
+      html += '  r=&quot;10&quot;/><polyline points=&quot;12 6 12 ';
+      html += '  12 16 14&quot;/></svg>";';
+      html += '  return "<svg " + c + "><circle cx=&quot;12&quot; ';
+      html += '  cy=&quot;12&quot; r=&quot;3&quot;/></svg>";';
       html += '}';
 
       html += 'function loadData() {';
