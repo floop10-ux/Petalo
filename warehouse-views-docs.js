@@ -39,7 +39,8 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '.doc-left { display: flex; flex-direction: column; gap: 4px; }';
       html += '.doc-title { font-weight: 700; font-size: 16px; }';
       html += '.meta { font-size: 13px; color: var(--f-text-2); } ';
-      html += '.amount { font-weight: 800; font-size: 18px; text-align: right; }';
+      html += '.amount { font-weight: 800; font-size: 18px; ';
+      html += 'text-align: right; }';
       
       html += '#docPreviewModal .custom-modal { ';
       html += 'text-align: left; padding: 24px; }';
@@ -53,7 +54,8 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse-app" class="back-btn">←</a>';
       html += '<h2 class="page-title">Документы</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<div class="tabs">';
@@ -71,17 +73,18 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += 'overflow-y:auto; border-top:1px solid #eee; ';
       html += 'border-bottom:1px solid #eee; padding:12px 0;"></div>';
       html += '<div id="docPreviewTotal" class="dp-total"></div>';
-      html += '<button class="btn-cancel" style="margin-top:16px; ';
-      html += 'width:100%; padding:14px; border:none; border-radius:12px; ';
-      html += 'font-weight:700; background:#F0F4F4; color:var(--f-text);" ';
+      html += '<button type="button" class="btn-cancel" ';
+      html += 'style="margin-top:16px; width:100%; padding:14px; ';
+      html += 'border:none; border-radius:12px; font-weight:700; ';
+      html += 'background:#F0F4F4; color:var(--f-text);" ';
       html += 'onclick="closeDocPreview()">Закрыть</button>';
       html += '</div></div>';
 
       html += getUnifiedMenu('documents');
 
       html += '<script>';
-      html += 'var currentType = new URLSearchParams(window.location.search)';
-      html += '.get("type") || "receipts";';
+      html += 'var currentType = new URLSearchParams(';
+      html += 'window.location.search).get("type") || "receipts";';
       html += 'var tab = document.getElementById("tab-" + currentType); ';
       html += 'if (tab) tab.classList.add("active");';
       
@@ -116,7 +119,8 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       
       html += '  d.docs.forEach(function(doc){ ';
       html += '    var a = document.createElement("a"); ';
-      html += '    var cl = currentType === "receipts" ? "receipt" : "writeoff";';
+      html += '    var cl = currentType === "receipts" ? ';
+      html += '    "receipt" : "writeoff";';
       html += '    a.className = "doc " + cl; ';
       html += '    a.href = "/warehouse/documents/details?id=" + doc.id + ';
       html += '    "&type=" + currentType;';
@@ -219,7 +223,6 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 11. ЭКРАН ДЕТАЛЕЙ ДОКУМЕНТА ======
   app.get('/warehouse/documents/details', async (req, res) => {
     try {
@@ -257,7 +260,8 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '<a href="#" onclick="history.back(); return false;" ';
       html += 'class="back-btn">←</a>';
       html += '<h2 class="page-title">Документ</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<div class="card" id="content">Загрузка...</div>';
@@ -274,6 +278,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += 'var urlParams = new URLSearchParams(window.location.search); ';
       html += 'var docId = urlParams.get("id") || ""; ';
       html += 'var docType = urlParams.get("type") || "receipts";';
+      
       html += 'fetch("/api/warehouse/documents/details?id=" + docId + ';
       html += '"&type=" + docType).then(function(r){return r.json();})';
       html += '.then(function(d){';
@@ -325,6 +330,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '    var right = document.createElement("div"); ';
       html += '    right.className = "item-qty"; ';
       html += '    right.textContent = fmtNum(i.qty) + " шт";';
+      
       html += '    if (docType === "receipts") { ';
       html += '      var sum = document.createElement("div"); ';
       html += '      sum.style = "font-size:12px; ';
@@ -332,6 +338,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '      sum.textContent = parseFloat(i.sum)';
       html += '      .toFixed(2) + " ₽"; ';
       html += '      right.appendChild(sum); }';
+      
       html += '    a.appendChild(left); a.appendChild(right); ';
       html += '    content.appendChild(a); });';
       
@@ -351,9 +358,12 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       
       html += '  if (docType === "receipts" && h.status === "completed") {';
       html += '    var cancelBtn = document.createElement("button"); ';
+      html += '    cancelBtn.type = "button"; '; // Защита от POST
       html += '    cancelBtn.className = "btn-cancel-doc"; ';
       html += '    cancelBtn.innerText = "Отменить проведение";';
-      html += '    cancelBtn.onclick = function() { ';
+      
+      html += '    cancelBtn.onclick = function(e) { ';
+      html += '      e.preventDefault();';
       html += '      showConfirm("Отмена", "Вы уверены? Товары спишутся ';
       html += '      со склада, накладная станет черновиком.", ';
       html += '      function() {';
@@ -381,7 +391,6 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 12. ЭКРАН ОТЧЁТОВ ======
   app.get('/warehouse/reports', async (req, res) => {
     try {
@@ -459,7 +468,8 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse-app" class="back-btn">←</a>';
       html += '<h2 class="page-title">Отчёты</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="date-row">';
@@ -469,13 +479,13 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       
       html += '<div class="quick-dates">';
       html += '<div class="q-btn" id="q-today" ';
-      html += 'onclick="setQuick(&apos;today&apos;)">Сегодня</div>';
+      html += 'onclick="setQuick(&quot;today&quot;)">Сегодня</div>';
       html += '<div class="q-btn" id="q-week" ';
-      html += 'onclick="setQuick(&apos;week&apos;)">Неделя</div>';
+      html += 'onclick="setQuick(&quot;week&quot;)">Неделя</div>';
       html += '<div class="q-btn" id="q-month" ';
-      html += 'onclick="setQuick(&apos;month&apos;)">Месяц</div>';
+      html += 'onclick="setQuick(&quot;month&quot;)">Месяц</div>';
       html += '<div class="q-btn" id="q-all" ';
-      html += 'onclick="setQuick(&apos;all&apos;)">Всё</div>';
+      html += 'onclick="setQuick(&quot;all&quot;)">Всё</div>';
       html += '</div>';
 
       html += '<a href="#" id="btnExport" class="btn-export" ';
@@ -483,17 +493,17 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
 
       html += '<div class="tabs">';
       html += '<div class="tab active" id="t-fin" ';
-      html += 'onclick="setTab(&apos;fin&apos;)">Финансы</div>';
+      html += 'onclick="setTab(&quot;fin&quot;)">Финансы</div>';
       html += '<div class="tab" id="t-loss" ';
-      html += 'onclick="setTab(&apos;loss&apos;)">Потери</div>';
+      html += 'onclick="setTab(&quot;loss&quot;)">Потери</div>';
       html += '<div class="tab" id="t-top" ';
-      html += 'onclick="setTab(&apos;top&apos;)">Топ-5</div>';
+      html += 'onclick="setTab(&quot;top&quot;)">Топ-5</div>';
       html += '<div class="tab" id="t-abc" ';
-      html += 'onclick="setTab(&apos;abc&apos;)">ABC</div>';
+      html += 'onclick="setTab(&quot;abc&quot;)">ABC</div>';
       html += '<div class="tab" id="t-frozen" ';
-      html += 'onclick="setTab(&apos;frozen&apos;)">Замороженные</div>';
+      html += 'onclick="setTab(&quot;frozen&quot;)">Замороженные</div>';
       html += '<div class="tab" id="t-move" ';
-      html += 'onclick="setTab(&apos;move&apos;)">Движение</div>';
+      html += 'onclick="setTab(&quot;move&quot;)">Движение</div>';
       html += '</div>';
 
       html += '<div id="content">Загрузка...</div>';
@@ -569,6 +579,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '  }).catch(function(){ c.textContent = "Ошибка сети"; });';
       html += '}';
 
+      // Безопасное обновление инфо-блока без innerHTML
       html += 'function showBarInfo(el, dateStr, rev, cost) {';
       html += '  document.querySelectorAll(".bar").forEach(function(b){';
       html += '    b.classList.remove("active"); });';
@@ -576,12 +587,20 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '  var profit = rev - cost;';
       html += '  var margin = rev > 0 ? Math.round((profit / rev) * 100) : 0;';
       html += '  var info = document.getElementById("chartInfo");';
-      html += '  var htmlStr = "<div>" + dateStr + ": <b>" + ';
-      html += '  fmtMoney(rev) + "</b></div>";';
-      html += '  htmlStr += "<div style=&quot;font-size:12px; ';
-      html += '  color:#27ae60;&quot;>Маржа: " + fmtMoney(profit) + ';
-      html += '  " (" + margin + "%)</div>";';
-      html += '  info.innerHTML = htmlStr;';
+      html += '  while(info.firstChild) info.removeChild(info.firstChild);';
+      
+      html += '  var div1 = document.createElement("div");';
+      html += '  var b1 = document.createElement("b");';
+      html += '  b1.textContent = fmtMoney(rev);';
+      html += '  div1.textContent = dateStr + ": "; ';
+      html += '  div1.appendChild(b1);';
+      
+      html += '  var div2 = document.createElement("div");';
+      html += '  div2.style = "font-size:12px; color:#27ae60;";';
+      html += '  div2.textContent = "Маржа: " + fmtMoney(profit) + ';
+      html += '  " (" + margin + "%)";';
+      
+      html += '  info.appendChild(div1); info.appendChild(div2);';
       html += '}';
 
       html += 'function renderTab() {';
@@ -809,16 +828,29 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '        var row = document.createElement("div");';
       html += '        row.className = "list-item";';
       html += '        var n = document.createElement("div");';
-      html += '        n.innerHTML = "<b>" + it.name + "</b><br>";';
-      html += '        n.innerHTML += "<span style=&quot;font-size:12px; ';
-      html += '        color:#888;&quot;>" + fmtNum(it.current_stock) + ';
-      html += '        " шт</span>";';
+      
+      // Безопасное создание структуры вместо innerHTML
+      html += '        var b1 = document.createElement("b");';
+      html += '        b1.textContent = it.name;';
+      html += '        var br = document.createElement("br");';
+      html += '        var span1 = document.createElement("span");';
+      html += '        span1.style = "font-size:12px; color:#888;";';
+      html += '        span1.textContent = fmtNum(it.current_stock) + " шт";';
+      html += '        n.appendChild(b1); n.appendChild(br); ';
+      html += '        n.appendChild(span1);';
+      
       html += '        var v = document.createElement("div");';
       html += '        v.style = "font-weight:800; text-align:right;";';
-      html += '        v.innerHTML = fmtMoney(it.total_cost);';
-      html += '        v.innerHTML += "<br><span style=&quot;font-size:10px; ';
-      html += '        color:#888;&quot;>" + fmtMoney(it.avg_cost) + ';
-      html += '        " / шт</span>";';
+      
+      html += '        var txt1 = document.createTextNode(';
+      html += '        fmtMoney(it.total_cost));';
+      html += '        var br2 = document.createElement("br");';
+      html += '        var span2 = document.createElement("span");';
+      html += '        span2.style = "font-size:10px; color:#888;";';
+      html += '        span2.textContent = fmtMoney(it.avg_cost) + " / шт";';
+      html += '        v.appendChild(txt1); v.appendChild(br2); ';
+      html += '        v.appendChild(span2);';
+      
       html += '        row.appendChild(n); row.appendChild(v);';
       html += '        frozenCard.appendChild(row);';
       html += '      });';
