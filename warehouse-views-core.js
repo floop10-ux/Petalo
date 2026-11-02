@@ -48,14 +48,12 @@ const ICON_PATHS = {
 function getIconSvg(type) {
   const path = ICON_PATHS[type];
   if (!path) return '';
-  const attrs = 'xmlns="http://www.w3.org/2000/svg" ';
-  const attrs2 = 'viewBox="0 0 24 24" fill="none" ';
-  const attrs3 = 'stroke="currentColor" stroke-width="2" ';
-  const attrs4 = 'stroke-linecap="round" stroke-linejoin="round" ';
-  const attrs5 = 'class="svg-ico"';
-  return '<svg ' + attrs + attrs2 + attrs3 + attrs4 + attrs5 + '>';
-  return '<svg ' + attrs + attrs2 + attrs3 + attrs4 + attrs5 + '>' + 
-    path + '</svg>';
+  const a = 'xmlns="http://www.w3.org/2000/svg" ';
+  const b = 'viewBox="0 0 24 24" fill="none" ';
+  const c = 'stroke="currentColor" stroke-width="2" ';
+  const d = 'stroke-linecap="round" stroke-linejoin="round" ';
+  const e = 'class="svg-ico"';
+  return '<svg ' + a + b + c + d + e + '>' + path + '</svg>';
 }
 
 function getUnifiedMenu(active) {
@@ -88,7 +86,6 @@ function getUnifiedMenu(active) {
 }
 
 const metaSafari = '<meta name="format-detection" content="telephone=no">';
-// Заменили Google Fonts на Bunny Fonts (работает без VPN)
 const fontLink = '<link href="https://fonts.bunny.net/css?' +
   'family=Manrope:wght@400;600;800&family=Inter:wght@400;600&display=swap" ' +
   'rel="stylesheet">';
