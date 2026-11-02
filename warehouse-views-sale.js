@@ -15,8 +15,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       const chatId = auth.chatId;
 
       const shiftRes = await pool.query(
-        'SELECT id FROM wh_shifts WHERE shop_id = $1 ' +
-        'AND chat_id = $2 AND status = \'open\' LIMIT 1',
+        "SELECT id FROM wh_shifts WHERE shop_id = $1 " +
+        "AND chat_id = $2 AND status = 'open' LIMIT 1",
         [shopId, chatId]
       );
 
@@ -52,7 +52,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<style>';
       html += 'body { padding: 0 16px 80px 16px; }';
       
-      // МОДАЛКА АЛЬТЕРНАТИВ
       html += '.alt-modal-overlay { position: fixed; top: 0; left: 0; ';
       html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.5); ';
       html += 'display: none; z-index: 3500; align-items: center; ';
@@ -75,7 +74,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '.alt-ctrl input { width: 70px !important; padding: 6px; ';
       html += 'margin: 0; text-align: center; font-weight: bold; }';
 
-      // ОСТАЛЬНЫЕ СТИЛИ
       html += '.search-wrapper { position: relative; margin-bottom: 16px; }';
       html += '.search { width: 100%; padding: 14px 16px; border: none; ';
       html += 'border-radius: var(--r-md); box-sizing: border-box; ';
@@ -294,42 +292,42 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'color:var(--f-text-2);">Сумма чека</label>';
       html += '<input type="text" id="totalPrice" class="total-inp" ';
       html += 'value="0" inputmode="none" readonly ';
-      html += 'onclick="setActiveInput(&apos;totalPrice&apos;)">';
+      html += 'onclick="setActiveInput(&quot;totalPrice&quot;)">';
       html += '</div>';
 
       html += '<div style="display:flex; gap:4px; margin-bottom:12px;">';
       html += '<div class="pay-btn" id="btn-cash" ';
-      html += 'onclick="setPay(&apos;cash&apos;)">';
+      html += 'onclick="setPay(&quot;cash&quot;)">';
       html += getIconSvg('cash') + 'Нал</div>';
       html += '<div class="pay-btn" id="btn-card" ';
-      html += 'onclick="setPay(&apos;card&apos;)">';
+      html += 'onclick="setPay(&quot;card&quot;)">';
       html += getIconSvg('card') + 'Карта</div>';
       html += '<div class="pay-btn" id="btn-qr" ';
-      html += 'onclick="setPay(&apos;qr&apos;)">';
+      html += 'onclick="setPay(&quot;qr&quot;)">';
       html += getIconSvg('qr') + 'QR</div>';
       html += '</div>';
 
       html += '<div class="pay-input-row">';
       html += '<input type="text" id="payAmount" placeholder="Сумма" ';
       html += 'inputmode="none" readonly ';
-      html += 'onclick="setActiveInput(&apos;payAmount&apos;)">';
+      html += 'onclick="setActiveInput(&quot;payAmount&quot;)">';
       html += '<button onclick="addPayment()">Внести</button>';
       html += '</div>';
 
       html += '<div class="numpad">';
-      html += '<button onclick="num(&apos;1&apos;)">1</button>';
-      html += '<button onclick="num(&apos;2&apos;)">2</button>';
-      html += '<button onclick="num(&apos;3&apos;)">3</button>';
-      html += '<button onclick="num(&apos;4&apos;)">4</button>';
-      html += '<button onclick="num(&apos;5&apos;)">5</button>';
-      html += '<button onclick="num(&apos;6&apos;)">6</button>';
-      html += '<button onclick="num(&apos;7&apos;)">7</button>';
-      html += '<button onclick="num(&apos;8&apos;)">8</button>';
-      html += '<button onclick="num(&apos;9&apos;)">9</button>';
-      html += '<button onclick="num(&apos;C&apos;)" ';
+      html += '<button onclick="num(&quot;1&quot;)">1</button>';
+      html += '<button onclick="num(&quot;2&quot;)">2</button>';
+      html += '<button onclick="num(&quot;3&quot;)">3</button>';
+      html += '<button onclick="num(&quot;4&quot;)">4</button>';
+      html += '<button onclick="num(&quot;5&quot;)">5</button>';
+      html += '<button onclick="num(&quot;6&quot;)">6</button>';
+      html += '<button onclick="num(&quot;7&quot;)">7</button>';
+      html += '<button onclick="num(&quot;8&quot;)">8</button>';
+      html += '<button onclick="num(&quot;9&quot;)">9</button>';
+      html += '<button onclick="num(&quot;C&quot;)" ';
       html += 'style="color:red;">C</button>';
-      html += '<button onclick="num(&apos;0&apos;)">0</button>';
-      html += '<button onclick="num(&apos;X&apos;)">⌫</button>';
+      html += '<button onclick="num(&quot;0&quot;)">0</button>';
+      html += '<button onclick="num(&quot;X&quot;)">⌫</button>';
       html += '</div>';
 
       html += '<div class="pay-list" id="payList" style="font-size:13px; ';
@@ -378,12 +376,14 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'margin-bottom:6px;">Куда выдать?</div>';
       html += '<div style="display:flex; gap:6px;">';
       html += '<div class="pay-btn active" id="pcm-cash" ';
-      html += 'onclick="setPrecheckChangeMethod(&apos;cash&apos;)">Нал</div>';
+      html += 'onclick="setPrecheckChangeMethod(&quot;cash&quot;)">';
+      html += 'Нал</div>';
       html += '<div class="pay-btn" id="pcm-card" ';
-      html += 'onclick="setPrecheckChangeMethod(&apos;card&apos;)">';
+      html += 'onclick="setPrecheckChangeMethod(&quot;card&quot;)">';
       html += 'Карта</div>';
       html += '<div class="pay-btn" id="pcm-qr" ';
-      html += 'onclick="setPrecheckChangeMethod(&apos;qr&apos;)">QR</div>';
+      html += 'onclick="setPrecheckChangeMethod(&quot;qr&quot;)">';
+      html += 'QR</div>';
       html += '</div></div>';
       html += '<div style="display:flex; justify-content:space-between; ';
       html += 'font-weight:800; font-size:18px; margin-bottom:16px;">';
@@ -439,8 +439,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var isPayAmountEdited = false; ';
       html += 'var isTotalPriceEdited = false;';
       
-      html += 'var svgPh = "<div style=width:40px;height:40px;';
-      html += 'background:#D8E4E4;border-radius:50%;></div>";';
+      html += 'var svgPh = \'<div style="width:40px;height:40px;\';';
+      html += 'svgPh += \'background:#D8E4E4;border-radius:50%"></div>\';';
 
       html += 'if (localStorage.getItem("wh_sale_grid_cols")) {';
       html += '  gridCols = parseInt(';
@@ -618,7 +618,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '      document.getElementById("altModal").classList.add("open");';
       html += '    } else {';
       html += '      d.ingredients.forEach(function(it) {';
-      html += '        addItemToCartInternal(it.shop_item_id, it.name, it.qty, it.retail_price);';
+      html += '        addItemToCartInternal(it.shop_item_id, it.name, ';
+      html += '        it.qty, it.retail_price);';
       html += '      });';
       html += '      recalculateTotals(); openSheet();';
       html += '    }';
@@ -628,7 +629,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
 
       html += 'function buildAltModal() {';
       html += '  var content = document.getElementById("altModalContent");';
-      html += '  while(content.firstChild) content.removeChild(content.firstChild);';
+      html += '  while(content.firstChild) ';
+      html += '  content.removeChild(content.firstChild);';
       
       html += '  pendingBouquetItems.forEach(function(it, idx) {';
       html += '    var mainStock = parseFloat(it.current_stock);';
@@ -658,7 +660,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '      if (it.alternatives.length > 0) {';
       html += '        var altTitle = document.createElement("div");';
       html += '        altTitle.className = "alt-group-title";';
-      html += '        altTitle.style = "color:#E67E22; font-size:12px; margin-top:8px;";';
+      html += '        altTitle.style = "color:#E67E22; font-size:12px; ';
+      html += '        margin-top:8px;";';
       html += '        altTitle.textContent = "Альтернативы:";';
       html += '        group.appendChild(altTitle);';
       
@@ -666,11 +669,13 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '          var ctrl2 = document.createElement("div");';
       html += '          ctrl2.className = "alt-ctrl";';
       html += '          var span2 = document.createElement("span");';
-      html += '          span2.textContent = alt.name + " (есть " + alt.current_stock + "):";';
+      html += '          span2.textContent = alt.name + " (есть " + ';
+      html += '          alt.current_stock + "):";';
       html += '          var input2 = document.createElement("input");';
       html += '          input2.type = "number";';
       html += '          input2.id = "alt_" + idx + "_" + aIdx;';
-      html += '          input2.value = aIdx === 0 ? (needed - Math.max(0, mainStock)) : 0;';
+      html += '          input2.value = aIdx === 0 ? ';
+      html += '          (needed - Math.max(0, mainStock)) : 0;';
       html += '          input2.onchange = function() { checkTotal(idx); };';
       html += '          ctrl2.appendChild(span2); ctrl2.appendChild(input2);';
       html += '          group.appendChild(ctrl2);';
@@ -679,7 +684,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       
       html += '      var warn = document.createElement("div");';
       html += '      warn.id = "warn_" + idx;';
-      html += '      warn.style = "color:red; font-size:11px; margin-top:4px;";';
+      html += '      warn.style = ';
+      html += '      "color:red; font-size:11px; margin-top:4px;";';
       html += '      group.appendChild(warn);';
       
       html += '      content.appendChild(group);';
@@ -691,11 +697,13 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'function checkTotal(idx) {';
       html += '  var it = pendingBouquetItems[idx];';
       html += '  var needed = parseFloat(it.qty);';
-      html += '  var mainInput = document.getElementById("main_qty_" + idx);';
+      html += '  var mainInput = ';
+      html += '  document.getElementById("main_qty_" + idx);';
       html += '  if (!mainInput) return;';
       html += '  var total = parseFloat(mainInput.value) || 0;';
       html += '  it.alternatives.forEach(function(alt, aIdx) {';
-      html += '    var altInput = document.getElementById("alt_" + idx + "_" + aIdx);';
+      html += '    var altInput = ';
+      html += '    document.getElementById("alt_" + idx + "_" + aIdx);';
       html += '    if (altInput) total += parseFloat(altInput.value) || 0;';
       html += '  });';
       html += '  var warn = document.getElementById("warn_" + idx);';
@@ -710,31 +718,43 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  var valid = true;';
       html += '  pendingBouquetItems.forEach(function(it, idx) {';
       html += '    var needed = parseFloat(it.qty);';
-      html += '    var mainInput = document.getElementById("main_qty_" + idx);';
+      html += '    var mainInput = ';
+      html += '    document.getElementById("main_qty_" + idx);';
       html += '    if (mainInput) {';
       html += '      var total = parseFloat(mainInput.value) || 0;';
       html += '      it.alternatives.forEach(function(alt, aIdx) {';
-      html += '        var altInput = document.getElementById("alt_" + idx + "_" + aIdx);';
+      html += '        var altInput = ';
+      html += '        document.getElementById("alt_" + idx + "_" + aIdx);';
       html += '        if (altInput) total += parseFloat(altInput.value) || 0;';
       html += '      });';
       html += '      if (total < needed) valid = false;';
       html += '    }';
       html += '  });';
       
-      html += '  if (!valid) { showAlert("Ошибка", "Выбрано меньше, чем нужно", false); return; }';
+      html += '  if (!valid) { showAlert("Ошибка", ';
+      html += '  "Выбрано меньше, чем нужно", false); return; }';
       
       html += '  pendingBouquetItems.forEach(function(it, idx) {';
-      html += '    var mainInput = document.getElementById("main_qty_" + idx);';
+      html += '    var mainInput = ';
+      html += '    document.getElementById("main_qty_" + idx);';
       html += '    if (!mainInput) {';
-      html += '      addItemToCartInternal(it.shop_item_id, it.name, it.qty, it.retail_price);';
+      html += '      addItemToCartInternal(it.shop_item_id, it.name, ';
+      html += '      it.qty, it.retail_price);';
       html += '    } else {';
       html += '      var mainQty = parseFloat(mainInput.value) || 0;';
-      html += '      if (mainQty > 0) addItemToCartInternal(it.shop_item_id, it.name, mainQty, it.retail_price);';
+      html += '      if (mainQty > 0) {';
+      html += '        addItemToCartInternal(it.shop_item_id, it.name, ';
+      html += '        mainQty, it.retail_price);';
+      html += '      }';
       html += '      it.alternatives.forEach(function(alt, aIdx) {';
-      html += '        var altInput = document.getElementById("alt_" + idx + "_" + aIdx);';
+      html += '        var altInput = ';
+      html += '        document.getElementById("alt_" + idx + "_" + aIdx);';
       html += '        if (altInput) {';
       html += '          var altQty = parseFloat(altInput.value) || 0;';
-      html += '          if (altQty > 0) addItemToCartInternal(alt.id, alt.name, altQty, alt.retail_price);';
+      html += '          if (altQty > 0) {';
+      html += '            addItemToCartInternal(alt.id, alt.name, ';
+      html += '            altQty, alt.retail_price);';
+      html += '          }';
       html += '        }';
       html += '      });';
       html += '    }';
@@ -751,7 +771,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'function addItemToCartInternal(id, name, qty, retail) {';
       html += '  var ex = cart.find(function(c) { return c.id === id; });';
       html += '  if (ex) { ex.qty += qty; }';
-      html += '  else { cart.push({ id: id, name: name, qty: qty, retail: retail || 0 }); }';
+      html += '  else { cart.push({ id: id, name: name, qty: qty, ';
+      html += '  retail: retail || 0 }); }';
       html += '}';
 
       html += 'function setCat(id) {';
@@ -803,7 +824,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    d.appendChild(nm);';
       html += '    var st = document.createElement("div"); ';
       html += '    var stockVal = parseFloat(item.current_stock) || 0;';
-      html += '    st.className = "stock " + (stockVal > 0 ? "green" : "red");';
+      html += '    st.className = "stock " + ';
+      html += '    (stockVal > 0 ? "green" : "red");';
       html += '    st.textContent = "Ост: " + fmtNum(stockVal) ';
       html += '    + " " + (item.unit || "шт");';
       html += '    d.appendChild(st);';
@@ -1367,7 +1389,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse-app" class="back-btn">←</a>';
       html += '<h2 class="page-title">Приходы</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<a href="/warehouse/receipt/new" class="btn-new">';
@@ -1382,9 +1405,10 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'overflow-y:auto; border-top:1px solid #eee; ';
       html += 'border-bottom:1px solid #eee; padding:12px 0;"></div>';
       html += '<div id="docPreviewTotal" class="dp-total"></div>';
-      html += '<button class="btn-cancel" style="margin-top:16px; ';
-      html += 'width:100%; padding:14px; border:none; border-radius:12px; ';
-      html += 'font-weight:700; background:#F0F4F4; color:var(--f-text);" ';
+      html += '<button type="button" class="btn-cancel" ';
+      html += 'style="margin-top:16px; width:100%; padding:14px; ';
+      html += 'border:none; border-radius:12px; font-weight:700; ';
+      html += 'background:#F0F4F4; color:var(--f-text);" ';
       html += 'onclick="closeDocPreview()">Закрыть</button>';
       html += '</div></div>';
 
@@ -1551,8 +1575,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
       
       const r = await pool.query(
-        'INSERT INTO wh_receipts (shop_id, chat_id, status) ' +
-        'VALUES ($1, $2, \'draft\') RETURNING id',
+        "INSERT INTO wh_receipts (shop_id, chat_id, status) " +
+        "VALUES ($1, $2, 'draft') RETURNING id",
         [auth.shopId, auth.chatId]
       );
       res.redirect('/warehouse/receipt/edit?id=' + r.rows[0].id);
@@ -1560,7 +1584,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка создания'); 
     }
   });
-
   // ====== 8. ЭКРАН РЕДАКТИРОВАНИЯ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/edit', async (req, res) => {
     try {
@@ -1574,11 +1597,11 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       }
 
       const checkR = await pool.query(
-        'SELECT status FROM wh_receipts ' +
-        'WHERE id = $1 AND shop_id = $2', [receiptId, auth.shopId]
+        "SELECT status FROM wh_receipts " +
+        "WHERE id = $1 AND shop_id = $2", [receiptId, auth.shopId]
       );
       if (checkR.rows.length === 0 || checkR.rows[0].status !== 'draft') {
-        return res.status(403).send('Накладная не найдена или уже проведена');
+        return res.status(403).send('Накладная не найдена или проведена');
       }
 
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
@@ -1593,6 +1616,12 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'label { display: block; font-size: 13px; ';
       html += 'color: var(--f-text-2); margin-bottom: 6px; font-weight: 600; }';
       
+      html += '.supplier-row { display: flex; gap: 8px; margin-bottom: 12px; }';
+      html += '.supplier-row select { flex: 1; margin: 0; }';
+      html += '.supplier-row button { background: var(--f-brand); ';
+      html += 'color: #fff; border: none; border-radius: var(--r-md); ';
+      html += 'padding: 0 16px; font-weight: 800; font-size: 18px; }';
+
       html += '.btn-add { width: 100%; background: var(--f-brand); ';
       html += 'color: #fff; border: none; padding: 16px; ';
       html += 'border-radius: var(--r-md); font-size: 16px; font-weight: 800; ';
@@ -1643,16 +1672,27 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse/receipts" class="back-btn">←</a>';
       html += '<h2 class="page-title">Накладная</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="card">';
+      
+      // Блок поставщиков (Бэклог В.1)
+      html += '<label>Поставщик</label>';
+      html += '<div class="supplier-row">';
+      html += '<select id="supplierSelect">';
+      html += '<option value="">-- Выберите --</option>';
+      html += '</select>';
+      html += '<button type="button" onclick="addSupplier()">+</button>';
+      html += '</div>';
+
       html += '<label>Название товара</label>';
       html += '<div class="dropdown-wrap">';
       html += '<input type="text" id="itemName" class="input-cap" ';
       html += 'oninput="onNameInput()" ';
       html += 'placeholder="Начните вводить..." autocomplete="off">';
-      html += '<button class="clear-search" id="clearSearch" ';
+      html += '<button type="button" class="clear-search" id="clearSearch" ';
       html += 'onclick="clearSearchText()">✕</button>';
       html += '<div class="dropdown-list" id="ddList"></div>';
       html += '</div>';
@@ -1687,7 +1727,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<input type="number" id="itemRetail" inputmode="decimal">';
       html += '</div>';
 
-      html += '<button class="btn-add" id="btnAdd" ';
+      html += '<button type="button" class="btn-add" id="btnAdd" ';
       html += 'onclick="addToBasket()">+ Добавить в накладную</button>';
 
       html += '<div class="basket" id="basket">';
@@ -1698,7 +1738,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'margin-top:16px; border-top:2px solid var(--f-brand); ';
       html += 'padding-top:12px; font-size:20px; font-weight:800;">';
       html += '<span>Итого:</span><span id="totalSum">0 ₽</span></div>';
-      html += '<button class="btn-save" id="btnSaveReceipt" ';
+      html += '<button type="button" class="btn-save" id="btnSaveReceipt" ';
       html += 'style="margin-top:20px;" ';
       html += 'onclick="saveReceipt()">Провести накладную</button>';
       html += '</div>';
@@ -1709,6 +1749,40 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var receiptId = ' + receiptId + ';';
       html += 'var currentLastCost = 0; var itemsCatalog = [];';
       html += 'var receiptItems = [];';
+
+      html += 'function addSupplier() {';
+      html += '  showPrompt("Новый поставщик", "Название:", "", ';
+      html += '  function(name) {';
+      html += '    if (!name) return;';
+      html += '    fetch("/api/warehouse/suppliers/create", { ';
+      html += '    method: "POST", ';
+      html += '    headers: { "Content-Type": "application/json" }, ';
+      html += '    body: JSON.stringify({ name: name }) })';
+      html += '    .then(function(r){return r.json();})';
+      html += '    .then(function(d){';
+      html += '      if (d.ok) { loadSuppliers(d.id); }';
+      html += '      else { showAlert("Ошибка", d.error, false); }';
+      html += '    }).catch(function(){ showAlert("Сеть", "Ошибка", false); });';
+      html += '  });';
+      html += '}';
+
+      html += 'function loadSuppliers(selectId) {';
+      html += '  fetch("/api/warehouse/suppliers")';
+      html += '  .then(function(r) { return r.json(); })';
+      html += '  .then(function(d) {';
+      html += '    if (d.ok) {';
+      html += '      var sel = document.getElementById("supplierSelect");';
+      html += '      while(sel.options.length > 1) sel.remove(1);';
+      html += '      d.suppliers.forEach(function(s) {';
+      html += '        var opt = document.createElement("option");';
+      html += '        opt.value = s.id; opt.text = s.name;';
+      html += '        sel.appendChild(opt);';
+      html += '      });';
+      html += '      if (selectId) sel.value = selectId;';
+      html += '    }';
+      html += '  }).catch(function(){});';
+      html += '}';
+      html += 'loadSuppliers();';
 
       html += 'function checkCat() {';
       html += '  var sel = document.getElementById("itemCategory");';
@@ -1816,11 +1890,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    sel.appendChild(opt);';
       html += '  });';
       html += '  checkCat(); ';
-      html += '} else {';
-      html += '  var selErr = document.getElementById("itemCategory");';
-      html += '  var optErr = document.createElement("option");';
-      html += '  optErr.value = ""; optErr.innerText = "Ошибка загрузки";';
-      html += '  selErr.appendChild(optErr);';
       html += '} }).catch(function() {});';
 
       html += 'fetch("/api/warehouse/items")';
@@ -1854,12 +1923,15 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  btn.disabled = true; btn.innerText = "Добавление...";';
       html += '  var f = document.getElementById("itemPhoto").files[0];';
       html += '  var finish = function(url) {';
+      html += '    var supplierId = ';
+      html += '    document.getElementById("supplierSelect").value;';
       html += '    fetch("/api/warehouse/receipt/item/add", { ';
       html += '    method: "POST", headers: { "Content-Type": ';
       html += '    "application/json" }, ';
       html += '    body: JSON.stringify({ receipt_id: receiptId, ';
       html += '    name: name, qty: qty, price: price, retail: retail, ';
-      html += '    cat_id: catId, unit: unit, photo_url: url }) })';
+      html += '    cat_id: catId, unit: unit, photo_url: url, ';
+      html += '    supplier_id: supplierId }) })';
       html += '    .then(function(r) { return r.json(); })';
       html += '    .then(function(d) {';
       html += '      btn.disabled = false; ';
@@ -2006,13 +2078,14 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       
       html += '  receiptItems.forEach(function(it) {';
       html += '    if (parseFloat(it.retail_price) === 0) { noPriceCount++; }';
-      html += '    else if (parseFloat(it.retail_price) < parseFloat(it.unit_cost)) {';
-      html += '      lowRetailCount++;';
-      html += '    }';
+      html += '    else if (parseFloat(it.retail_price) < ';
+      html += '    parseFloat(it.unit_cost)) { lowRetailCount++; }';
       html += '  });';
       
       html += '  if (lowRetailCount > 0) {';
-      html += '    showConfirm("Внимание", "У " + lowRetailCount + " товаров Розница ниже Закупки! Вы уверены, что хотите продавать в убыток?", ';
+      html += '    showConfirm("Внимание", "У " + lowRetailCount + ';
+      html += '    " товаров Розница ниже Закупки! Вы уверены, что хотите ';
+      html += '    продавать в убыток?", ';
       html += '    function() { checkNoPrice(noPriceCount); }, false);';
       html += '  } else {';
       html += '    checkNoPrice(noPriceCount);';
@@ -2057,7 +2130,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 9. ЭКРАН СПИСАНИЯ ======
   app.get('/warehouse/writeoff', async (req, res) => {
     try {
@@ -2154,7 +2226,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse-app" class="back-btn">←</a>';
       html += '<h2 class="page-title">Списание</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<div class="search-wrap">';
@@ -2172,7 +2245,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<span id="totQty">Всего: 0 шт</span>';
       html += '<span id="totSum">0 ₽</span>';
       html += '</div>';
-      html += '<button class="btn-checkout" id="btnCheckout" ';
+      html += '<button type="button" class="btn-checkout" id="btnCheckout" ';
       html += 'onclick="showForm()">Перейти к оформлению</button>';
       html += '</div>';
 
@@ -2182,13 +2255,13 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'Причина списания</label>';
       html += '<div class="reasons">';
       html += '<div class="reason active" ';
-      html += 'onclick="setR(this, &apos;spoilage&apos;)">Порча</div>';
+      html += 'onclick="setR(this, &quot;spoilage&quot;)">Порча</div>';
       html += '<div class="reason" ';
-      html += 'onclick="setR(this, &apos;loss&apos;)">Потеря</div>';
+      html += 'onclick="setR(this, &quot;loss&quot;)">Потеря</div>';
       html += '<div class="reason" ';
-      html += 'onclick="setR(this, &apos;markdown&apos;)">Уценка</div>';
+      html += 'onclick="setR(this, &quot;markdown&quot;)">Уценка</div>';
       html += '<div class="reason" ';
-      html += 'onclick="setR(this, &apos;sorting&apos;)">Пересорт</div>';
+      html += 'onclick="setR(this, &quot;sorting&quot;)">Пересорт</div>';
       html += '</div>';
       
       html += '<label style="font-size:13px; font-weight:600; ';
@@ -2204,7 +2277,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'style="margin-bottom:16px; box-shadow: none; ';
       html += 'padding: 8px; border: 1px dashed var(--f-border);">';
       
-      html += '<button class="btn-save" id="btnSaveWriteoff" ';
+      html += '<button type="button" class="btn-save" id="btnSaveWriteoff" ';
       html += 'onclick="saveWriteoff()">Списать всё</button>';
       html += '</div>';
 
@@ -2216,8 +2289,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var allItems = []; var cart = []; ';
       html += 'var selReason = "spoilage";';
       
-      html += 'var svgPh = "<div style=width:40px;height:40px;';
-      html += 'background:#D8E4E4;border-radius:50%;></div>";';
+      html += 'var svgPh = "<div style=\"width:40px;height:40px;\';';
+      html += 'svgPh += \'background:#D8E4E4;border-radius:50%\"></div>";';
 
       html += 'fetch("/api/warehouse/items")';
       html += '.then(function(r) { return r.json(); })';
@@ -2338,7 +2411,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    var ctrl = document.createElement("div"); ';
       html += '    ctrl.className = "b-controls";';
       html += '    var mn = document.createElement("button"); ';
-      html += '    mn.textContent = "-"; mn.className = "qty-btn"; ';
+      html += '    mn.type = "button"; mn.textContent = "-"; ';
+      html += '    mn.className = "qty-btn"; ';
       html += '    mn.onclick = function() { changeQty(idx, -1); };';
       html += '    var inp = document.createElement("input"); ';
       html += '    inp.type = "number"; inp.className = "qty-input"; ';
@@ -2350,7 +2424,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '      else { this.value = item.qty; }';
       html += '    };';
       html += '    var pl = document.createElement("button"); ';
-      html += '    pl.textContent = "+"; pl.className = "qty-btn"; ';
+      html += '    pl.type = "button"; pl.textContent = "+"; ';
+      html += '    pl.className = "qty-btn"; ';
       html += '    pl.onclick = function() { changeQty(idx, 1); };';
       html += '    ctrl.appendChild(mn); ctrl.appendChild(inp); ';
       html += '    ctrl.appendChild(pl);';
@@ -2420,16 +2495,24 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  .then(function(d) {';
       html += '    if (d.ok) {';
       html += '      showAlert("Готово", "Успешно списано!", true);';
-      html += '      setTimeout(function() { ';
-      html += '        window.location.href = "/warehouse-app"; }, 1500);';
+      
+      // Бэклог В.2: Проваливаемся в детали (если есть ID)
+      html += '      var targetId = d.doc_id || d.id;';
+      html += '      if (targetId) {';
+      html += '        setTimeout(function() { window.location.href = ';
+      html += '          "/warehouse/documents/details?id=" + targetId + ';
+      html += '          "&type=writeoffs"; }, 1000);';
+      html += '      } else {';
+      html += '        setTimeout(function() { window.location.href = ';
+      html += '          "/warehouse/history"; }, 1000);';
+      html += '      }';
+      
       html += '    } else {';
-      html += '      document.getElementById("btnSaveWriteoff").disabled = ';
-      html += '      false;';
-      html += '      document.getElementById("btnSaveWriteoff").innerText = ';
-      html += '      "Списать всё"; showAlert("Ошибка", d.error, false);';
+      html += '      btn.disabled = false; btn.innerText = "Списать всё"; ';
+      html += '      showAlert("Ошибка", d.error, false);';
       html += '    }';
       html += '  }).catch(function() {';
-      html += '    document.getElementById("btnSaveWriteoff").disabled = false;';
+      html += '    btn.disabled = false; btn.innerText = "Списать всё"; ';
       html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
       html += '  });';
       html += '}';
