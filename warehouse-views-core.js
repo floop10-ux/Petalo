@@ -30,23 +30,244 @@ function getIconSvg(type) {
           'viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
           'stroke-width="2" stroke-linecap="round" ' +
           'stroke-linejoin="round" class="svg-ico"';
-  if (type === 'home') return '<svg ' + c + '><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>';
-  if (type === 'sale') return '<svg ' + c + '><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>';
-  if (type === 'receipt') return '<svg ' + c + '><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
-  if (type === 'writeoff') return '<svg ' + c + '><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
-  if (type === 'inventory') return '<svg ' + c + '><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>';
-  if (type === 'history') return '<svg ' + c + '><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-  if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
-  if (type === 'reports') return '<svg ' + c + '><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>';
-  if (type === 'staff') return '<svg ' + c + '><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
-  if (type === 'settings') return '<svg ' + c + '><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
-  if (type === 'audit') return '<svg ' + c + '><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-  if (type === 'bouquets') return '<svg ' + c + '><path d="M12 2v20M17 5l-5 5-5-5M7 19l5-5 5 5"/></svg>';
-  if (type === 'cash') return '<svg ' + c + '><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>';
-  if (type === 'card') return '<svg ' + c + '><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>';
-  if (type === 'qr') return '<svg ' + c + '><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><path d="M3 14h7v7H3z"/></svg>';
-  if (type === 'search') return '<svg ' + c + '><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-  if (type === 'warn') return '<svg ' + c + '><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  if (type === 'home') return '<svg ' + c + '><path d="M3 9l9-7 9 ';
+  if (type === 'home') return '<svg ' + c + '><path d="M3 9l9-7 9 ' +
+    '7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 ';
+  if (type === 'home') return '<svg ' + c + '><path d="M3 9l9-7 9 ' +
+    '7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 ' +
+    '9 12 15 12 15 22"/></svg>';
+  if (type === 'sale') return '<svg ' + c + '><rect x="2" y="5" ' +
+    'width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" ';
+  if (type === 'sale') return '<svg ' + c + '><rect x="2" y="5" ' +
+    'width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" ' +
+    'y2="10"/></svg>';
+  if (type === 'receipt') return '<svg ' + c + '><path d="M21 16V8a2 ';
+  if (type === 'receipt') return '<svg ' + c + '><path d="M21 16V8a2 ' +
+    '2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 ';
+  if (type === 'receipt') return '<svg ' + c + '><path d="M21 16V8a2 ' +
+    '2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 ' +
+    '0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline ';
+  if (type === 'receipt') return '<svg ' + c + '><path d="M21 16V8a2 ' +
+    '2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 ' +
+    '0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline ' +
+    'points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" ';
+  if (type === 'receipt') return '<svg ' + c + '><path d="M21 16V8a2 ' +
+    '2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 ' +
+    '0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline ' +
+    'points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" ' +
+    'x2="12" y2="12"/></svg>';
+  if (type === 'writeoff') return '<svg ' + c + '><polyline ';
+  if (type === 'writeoff') return '<svg ' + c + '><polyline ' +
+    'points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 ';
+  if (type === 'writeoff') return '<svg ' + c + '><polyline ' +
+    'points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 ' +
+    '0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line ';
+  if (type === 'writeoff') return '<svg ' + c + '><polyline ' +
+    'points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 ' +
+    '0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line ' +
+    'x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" ';
+  if (type === 'writeoff') return '<svg ' + c + '><polyline ' +
+    'points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 ' +
+    '0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line ' +
+    'x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" ' +
+    'x2="14" y2="17"/></svg>';
+  if (type === 'inventory') return '<svg ' + c + '><rect x="3" y="3" ';
+  if (type === 'inventory') return '<svg ' + c + '><rect x="3" y="3" ' +
+    'width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>';
+  if (type === 'inventory') return '<svg ' + c + '><rect x="3" y="3" ' +
+    'width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+    '<rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" ';
+  if (type === 'inventory') return '<svg ' + c + '><rect x="3" y="3" ' +
+    'width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+    '<rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" ' +
+    'width="7" height="7"/></svg>';
+  if (type === 'history') return '<svg ' + c + '><circle cx="12" ';
+  if (type === 'history') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+  if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 ';
+  if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 ' +
+    '0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline ';
+  if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 ' +
+    '0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline ' +
+    'points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>';
+  if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 ' +
+    '0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline ' +
+    'points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>' +
+    '<line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 ';
+  if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 ' +
+    '0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline ' +
+    'points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>' +
+    '<line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 ';
+  if (type === 'docs') return '<svg ' + c + '><path d="M14 2H6a2 2 ' +
+    '0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline ' +
+    'points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>' +
+    '<line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 ' +
+    '9 8 9"/></svg>';
+  if (type === 'reports') return '<svg ' + c + '><line x1="18" ';
+  if (type === 'reports') return '<svg ' + c + '><line x1="18" ' +
+    'y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>';
+  if (type === 'reports') return '<svg ' + c + '><line x1="18" ' +
+    'y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>' +
+    '<line x1="6" y1="20" x2="6" y2="14"/></svg>';
+  if (type === 'staff') return '<svg ' + c + '><path d="M17 21v-2a4 ';
+  if (type === 'staff') return '<svg ' + c + '><path d="M17 21v-2a4 ' +
+    '4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>';
+  if (type === 'staff') return '<svg ' + c + '><path d="M17 21v-2a4 ' +
+    '4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' +
+    '<path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 ';
+  if (type === 'staff') return '<svg ' + c + '><path d="M17 21v-2a4 ' +
+    '4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' +
+    '<path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 ' +
+    '0 1 0 7.75"/></svg>';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09' +
+    'A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09' +
+    'A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 ' +
+    '0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09' +
+    'A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 ' +
+    '0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33' +
+    'H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09' +
+    'A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 ' +
+    '0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33' +
+    'H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09' +
+    'a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09' +
+    'A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 ' +
+    '0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33' +
+    'H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09' +
+    'a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 ' +
+    '0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09' +
+    'A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 ' +
+    '0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33' +
+    'H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09' +
+    'a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 ' +
+    '0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82' +
+    'V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09';
+  if (type === 'settings') return '<svg ' + c + '><circle cx="12" ' +
+    'cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06' +
+    '.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 ' +
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2' +
+    '-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06' +
+    'a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33' +
+    '-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09' +
+    'A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 ' +
+    '0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33' +
+    'H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09' +
+    'a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 ' +
+    '0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82' +
+    'V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09' +
+    'a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+  if (type === 'audit') return '<svg ' + c + '><path d="M1 12s4-8 ';
+  if (type === 'audit') return '<svg ' + c + '><path d="M1 12s4-8 ' +
+    '11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" ';
+  if (type === 'audit') return '<svg ' + c + '><path d="M1 12s4-8 ' +
+    '11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" ' +
+    'r="3"/></svg>';
+  if (type === 'bouquets') return '<svg ' + c + '><path d="M12 2v20M17 ';
+  if (type === 'bouquets') return '<svg ' + c + '><path d="M12 2v20M17 ' +
+    '5l-5 5-5-5M7 19l5-5 5 5"/></svg>';
+  if (type === 'cash') return '<svg ' + c + '><rect x="2" y="6" ';
+  if (type === 'cash') return '<svg ' + c + '><rect x="2" y="6" ' +
+    'width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/>';
+  if (type === 'cash') return '<svg ' + c + '><rect x="2" y="6" ' +
+    'width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/>' +
+    '<path d="M6 12h.01M18 12h.01"/></svg>';
+  if (type === 'card') return '<svg ' + c + '><rect x="2" y="5" ';
+  if (type === 'card') return '<svg ' + c + '><rect x="2" y="5" ' +
+    'width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" ';
+  if (type === 'card') return '<svg ' + c + '><rect x="2" y="5" ' +
+    'width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" ' +
+    'y2="10"/></svg>';
+  if (type === 'qr') return '<svg ' + c + '><rect x="3" y="3" ';
+  if (type === 'qr') return '<svg ' + c + '><rect x="3" y="3" ' +
+    'width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>';
+  if (type === 'qr') return '<svg ' + c + '><rect x="3" y="3" ' +
+    'width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+    '<rect x="14" y="14" width="7" height="7"/><path d="M3 14h7v7H3z';
+  if (type === 'qr') return '<svg ' + c + '><rect x="3" y="3" ' +
+    'width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+    '<rect x="14" y="14" width="7" height="7"/><path d="M3 14h7v7H3z' +
+    '"/></svg>';
+  if (type === 'search') return '<svg ' + c + '><circle cx="11" ';
+  if (type === 'search') return '<svg ' + c + '><circle cx="11" ' +
+    'cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+  if (type === 'warn') return '<svg ' + c + '><path d="M10.29 ';
+  if (type === 'warn') return '<svg ' + c + '><path d="M10.29 ' +
+    '3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 ';
+  if (type === 'warn') return '<svg ' + c + '><path d="M10.29 ' +
+    '3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 ' +
+    '3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>';
+  if (type === 'warn') return '<svg ' + c + '><path d="M10.29 ' +
+    '3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 ' +
+    '3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>' +
+    '<line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
   return '';
 }
 
@@ -66,19 +287,24 @@ function getUnifiedMenu(active) {
     { id: 'settings', url: '/warehouse/settings', text: 'Настройки', icon: 'settings' }
   ];
 
-  let html = '<div class="sidebar-overlay" id="unifiedMenuOverlay" onclick="toggleMenu()"></div>';
+  let html = '<div class="sidebar-overlay" id="unifiedMenuOverlay" ';
+  html += 'onclick="toggleMenu()"></div>';
   html += '<div class="sidebar" id="unifiedMenuSidebar">';
   html += '<h3 style="margin-top:0; font-weight:800;">Меню</h3>';
   items.forEach(function(it) {
     let isActive = (active === it.id) ? 'active' : '';
-    html += '<a href="' + it.url + '" class="menu-item ' + isActive + '">' + getIconSvg(it.icon) + it.text + '</a>';
+    html += '<a href="' + it.url + '" class="menu-item ' + isActive + '">'; 
+    html += getIconSvg(it.icon) + it.text + '</a>';
   });
   html += '</div>';
   return html;
 }
 
 const metaSafari = '<meta name="format-detection" content="telephone=no">';
-const fontLink = '<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">';
+// Убрали зависимость от Google Fonts (используем Bunny Fonts - работает без VPN)
+const fontLink = '<link href="https://fonts.bunny.net/css?' +
+  'family=Manrope:wght@400;600;800&family=Inter:wght@400;600&display=swap" ' +
+  'rel="stylesheet">';
 
 let uiScript = `
   <style>
@@ -269,6 +495,10 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
     html += '.link-owner { display: block; margin-top: 24px; ';
     html += 'color: var(--f-text-2); font-size: 13px; cursor: pointer; }';
     html += '.login-block { display: none; }';
+    html += '.shop-item { display: block; width: 100%; padding: 14px; ';
+    html += 'margin-bottom: 10px; background: #F0F4F4; border: none; ';
+    html += 'border-radius: 12px; font-size: 16px; font-weight: 700; ';
+    html += 'color: var(--f-brand); cursor: pointer; }';
     html += '</style></head><body>';
     
     html += '<div class="login-card">';
@@ -313,12 +543,20 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
     html += 'Вход для флориста (PIN)</span>';
     html += '</div>';
 
+    html += '<div id="shopSelectBlock" class="login-block">';
+    html += '<p class="text-muted" style="margin-bottom:16px;">';
+    html += 'Выберите торговую точку</p>';
+    html += '<div id="shopList"></div>';
+    html += '</div>';
+
     html += '</div>';
 
     html += '<script>';
+    html += 'var currentPin = "";';
     html += 'function showOwnerLogin() {';
     html += '  document.getElementById("pinBlock").style.display = "none";';
-    html += '  document.getElementById("ownerBlock").style.display = "block";';
+    html += '  document.getElementById("ownerBlock")';
+    html += '  .style.display = "block";';
     html += '}';
     html += 'function showPinLogin() {';
     html += '  document.getElementById("ownerBlock").style.display = "none";';
@@ -329,20 +567,50 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
     html += '  var pin = document.getElementById("pin").value;';
     html += '  var btn = document.querySelector("#pinBlock button");';
     html += '  btn.disabled = true; btn.innerText = "Вход...";';
+    html += '  currentPin = pin;';
     html += '  fetch("/api/warehouse/auth", { method: "POST", ';
     html += '  headers: { "Content-Type": "application/json" }, ';
     html += '  body: JSON.stringify({ shopId: "' + shopId + '", ';
     html += '  pin: pin }) })';
     html += '  .then(function(r) { return r.json(); })';
     html += '  .then(function(data) {';
-    html += '    if (data.ok) window.location.href = "/warehouse-app"; ';
-    html += '    else { btn.disabled = false; btn.innerText = "Войти";';
-    html += '      if (data.rate_limited) showAlert("Стоп", ';
-    html += '      "Аккаунт заблокирован на 15 минут.", false); ';
-    html += '      else showAlert("Ошибка", "Неверный PIN", false); }';
+    html += '    if (data.ok) {';
+    html += '      if (data.multi && data.shops) {';
+    html += '        showShopSelect(data.shops);';
+    html += '      } else {';
+    html += '        window.location.href = "/warehouse-app";';
+    html += '      }';
+    html += '    } else { btn.disabled = false; btn.innerText = "Войти";';
+    html += '      showAlert("Ошибка", "Неверный PIN", false); }';
     html += '  }).catch(function() { btn.disabled = false; ';
     html += '  btn.innerText = "Войти"; showAlert("Ошибка сети", ';
     html += '  "Проверьте интернет", false); });';
+    html += '}';
+
+    html += 'function showShopSelect(shops) {';
+    html += '  document.getElementById("pinBlock").style.display = "none";';
+    html += '  var block = document.getElementById("shopSelectBlock");';
+    html += '  block.style.display = "block";';
+    html += '  var list = document.getElementById("shopList");';
+    html += '  while(list.firstChild) list.removeChild(list.firstChild);';
+    html += '  shops.forEach(function(s) {';
+    html += '    var btn = document.createElement("button");';
+    html += '    btn.className = "shop-item";';
+    html += '    btn.textContent = s.display_name || s.shop_id;';
+    html += '    btn.onclick = function() { switchToShop(s.shop_id); };';
+    html += '    list.appendChild(btn);';
+    html += '  });';
+    html += '}';
+
+    html += 'function switchToShop(sid) {';
+    html += '  fetch("/api/warehouse/switch-shop", { method: "POST", ';
+    html += '  headers: { "Content-Type": "application/json" }, ';
+    html += '  body: JSON.stringify({ shopId: sid }) })';
+    html += '  .then(function(r) { return r.json(); })';
+    html += '  .then(function(d) {';
+    html += '    if (d.ok) window.location.href = "/warehouse-app";';
+    html += '    else showAlert("Ошибка", "Нет доступа", false);';
+    html += '  }).catch(function(){});';
     html += '}';
 
     html += 'function loginOwner() {';
@@ -357,9 +625,7 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
     html += '  .then(function(data) {';
     html += '    if (data.ok) window.location.href = "/warehouse-app"; ';
     html += '    else { btn.disabled = false; btn.innerText = "Войти";';
-    html += '      if (data.rate_limited) showAlert("Стоп", ';
-    html += '      "Аккаунт заблокирован.", false); ';
-    html += '      else showAlert("Ошибка", "Неверный логин/пароль", false); }';
+    html += '      showAlert("Ошибка", "Неверный логин/пароль", false); }';
     html += '  }).catch(function() { btn.disabled = false; ';
     html += '  btn.innerText = "Войти"; showAlert("Ошибка сети", ';
     html += '  "Проверьте интернет", false); });';
@@ -378,9 +644,12 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
       const chatId = auth.chatId;
 
       const r = await pool.query(
-        'SELECT role, name, can_receipt, can_sale, ' +
-        'can_writeoff FROM admins WHERE chat_id = $1 ' +
-        'AND shop_id = $2 LIMIT 1', [chatId, shopId]
+        'SELECT a.role, a.name, a.can_receipt, a.can_sale, ' +
+        'a.can_writeoff, s.display_name as shop_name ' +
+        'FROM admins a ' +
+        'JOIN shops s ON s.shop_id = a.shop_id ' +
+        'WHERE a.chat_id = $1 AND a.shop_id = $2 LIMIT 1', 
+        [chatId, shopId]
       );
       
       if (r.rows.length === 0) {
@@ -390,6 +659,8 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
       const user = r.rows[0];
       const isOwner = user.role === 'owner';
       const userName = esc(user.name || 'Флорист');
+      const shopName = esc(user.shop_name || 'Мой магазин');
+      
       const canSale = user.can_sale === true;
       const canWriteoff = user.can_writeoff === true;
       const canReceipt = user.can_receipt === true;
@@ -434,7 +705,7 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
       html += 'align-items: center; padding: 16px 0; margin-bottom: 8px; }';
       html += '.logo-wrap { display: flex; align-items: center; gap: 10px; }';
       html += '.logo-svg { width: 40px; height: 40px; }';
-      html += '.logo-text { font-size: 20px; font-weight: 800; line-height: 1; }';
+      html += '.logo-text { font-size: 18px; font-weight: 800; line-height: 1; }';
       html += '.logo-text span { font-size: 10px; color: var(--f-text-2); ';
       html += 'font-weight: 600; letter-spacing: 1px; }';
       
@@ -502,8 +773,17 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
       html += '</button>';
       html += '</div></div>';
 
-      html += '<h2 style="margin:0 0 20px 0; font-size:26px; font-weight:800;">';
-      html += 'Привет, ' + userName + '!</h2>';
+      // Вывод названия точки и приветствия
+      html += '<div style="margin-bottom: 20px;">';
+      html += '<div style="font-size: 13px; color: var(--f-text-2); ';
+      html += 'font-weight: 700; text-transform: uppercase; ';
+      html += 'letter-spacing: 0.5px; margin-bottom: 4px;">';
+      html += 'Торговая точка</div>';
+      html += '<h2 style="margin:0; font-size:22px; font-weight:800; ';
+      html += 'line-height: 1.2;">' + shopName + '</h2>';
+      html += '<div style="font-size:15px; color:var(--f-text-2); ';
+      html += 'margin-top: 6px;">Привет, ' + userName + '!</div>';
+      html += '</div>';
 
       if (hasAttention) {
         html += '<div class="attention-box">';
