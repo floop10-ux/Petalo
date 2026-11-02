@@ -2500,3 +2500,5 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
     }
   });
 }
+
+module.exports = { setupWarehouseAdminViews };
