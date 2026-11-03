@@ -82,7 +82,6 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += 'box-shadow: var(--sh-1); color: var(--f-text); }';
       html += '.spec-btn.active { background: var(--f-brand); color: #fff; }';
       
-      // Исправленная Flex-верстка для плиток
       html += '.grid-tiles { display: flex; flex-wrap: wrap; ';
       html += 'gap: 12px; }';
       html += '.card-tile { background: #fff; padding: 12px; ';
@@ -520,7 +519,6 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
-
   // ====== 4. КАРТОЧКА ТОВАРА (ВЫПИСКА) ======
   app.get('/warehouse/item', async (req, res) => {
     try {
@@ -572,6 +570,8 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '.btn-act.full { grid-column: 1 / -1; }';
       html += '.btn-act.success { color: var(--f-success); ';
       html += 'border-color: var(--f-success); }';
+      html += '.btn-act.purge { background: #FFF3F3; ';
+      html += 'border-color: var(--f-danger); color: var(--f-danger); }';
       
       html += '.controls { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-bottom: 16px; }';
@@ -602,11 +602,24 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
 
       html += '<div class="actions" id="actions" style="display:none;">';
       
-      // Кнопки действий (включая восстановление и удаление)
       html += '<button type="button" class="btn-act success full" ';
       html += 'id="btnRestore" style="display:none;" ';
       html += 'onclick="restoreItem()">';
-      html += 'Восстановить из архива</button>';
+      html += 'Восстановить из архива';
+      html += '<span style="cursor:pointer; margin-left:4px;" ';
+      html += 'onclick="event.stopPropagation(); ';
+      html += 'showAlert(&quot;Подсказка&quot;, &quot;Товар вернется на склад.&quot;';
+      html += ', true)">❓</span></button>';
+      
+      // НОВАЯ КНОПКА: Удалить навсегда
+      html += '<button type="button" class="btn-act purge full" ';
+      html += 'id="btnPurge" style="display:none;" ';
+      html += 'onclick="purgeItem()">';
+      html += 'Удалить навсегда (безвозвратно)';
+      html += '<span style="cursor:pointer; margin-left:4px;" ';
+      html += 'onclick="event.stopPropagation(); ';
+      html += 'showAlert(&quot;Подсказка&quot;, &quot;Удалит товар и всю его ';
+      html += 'историю из базы.&quot;, true)">❓</span></button>';
       
       html += '<button type="button" class="btn-act primary" ';
       html += 'id="btnSetPrice" style="display:none;" ';
@@ -624,7 +637,12 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       
       html += '<button type="button" class="btn-act danger full" ';
       html += 'id="btnDelete" onclick="deleteItem()">';
-      html += 'Удалить товар</button>';
+      html += 'Удалить товар';
+      html += '<span style="cursor:pointer; margin-left:4px;" ';
+      html += 'onclick="event.stopPropagation(); ';
+      html += 'showAlert(&quot;Подсказка&quot;, &quot;Скроется в Архив. ';
+      html += 'История сохранится.&quot;, true)">❓</span></button>';
+      
       html += '</div>';
 
       html += '<div class="controls" id="historyControls" ';
@@ -707,9 +725,12 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '      updatePinBtn();';
       
       html += '      if (isArchived) {';
-      html += '        var br = document.getElementById("btnRestore");';
-      html += '        br.style.display = "flex";';
-      html += '        document.getElementById("btnDelete").style.display = "none";';
+      html += '        document.getElementById("btnRestore")';
+      html += '        .style.display = "flex";';
+      html += '        document.getElementById("btnPurge")';
+      html += '        .style.display = "flex";';
+      html += '        document.getElementById("btnDelete")';
+      html += '        .style.display = "none";';
       html += '      }';
 
       html += '      if (itemPrice === 0) { ';
@@ -852,6 +873,35 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '  .catch(function() { btn.disabled = false; ';
       html += '    btn.innerText = "Восстановить из архива"; ';
       html += '    showAlert("Ошибка сети", "Проверьте интернет", false); });';
+      html += '}';
+
+      html += 'function purgeItem() {';
+      html += '  showConfirm("Удаление навсегда", ';
+      html += '  "Вы уверены, что хотите удалить " + itemName + "? ", ';
+      html += '  function() {';
+      html += '    showConfirm("Точно удалить?", ';
+      html += '    "ВНИМАНИЕ! Вся история по этому товару будет стерта. ", ';
+      html += '    function() {';
+      html += '      var btn = document.getElementById("btnPurge");';
+      html += '      btn.disabled = true; ';
+      html += '      btn.innerText = "Удаление...";';
+      html += '      fetch("/api/warehouse/item/purge", { method: "POST", ';
+      html += '      headers: { "Content-Type": "application/json" }, ';
+      html += '      body: JSON.stringify({ id: itemId }) })';
+      html += '      .then(function(r) { return r.json(); })';
+      html += '      .then(function(d) { ';
+      html += '        if (d.ok) { ';
+      html += '          showAlert("Готово", "Удалено", true); ';
+      html += '          setTimeout(function() { ';
+      html += '            window.location.href = "/warehouse/inventory"; ';
+      html += '          }, 1000); ';
+      html += '        } else { btn.disabled = false; ';
+      html += '          showAlert("Ошибка", d.error, false); } ';
+      html += '      }).catch(function() { btn.disabled = false; ';
+      html += '        showAlert("Ошибка сети", "Проверьте интернет", false); ';
+      html += '      });';
+      html += '    }, true);';
+      html += '  }, true);';
       html += '}';
 
       html += 'function deleteItem() {';
