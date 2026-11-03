@@ -189,6 +189,11 @@ async function checkAndNotify() {
 async function morningReminder() {
   try {
     const now = getNowMoscow();
+    const currentHour = now.getHours();
+    
+    // Отправляем только с 8:00 до 11:59 по МСК
+    if (currentHour < 8 || currentHour > 11) return;
+
     const todayKey = now.toISOString().slice(0, 10);
     const shops = await pool.query('SELECT shop_id, hours FROM shops WHERE blocked = FALSE');
     
