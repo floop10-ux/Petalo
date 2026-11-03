@@ -1,7 +1,6 @@
 const pool = require('./db');
 const { 
-  extractTagsFromName, 
-  isConfirmedRecently 
+  extractTagsFromName
 } = require('./config');
 
 // ========== ОНБОРДИНГ ==========
@@ -142,6 +141,18 @@ async function initDb() {
   );
   await pool.query(
     `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS warehouse_pin_hash VARCHAR(100)`
+  );
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS warehouse_pin_attempts INTEGER DEFAULT 0`
+  );
+  await pool.query(
+    `ALTER TABLE admins ` +
+    `ADD COLUMN IF NOT EXISTS warehouse_pin_locked_until TIMESTAMPTZ`
+  );
+  await pool.query(
+    `ALTER TABLE admins ` +
     `ADD COLUMN IF NOT EXISTS can_receipt BOOLEAN ` +
     `DEFAULT FALSE`
   );
@@ -194,6 +205,11 @@ async function initDb() {
     `ADD COLUMN IF NOT EXISTS lifetime_type VARCHAR(20) ` +
     `DEFAULT 'auto_3_days'`
   );
+  await pool.query(
+    `ALTER TABLE bouquets ` +
+    `ADD COLUMN IF NOT EXISTS preorder_only BOOLEAN ` +
+    `DEFAULT FALSE`
+  );
 
   await pool.query(`
     UPDATE bouquets SET shop_number = sub.rn
@@ -244,6 +260,11 @@ async function initDb() {
     `ON bouquets(shop_id, shop_number)`
   );
   await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ` +
+    `idx_bouquets_shop_unique_number ` +
+    `ON bouquets(shop_id, shop_number) WHERE shop_number IS NOT NULL`
+  );
+  await pool.query(
     `CREATE INDEX IF NOT EXISTS ` +
     `idx_admins_chat_id ON admins(chat_id)`
   );
@@ -265,6 +286,18 @@ async function getShopFromDb(shopId) {
     [shopId]
   );
   
+  const defaultSettings = {
+    logo: null, cover: null,
+    background: null, buttonColor: 'red',
+    currency: 'RUB', markupPercent: 20,
+    aiEnabled: false
+  };
+
+  const defaultStats = {
+    views: 0, orders: 0, calls: 0,
+    startedAt: new Date().toISOString()
+  };
+  
   return {
     shopId: s.shop_id,
     name: s.name,
@@ -281,16 +314,8 @@ async function getShopFromDb(shopId) {
     country: s.country || null,
     blocked: !!s.blocked,
     blockedReason: s.blocked_reason || null,
-    settings: s.settings || {
-      logo: null, cover: null,
-      background: null, buttonColor: 'red',
-      currency: 'RUB', markupPercent: 20,
-      aiEnabled: false
-    },
-    stats: s.stats || {
-      views: 0, orders: 0, calls: 0,
-      startedAt: new Date().toISOString()
-    },
+    settings: Object.assign({}, defaultSettings, s.settings || {}),
+    stats: Object.assign({}, defaultStats, s.stats || {}),
     admins: admins.rows.map(a => ({
       chatId: parseInt(a.chat_id),
       role: a.role,
@@ -348,6 +373,8 @@ async function saveShopSettings(shopId, settings) {
 }
 
 async function incrementShopStat(shopId, field) {
+  const allowed = ['views', 'orders', 'calls'];
+  if (!allowed.includes(field)) return;
   await pool.query(
     `UPDATE shops SET stats = stats || ` +
     `jsonb_build_object('${field}', ` +
@@ -428,27 +455,24 @@ function mapBouquet(b) {
     clicks: b.clicks,
     tags: b.tags || [],
     whLinked: b.wh_linked || false,
-    lifetimeType: b.lifetime_type || 'auto_3_days'
+    lifetimeType: b.lifetime_type || 'auto_3_days',
+    preorderOnly: b.preorder_only || false
   };
 }
 
 async function addBouquetToDb(shopId, bouquet) {
-  const r = await pool.query(
-    `SELECT COALESCE(MAX(shop_number), 0) + 1 AS next ` +
-    `FROM bouquets WHERE shop_id = $1`,
-    [shopId]
-  );
-  const shopNumber = r.rows[0].next;
   const res = await pool.query(`
     INSERT INTO bouquets (
       shop_id, shop_number, name, price, description,
       photos, confirmed_at, is_pinned, chat_id, clicks,
-      tags, wh_linked, lifetime_type
+      tags, wh_linked, lifetime_type, preorder_only
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    SELECT $1, COALESCE(MAX(shop_number), 0) + 1, $3, $4, $5,
+      $6, $7, $8, $9, $10, $11, $12, $13, $14
+    FROM bouquets WHERE shop_id = $1
     RETURNING id, shop_number
   `, [
-    shopId, shopNumber, bouquet.name, bouquet.price,
+    shopId, null, bouquet.name, bouquet.price,
     bouquet.description,
     JSON.stringify(bouquet.photos),
     new Date().toISOString(),
@@ -456,7 +480,8 @@ async function addBouquetToDb(shopId, bouquet) {
     bouquet.clicks || 0,
     JSON.stringify(bouquet.tags || []),
     bouquet.whLinked || false,
-    bouquet.lifetimeType || 'auto_3_days'
+    bouquet.lifetimeType || 'auto_3_days',
+    bouquet.preorderOnly || false
   ]);
   return {
     id: res.rows[0].id,
@@ -465,6 +490,12 @@ async function addBouquetToDb(shopId, bouquet) {
 }
 
 async function updateBouquetField(id, field, value) {
+  const allowed = [
+    'hidden', 'deleted', 'photos', 'confirmed_at', 
+    'is_pinned', 'reminded', 'price', 'name', 'tags',
+    'wh_linked', 'lifetime_type', 'preorder_only'
+  ];
+  if (!allowed.includes(field)) return;
   await pool.query(
     `UPDATE bouquets SET ${field} = $2 WHERE id = $1`,
     [id, value]
@@ -472,8 +503,18 @@ async function updateBouquetField(id, field, value) {
 }
 
 async function updateBouquetFields(id, updates) {
-  const keys = Object.keys(updates);
-  const values = Object.values(updates);
+  const allowed = [
+    'hidden', 'deleted', 'photos', 'confirmed_at', 
+    'is_pinned', 'reminded', 'price', 'name', 'tags',
+    'wh_linked', 'lifetime_type', 'preorder_only'
+  ];
+  const keys = Object.keys(updates).filter(function(k) {
+    return allowed.includes(k);
+  });
+  
+  if (keys.length === 0) return;
+  
+  const values = keys.map(function(k) { return updates[k]; });
   const setStr = keys
     .map((k, i) => `${k} = $${i + 2}`)
     .join(', ');
