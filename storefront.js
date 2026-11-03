@@ -144,6 +144,7 @@ function getPhotoRefsLocal(photo) {
   return { primary: null, fallback: null };
 }
 
+// Безопасный рендер тега img без кавычек \'
 function renderImgTag(refs, style) {
   if (!refs || !refs.primary) return null;
   const p = escAttr(refs.primary);
@@ -154,13 +155,15 @@ function renderImgTag(refs, style) {
   if (refs.fallback && refs.fallback2) {
     const f1 = escAttr(refs.fallback);
     const f2 = escAttr(refs.fallback2);
-    let h = 'this.onerror=null;this.onerror=function(){';
-    h += 'this.onerror=null;this.src=\'' + f2 + '\';};';
-    h += 'this.src=\'' + f1 + '\';';
+    html += ' data-f1="' + f1 + '" data-f2="' + f2 + '"';
+    let h = "this.onerror=null;this.onerror=function(){";
+    h += "this.onerror=null;this.src=this.dataset.f2;};";
+    h += "this.src=this.dataset.f1;";
     html += ' onerror="' + h + '"';
   } else if (refs.fallback) {
     const f = escAttr(refs.fallback);
-    html += ' onerror="this.onerror=null;this.src=\'' + f + '\'"';
+    html += ' data-f1="' + f + '"';
+    html += ' onerror="this.onerror=null;this.src=this.dataset.f1;"';
   }
   html += '>';
   return html;
@@ -1302,10 +1305,19 @@ function setupStorefront(app, bot, s3ctx) {
         }
       }
       
-      const coverUrl = shop.settings.cover
-        ? await getPhotoUrl(shop.settings.cover) : null;
-      const logoUrl = shop.settings.logo
-        ? await getPhotoUrl(shop.settings.logo) : null;
+      // ИСПРАВЛЕНИЕ: Используем локальную логику
+      let coverUrl = null;
+      if (shop.settings.cover) {
+        const coverRefs = getPhotoRefsLocal(shop.settings.cover);
+        coverUrl = absoluteUrl(coverRefs.primary);
+      }
+      
+      let logoUrl = null;
+      if (shop.settings.logo) {
+        const logoRefs = getPhotoRefsLocal(shop.settings.logo);
+        logoUrl = absoluteUrl(logoRefs.primary);
+      }
+      
       const bodyBg = getBackgroundStyle(shop.settings.background);
 
       let coverHTML = '';
