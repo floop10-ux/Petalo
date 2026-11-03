@@ -1,4 +1,3 @@
-const pool = require('./db');
 const {
   SITE_URL, esc, shortName, getRemainingDays,
   isServiceAdmin, findCountryByCode,
@@ -159,22 +158,28 @@ async function showAdminShopsList(bot, chatId, page, editMessageId) {
 async function showAdminShopCard(bot, chatId, shopId, editMessageId) {
   const shop = await getShopFromDb(shopId);
   if (!shop) {
-    try {
-      await bot.editMessageText('❌ Магазин не найден.', {
-        chat_id: chatId, message_id: editMessageId
-      });
-    } catch (e) { /* ignore */ }
-    return;
+    if (editMessageId) {
+      try {
+        await bot.editMessageText('❌ Магазин не найден.', {
+          chat_id: chatId, message_id: editMessageId
+        });
+        return;
+      } catch (e) { /* ignore */ }
+    }
+    return bot.sendMessage(chatId, '❌ Магазин не найден.');
   }
 
   const all = await getBouquetsFromDb(shopId, false);
-  // Исправлено: isConfirmedRecently теперь импортирована из config
   const active = all.filter(isConfirmedRecently);
   
   const stats = shop.stats || {};
   const orders = stats.orders || 0;
   const calls = stats.calls || 0;
-  const owner = shop.admins.find(function(a) { return a.role === 'owner'; });
+  
+  const owner = shop.admins.find(function(a) { 
+    return a.role === 'owner'; 
+  });
+  
   const florists = shop.admins.filter(function(a) { 
     return a.role !== 'owner'; 
   });
@@ -208,7 +213,6 @@ async function showAdminShopCard(bot, chatId, shopId, editMessageId) {
       txt += '💬 @' + esc(shop.telegramUsername) + '\n';
     }
     if (shop.phone) {
-      // Исправлено: formatPhone импортирована
       txt += '📞 ' + esc(formatPhone(shop.phone)) + '\n';
     }
   } else {
@@ -267,14 +271,26 @@ async function showAdminShopCard(bot, chatId, shopId, editMessageId) {
     [{ text: '⬅️ К списку', callback_data: 'admin_shops_0' }]
   ];
 
-  try {
-    await bot.editMessageText(txt, {
-      chat_id: chatId,
-      message_id: editMessageId,
-      parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: buttons }
-    });
-  } catch (e) { /* ignore */ }
+  const opts = {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: buttons }
+  };
+
+  if (editMessageId) {
+    try {
+      await bot.editMessageText(txt, {
+        chat_id: chatId, message_id: editMessageId, ...opts
+      });
+      return;
+    } catch (e) {
+      console.warn('Edit failed, sending new:', e.message);
+    }
+  }
+  return bot.sendMessage(chatId, txt, opts);
 }
 
-module.exports = { showAdminPanel, showAdminShopsList, showAdminShopCard };
+module.exports = { 
+  showAdminPanel, 
+  showAdminShopsList, 
+  showAdminShopCard 
+};
