@@ -42,7 +42,10 @@ const ICON_PATHS = {
   card: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
   qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><path d="M3 14h7v7H3z"/>',
   search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
-  warn: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'
+  warn: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>'
 };
 
 function getIconSvg(type) {
@@ -142,7 +145,7 @@ let uiScript = `
     .back-btn { font-size: 24px; text-decoration: none; color: var(--f-brand); display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: #fff; border-radius: 50%; box-shadow: var(--sh-1); }
     .burger-btn { font-size: 24px; background: #fff; border: none; color: var(--f-brand); cursor: pointer; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: var(--sh-1); }
     .flowind-watermark { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; color: var(--f-brand); opacity: 0.15; pointer-events: none; z-index: 900; }
-    .svg-ico { width: 24px; height: 24px; vertical-align: middle; margin-right: 12px; color: currentColor; }
+    .svg-ico { width: 20px; height: 20px; vertical-align: middle; margin-right: 8px; color: currentColor; }
     body.menu-open .page-header, body.menu-open input, body.menu-open select, body.menu-open textarea, body.menu-open button:not(.sidebar button) { pointer-events: none; }
     body.menu-open .sidebar, body.menu-open .sidebar-overlay { pointer-events: auto; }
     .sidebar { position: fixed; top: 0; right: -300px; width: 280px; height: 100%; background: var(--f-surface); box-shadow: var(--sh-3); transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 3000; padding: 24px; padding-bottom: env(safe-area-inset-bottom); overflow-y: auto; }
@@ -422,7 +425,7 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
   app.get('/warehouse-app', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      if (!auth) return res.redirect('/warehouse-login');
 
       const shopId = auth.shopId;
       const chatId = auth.chatId;
@@ -612,7 +615,7 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
       html += '</div>';
 
       html += getUnifiedMenu('home');
-      html += '<script>Telegram.WebApp.ready();<\/script>';
+      html += '<script>if(window.Telegram && Telegram.WebApp) Telegram.WebApp.ready();<\/script>';
       html += '</body></html>';
       res.send(html);
     } catch (e) { 
