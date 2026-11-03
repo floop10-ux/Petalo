@@ -341,7 +341,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const shopId = auth.shopId;
       const showArchive = req.query.show_archive === 'true';
       
-      // Читаем настройку inv_view из базы (Бэклог Б.1)
+      // Читаем настройку inv_view из базы
       const shopRes = await pool.query(
         "SELECT settings FROM shops WHERE shop_id = $1",
         [shopId]
@@ -743,7 +743,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           [item.id, shopId]
         );
         
-        // Минусовой остаток разрешен (правило 6)
+        // Минусовой остаток разрешен (по правилам)
         await client.query(
           "UPDATE wh_shop_items SET current_stock = " +
           "current_stock - $1 WHERE id = $2 AND shop_id = $3",
@@ -836,6 +836,75 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       await logAction(shopId, chatId, 'writeoff', 
         'Списание: ' + itemName + ' (и др.)', firstId);
 
+      res.json({ ok: true });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (e2) {}
+      client.release(); 
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ====== ОТМЕНА СПИСАНИЯ ======
+  app.post('/api/warehouse/writeoff/cancel', async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const auth = getAuth(req);
+      if (!auth) { 
+        client.release(); 
+        return res.status(401).json({ ok: false }); 
+      }
+      
+      const shopId = auth.shopId;
+      const docId = String(req.body.id);
+      
+      if (!docId) { 
+        client.release(); 
+        return res.json({ ok: false, error: 'Неверный ID' }); 
+      }
+      
+      await client.query('BEGIN');
+      
+      // Ищем все строки списания по этому документу
+      const items = await client.query(
+        "SELECT id, shop_item_id, qty, status FROM wh_writeoffs " +
+        "WHERE (doc_id = $1 OR id::text = $1) " +
+        "AND shop_id = $2 FOR UPDATE", [docId, shopId]
+      );
+      
+      if (items.rows.length === 0) {
+        await client.query('ROLLBACK'); client.release(); 
+        return res.json({ ok: false, error: 'Документ не найден' });
+      }
+
+      // Проверяем, не отменено ли уже
+      if (items.rows[0].status === 'cancelled') {
+        await client.query('ROLLBACK'); client.release(); 
+        return res.json({ ok: false, error: 'Списание уже отменено' });
+      }
+
+      // Возвращаем остатки на склад
+      for (let i = 0; i < items.rows.length; i++) {
+        const item = items.rows[i];
+        await client.query(
+          "UPDATE wh_shop_items SET current_stock = " +
+          "current_stock + $1 WHERE id = $2 AND shop_id = $3",
+          [item.qty, item.shop_item_id, shopId]
+        );
+      }
+      
+      // Меняем статус на отменено
+      await client.query(
+        "UPDATE wh_writeoffs SET status = 'cancelled' " +
+        "WHERE (doc_id = $1 OR id::text = $1) AND shop_id = $2", 
+        [docId, shopId]
+      );
+      
+      await client.query('COMMIT');
+      client.release();
+      
+      await logAction(shopId, auth.chatId, 'writeoff_cancel', 
+        'Отмена списания №' + docId, docId);
+        
       res.json({ ok: true });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (e2) {}
@@ -1881,16 +1950,33 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "w.reason FROM wh_writeoffs w " +
         "JOIN wh_shop_items i ON i.id = w.shop_item_id " +
         "WHERE w.shop_id = $1 " + fWrites +
-        "GROUP BY w.reason", pWrites
+        "AND w.status = 'completed' GROUP BY w.reason", pWrites
+      );
+
+      // Бэклог Б.4: Детализация потерь (Drill-down)
+      const lossDetails = await pool.query(
+        "SELECT COALESCE(shi.custom_name, wi.name) as name, " +
+        "SUM(w.qty) as qty, SUM(w.qty * i.avg_cost) as total_cost, " +
+        "w.reason FROM wh_writeoffs w " +
+        "JOIN wh_shop_items i ON i.id = w.shop_item_id " +
+        "JOIN wh_items wi ON wi.id = i.item_id " +
+        "LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id " +
+        "WHERE w.shop_id = $1 " + fWrites +
+        "AND w.status = 'completed' " +
+        "GROUP BY shi.custom_name, wi.name, w.reason", pWrites
       );
       
+      // Бэклог Б.5: Расчет чистой прибыли в Топ-5
       const top = await pool.query(
         "SELECT shi.id as shop_item_id, " +
         "COALESCE(shi.custom_name, i.name) as name, " +
         "SUM(si.qty) as total_qty, " +
         "SUM(si.qty * (s.real_price / " +
         "(SELECT SUM(qty) FROM wh_sale_items " +
-        "WHERE sale_id = s.id))) as total_rev " +
+        "WHERE sale_id = s.id))) as total_rev, " +
+        "SUM(si.qty * (s.real_price / (SELECT SUM(qty) " +
+        "FROM wh_sale_items WHERE sale_id = s.id))) - " +
+        "SUM(si.qty * si.cost_at_sale) as total_profit " +
         "FROM wh_sale_items si " +
         "JOIN wh_sales s ON s.id = si.sale_id " +
         "JOIN wh_shop_items shi ON shi.id = si.shop_item_id " +
@@ -1987,6 +2073,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           count: parseInt(rev.rows[0].count) || 0
         },
         losses: { total: losses, percent: lossPercent, reasons: lossReasons },
+        loss_details: lossDetails.rows,
         top: top.rows,
         abc: abc,
         frozen: frozen.rows,
@@ -2513,6 +2600,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "LEFT JOIN wh_items i ON i.id = shi.item_id " +
         "WHERE w.shop_id = $1 AND w.date >= $2::date " +
         "AND w.date < ($2::date + 1) " + fWrites +
+        "AND w.status = 'completed' " +
         "GROUP BY COALESCE(w.doc_id, w.id::text), " +
         "DATE_TRUNC('minute', w.date) " +
         "ORDER BY DATE_TRUNC('minute', w.date) DESC", params
