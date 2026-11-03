@@ -1,11 +1,8 @@
 const pool = require('./db');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
-function hashPin(pin) {
-  return crypto.createHash('sha256').update(pin).digest('hex');
-}
-
-// Защита от брутфорса
+// ====== БЕЗОПАСНОСТЬ ======
 const authAttempts = {};
 const pinAttempts = {};
 
@@ -21,18 +18,14 @@ function checkAuthLimit(ip) {
   return true;
 }
 
-function checkPinLimit(chatId) {
+function checkPinLimit(ip) {
   const now = Date.now();
-  const e = pinAttempts[chatId];
-  if (!e) {
-    pinAttempts[chatId] = { count: 1, ts: now };
+  const e = pinAttempts[ip];
+  if (!e || now - e.ts > 15 * 60000) {
+    pinAttempts[ip] = { count: 1, ts: now };
     return true;
   }
-  if (e.count >= 5) {
-    if (now - e.ts < 15 * 60000) return false;
-    pinAttempts[chatId] = { count: 1, ts: now };
-    return true;
-  }
+  if (e.count >= 5) return false;
   e.count++;
   return true;
 }
@@ -54,7 +47,9 @@ async function logAction(shopId, chatId, action, details, refId) {
       "action, details, ref_id) VALUES ($1, $2, $3, $4, $5)",
       [shopId, chatId, action, details, refId || null]
     );
-  } catch (e) { console.error('Log error:', e.message); }
+  } catch (e) { 
+    console.error('Log error:', e.message); 
+  }
 }
 
 function setupWarehouseApi(app, bot, s3ctx, getAuth) {
@@ -130,7 +125,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
 
   // ====== АВТОРИЗАЦИЯ ======
   function getAuthCookie(chatId, shopId) {
-    const secret = process.env.WH_COOKIE_SECRET || 'fallback_secret';
+    const secret = process.env.WH_COOKIE_SECRET;
+    if (!secret) throw new Error('WH_COOKIE_SECRET не задан');
+    
     const payload = chatId + '.' + shopId;
     const hmac = crypto.createHmac('sha256', secret)
       .update(payload).digest('hex');
@@ -140,46 +137,63 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
   app.post('/api/warehouse/auth', async (req, res) => {
     try {
       const ip = req.ip || 'unknown';
-      if (!checkAuthLimit(ip)) {
+      if (!checkAuthLimit(ip) || !checkPinLimit(ip)) {
         return res.json({ ok: false, rate_limited: true });
       }
 
       const pin = String(req.body.pin);
-      const pinHash = hashPin(pin);
-
       const r = await pool.query(
-        "SELECT chat_id, shop_id, role FROM admins " +
-        "WHERE warehouse_pin = $1 OR warehouse_pin_hash = $2", 
-        [pin, pinHash]
+        "SELECT chat_id, shop_id, role, warehouse_pin_hash " +
+        "FROM admins WHERE warehouse_pin_hash IS NOT NULL"
       );
 
-      if (r.rows.length === 0) return res.json({ ok: false });
+      let matchedAdmin = null;
+      for (const row of r.rows) {
+        if (row.warehouse_pin_hash) {
+          const isMatch = await bcrypt.compare(
+            pin, row.warehouse_pin_hash
+          );
+          if (isMatch) {
+            matchedAdmin = row;
+            break;
+          }
+        }
+      }
+
+      if (!matchedAdmin) return res.json({ ok: false });
       
-      if (r.rows.length > 1) {
-        const shopIds = r.rows.map(function(row) { 
-          return row.shop_id; 
-        });
-        const shopInfo = await pool.query(
-          "SELECT shop_id, display_name FROM shops " +
-          "WHERE shop_id = ANY($1)", [shopIds]
-        );
+      // Проверяем, есть ли у этого chat_id другие магазины
+      const allShopsRes = await pool.query(
+        "SELECT a.shop_id, s.display_name, a.role " +
+        "FROM admins a " +
+        "JOIN shops s ON s.shop_id = a.shop_id " +
+        "WHERE a.chat_id = $1",
+        [matchedAdmin.chat_id]
+      );
+
+      const shops = allShopsRes.rows;
+
+      if (shops.length > 1) {
         return res.json({ 
-          ok: true, multi: true, shops: shopInfo.rows 
+          ok: true, 
+          multi: true, 
+          shops: shops,
+          chatId: matchedAdmin.chat_id
         });
       }
 
-      const chatId = r.rows[0].chat_id;
-      const shopId = r.rows[0].shop_id;
+      const chatId = matchedAdmin.chat_id;
+      const shopId = matchedAdmin.shop_id;
       const token = getAuthCookie(chatId, shopId);
       
       res.cookie('wh_auth', token, { 
         maxAge: 30 * 24 * 60 * 60 * 1000, 
         httpOnly: true, 
         secure: true, 
-        sameSite: 'none' 
+        sameSite: 'lax' 
       });
       
-      res.json({ ok: true, role: r.rows[0].role });
+      res.json({ ok: true, role: matchedAdmin.role });
     } catch (e) { 
       console.error('Auth error:', e.message);
       res.status(500).json({ ok: false }); 
@@ -198,15 +212,26 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       if (!login || !password) return res.json({ ok: false });
 
-      const hash = crypto.createHash('sha256')
-        .update(password).digest('hex');
-      
       const r = await pool.query(
-        "SELECT chat_id, role, shop_id FROM admins WHERE login = $1 " +
-        "AND password_hash = $2", [login, hash]
+        "SELECT chat_id, role, shop_id, password_hash FROM admins " +
+        "WHERE login = $1", [login]
       );
 
       if (r.rows.length === 0) return res.json({ ok: false });
+      
+      let valid = false;
+      const dbHash = r.rows[0].password_hash;
+      
+      if (dbHash && dbHash.length === 64) {
+        // Старый формат SHA-256
+        const sha = crypto.createHash('sha256')
+          .update(password).digest('hex');
+        valid = (sha === dbHash);
+      } else if (dbHash) {
+        valid = await bcrypt.compare(password, dbHash);
+      }
+
+      if (!valid) return res.json({ ok: false });
       
       const chatId = r.rows[0].chat_id;
       const shopId = r.rows[0].shop_id;
@@ -216,7 +241,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         maxAge: 30 * 24 * 60 * 60 * 1000, 
         httpOnly: true, 
         secure: true, 
-        sameSite: 'none' 
+        sameSite: 'lax' 
       });
       
       res.json({ ok: true, role: r.rows[0].role });
@@ -225,7 +250,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false }); 
     }
   });
-
   // ====== МУЛЬТИТОЧКИ ======
   app.get('/api/warehouse/my-shops', async (req, res) => {
     try {
@@ -268,7 +292,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         maxAge: 30 * 24 * 60 * 60 * 1000, 
         httpOnly: true, 
         secure: true, 
-        sameSite: 'none' 
+        sameSite: 'lax' 
       });
       
       res.json({ ok: true });
@@ -283,11 +307,12 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (!auth) return res.status(401).json({ ok: false });
       
       const ownerCheck = await pool.query(
-        "SELECT role FROM admins WHERE chat_id = $1 LIMIT 1",
+        "SELECT role FROM admins WHERE chat_id = $1 " +
+        "AND role = 'owner' LIMIT 1",
         [auth.chatId]
       );
-      if (!ownerCheck.rows[0] || 
-          ownerCheck.rows[0].role !== 'owner') {
+      
+      if (ownerCheck.rows.length === 0) {
         return res.status(403).json({ ok: false });
       }
 
@@ -323,6 +348,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
   // ====== ТОВАРЫ ======
   app.get('/api/warehouse/categories', async (req, res) => {
     try {
@@ -340,8 +366,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const shopId = auth.shopId;
       const showArchive = req.query.show_archive === 'true';
+      const forRecipe = req.query.for_recipe === 'true';
       
-      // Читаем настройку inv_view из базы
       const shopRes = await pool.query(
         "SELECT settings FROM shops WHERE shop_id = $1",
         [shopId]
@@ -367,7 +393,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (showArchive) {
         query += "AND NOT EXISTS (SELECT 1 FROM wh_bouquet_recipes r " +
                  "WHERE r.shop_item_id = i.id) ";
-      } else {
+      } else if (!forRecipe) {
         if (invView === 'pos') {
           query += "AND i.current_stock > 0 ";
         } else if (invView === 'nonzero') {
@@ -431,7 +457,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         return res.json({ ok: false, error: 'Некорректное имя' });
       }
 
-      // Изоляция: обновляем только custom_name
       await pool.query(
         "UPDATE wh_shop_items SET custom_name = $1 " +
         "WHERE id = $2 AND shop_id = $3",
@@ -538,7 +563,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // Новый эндпоинт: Полное удаление (Purge)
   app.post('/api/warehouse/item/purge', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -548,22 +572,38 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         return res.status(401).json({ ok: false }); 
       }
       
+      const roleCheck = await client.query(
+        "SELECT role FROM admins WHERE chat_id = $1 AND shop_id = $2",
+        [auth.chatId, auth.shopId]
+      );
+      if (roleCheck.rows.length === 0 || 
+          roleCheck.rows[0].role !== 'owner') {
+        client.release();
+        return res.status(403).json({ ok: false, error: 'Только владелец' });
+      }
+      
       const itemId = parseInt(req.body.id);
       if (!itemId || isNaN(itemId)) {
         client.release(); return res.json({ ok: false });
       }
       
-      await client.query('BEGIN');
-      
-      // Отвязываем от букетов
-      await client.query(
-        "DELETE FROM wh_bouquet_recipes " +
+      const historyRes = await client.query(
+        "SELECT COUNT(*) as cnt FROM wh_sale_items " +
         "WHERE shop_item_id = $1", [itemId]
       );
       
-      // Обнуляем ссылки в истории (чтобы не было ошибок FK)
+      if (parseInt(historyRes.rows[0].cnt) > 0) {
+        client.release();
+        return res.json({ 
+          ok: false, 
+          error: 'Нельзя удалить товар с историей продаж. Используйте Архив.' 
+        });
+      }
+      
+      await client.query('BEGIN');
+      
       await client.query(
-        "UPDATE wh_sale_items SET shop_item_id = NULL " +
+        "DELETE FROM wh_bouquet_recipes " +
         "WHERE shop_item_id = $1", [itemId]
       );
       await client.query(
@@ -574,8 +614,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "UPDATE wh_writeoffs SET shop_item_id = NULL " +
         "WHERE shop_item_id = $1", [itemId]
       );
-      
-      // Удаляем сам товар
       await client.query(
         "DELETE FROM wh_shop_items WHERE id = $1 AND shop_id = $2", 
         [itemId, auth.shopId]
@@ -719,7 +757,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ ok: false, error: e.message });
     }
   });
-
   // ====== ПРОДАЖИ ======
   app.post('/api/warehouse/sale', async (req, res) => {
     const client = await pool.connect();
@@ -728,6 +765,20 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (!auth) { 
         client.release(); 
         return res.status(401).json({ ok: false }); 
+      }
+
+      const perm = await client.query(
+        "SELECT role, can_sale FROM admins " +
+        "WHERE chat_id = $1 AND shop_id = $2", 
+        [auth.chatId, auth.shopId]
+      );
+      
+      if (perm.rows.length === 0 || 
+          (perm.rows[0].role !== 'owner' && !perm.rows[0].can_sale)) {
+        client.release();
+        return res.status(403).json({ 
+          ok: false, error: 'Нет прав на продажу' 
+        });
       }
 
       const shopId = auth.shopId;
@@ -765,9 +816,10 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         
       let payCash = 0, payCard = 0, payQr = 0;
       payments.forEach(function(p) {
-        if (p.method === 'cash') payCash += p.amount;
-        if (p.method === 'card') payCard += p.amount;
-        if (p.method === 'qr') payQr += p.amount;
+        const amt = Number(p.amount) || 0;
+        if (p.method === 'cash') payCash += amt;
+        if (p.method === 'card') payCard += amt;
+        if (p.method === 'qr') payQr += amt;
       });
 
       await client.query('BEGIN');
@@ -783,27 +835,25 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const saleId = saleRes.rows[0].id;
       let itemsStr = '';
 
-      for (var i = 0; i < items.length; i++) {
-        var item = items[i];
-        var qty = parseFloat(String(item.qty).replace(',', '.'));
+      for (let i = 0; i < items.length; i++) {
+        let item = items[i];
+        let qty = parseFloat(String(item.qty).replace(',', '.'));
         
         if (!qty || qty <= 0) continue;
         
-        // Блокировка строки для предотвращения Race Condition
         const stockRes = await client.query(
           "SELECT current_stock, avg_cost FROM wh_shop_items " +
           "WHERE id = $1 AND shop_id = $2 FOR UPDATE", 
           [item.id, shopId]
         );
         
-        // Минусовой остаток разрешен
         await client.query(
           "UPDATE wh_shop_items SET current_stock = " +
           "current_stock - $1 WHERE id = $2 AND shop_id = $3",
           [qty, item.id, shopId]
         );
         
-        var costVal = 0;
+        let costVal = 0;
         if (stockRes.rows.length > 0 && stockRes.rows[0].avg_cost) {
           costVal = Math.round(
             parseFloat(stockRes.rows[0].avg_cost) * 100
@@ -834,6 +884,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
   // ====== СПИСАНИЯ ======
   app.post('/api/warehouse/writeoff', async (req, res) => {
     const client = await pool.connect();
@@ -842,6 +893,20 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (!auth) { 
         client.release(); 
         return res.status(401).json({ ok: false }); 
+      }
+      
+      const perm = await client.query(
+        "SELECT role, can_writeoff FROM admins " +
+        "WHERE chat_id = $1 AND shop_id = $2", 
+        [auth.chatId, auth.shopId]
+      );
+      
+      if (perm.rows.length === 0 || 
+          (perm.rows[0].role !== 'owner' && !perm.rows[0].can_writeoff)) {
+        client.release();
+        return res.status(403).json({ 
+          ok: false, error: 'Нет прав на списание' 
+        });
       }
       
       const shopId = auth.shopId;
@@ -864,7 +929,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         
         if (!qty || qty <= 0) continue;
 
-        // Минусовой остаток разрешен
         await client.query(
           "UPDATE wh_shop_items SET current_stock = " +
           "current_stock - $1 WHERE id = $2 AND shop_id = $3", 
@@ -889,7 +953,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       await logAction(shopId, chatId, 'writeoff', 
         'Списание: ' + itemName + ' (и др.)', firstId);
 
-      res.json({ ok: true });
+      res.json({ ok: true, doc_id: docId, id: firstId });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (e2) {}
       client.release(); 
@@ -897,7 +961,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ОТМЕНА СПИСАНИЯ ======
   app.post('/api/warehouse/writeoff/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -935,11 +998,13 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
 
       for (let i = 0; i < items.rows.length; i++) {
         const item = items.rows[i];
-        await client.query(
-          "UPDATE wh_shop_items SET current_stock = " +
-          "current_stock + $1 WHERE id = $2 AND shop_id = $3",
-          [item.qty, item.shop_item_id, shopId]
-        );
+        if (item.shop_item_id) {
+          await client.query(
+            "UPDATE wh_shop_items SET current_stock = " +
+            "current_stock + $1 WHERE id = $2 AND shop_id = $3",
+            [item.qty, item.shop_item_id, shopId]
+          );
+        }
       }
       
       await client.query(
@@ -1026,7 +1091,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
-
   // ====== НАКЛАДНЫЕ (ПРИХОДЫ) ======
   app.get('/api/warehouse/receipts', async (req, res) => {
     try {
@@ -1053,7 +1117,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       const r = await pool.query(query, params);
       res.json({ ok: true, docs: r.rows });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.post('/api/warehouse/receipt/delete', async (req, res) => {
@@ -1062,11 +1128,14 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (!auth) return res.status(401).json({ ok: false });
       
       const receiptId = parseInt(req.body.id);
-      if (!receiptId || isNaN(receiptId)) return res.json({ ok: false });
+      if (!receiptId || isNaN(receiptId)) {
+        return res.json({ ok: false });
+      }
       
       const r = await pool.query(
         "SELECT status FROM wh_receipts " +
-        "WHERE id = $1 AND shop_id = $2", [receiptId, auth.shopId]
+        "WHERE id = $1 AND shop_id = $2", 
+        [receiptId, auth.shopId]
       );
       
       if (r.rows.length === 0 || r.rows[0].status !== 'draft') {
@@ -1074,8 +1143,10 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
       
       await pool.query(
-        "DELETE FROM wh_receipt_items WHERE receipt_id = $1", [receiptId]
+        "DELETE FROM wh_receipt_items WHERE receipt_id = $1", 
+        [receiptId]
       );
+      
       await pool.query(
         "DELETE FROM wh_receipts WHERE id = $1 AND shop_id = $2", 
         [receiptId, auth.shopId]
@@ -1085,7 +1156,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         'Удален черновик накладной №' + receiptId, receiptId);
         
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.get('/api/warehouse/receipt/items', async (req, res) => {
@@ -1103,12 +1176,16 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "ri.shop_item_id, shi.retail_price, " +
         "COALESCE(shi.custom_name, i.name) as name " +
         "FROM wh_receipt_items ri " +
+        "JOIN wh_receipts r ON r.id = ri.receipt_id " +
         "JOIN wh_shop_items shi ON shi.id = ri.shop_item_id " +
         "JOIN wh_items i ON i.id = shi.item_id " +
-        "WHERE ri.receipt_id = $1", [receiptId]
+        "WHERE ri.receipt_id = $1 AND r.shop_id = $2", 
+        [receiptId, auth.shopId]
       );
       res.json({ ok: true, items: r.rows });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.post('/api/warehouse/receipt/item/add', async (req, res) => {
@@ -1242,7 +1319,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ПРОВЕДЕНИЕ НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/save-all', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1297,7 +1373,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           [receiptId, it.shop_item_id, qty, price, sum]
         );
         
-        if (it.retail_price && parseFloat(it.retail_price) > 0) {
+        if (it.retail_price !== undefined && 
+            it.retail_price !== null && 
+            it.retail_price !== '') {
           await client.query(
             "UPDATE wh_shop_items SET retail_price = $1 " +
             "WHERE id = $2 AND shop_id = $3",
@@ -1360,7 +1438,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ОТМЕНА НАКЛАДНОЙ ======
   app.post('/api/warehouse/receipt/cancel', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1434,7 +1511,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "WHERE shop_id = $1 ORDER BY name ASC", [auth.shopId]
       );
       res.json({ ok: true, suppliers: r.rows });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.post('/api/warehouse/suppliers/create', async (req, res) => {
@@ -1450,10 +1529,11 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "VALUES ($1, $2) RETURNING id, name", [auth.shopId, name]
       );
       res.json({ ok: true, id: r.rows[0].id, supplier: r.rows[0] });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
-  // Новое: Переименование поставщика
   app.post('/api/warehouse/suppliers/rename', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1471,10 +1551,11 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [name, id, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
-  // Новое: Удаление поставщика
   app.post('/api/warehouse/suppliers/delete', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -1483,7 +1564,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const id = parseInt(req.body.id);
       if (!id || isNaN(id)) return res.json({ ok: false });
       
-      // Отвязываем от накладных, чтобы не сломать историю
       await pool.query(
         "UPDATE wh_receipts SET supplier_id = NULL " +
         "WHERE supplier_id = $1 AND shop_id = $2", 
@@ -1496,7 +1576,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
   // ====== ДОКУМЕНТЫ (СПИСОК) ======
   app.get('/api/warehouse/documents', async (req, res) => {
@@ -1611,7 +1693,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           "FROM wh_writeoffs w " +
           "LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id " +
           "LEFT JOIN wh_items i ON i.id = shi.item_id " +
-          "WHERE (w.doc_id = $1 OR w.id::text = $1)", [docId]
+          "WHERE (w.doc_id = $1 OR w.id::text = $1) " +
+          "AND w.shop_id = $2", [docId, shopId]
         );
         res.json({ ok: true, header: header.rows[0], items: items.rows });
       }
@@ -1754,7 +1837,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       }
       
       res.json({ ok: true, ingredients: ingredients });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
   app.get('/api/warehouse/bouquets/all', async (req, res) => {
@@ -1792,20 +1877,30 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         };
       });
       res.json({ ok: true, bouquets: result });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
   app.post('/api/warehouse/bouquet/toggle', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
+      
+      const bId = parseInt(req.body.id);
+      const val = req.body.val === true;
+      
+      if (!bId || isNaN(bId)) return res.json({ ok: false });
+      
       await pool.query(
         "UPDATE bouquets SET wh_linked = $1 " +
         "WHERE id = $2 AND shop_id = $3",
-        [req.body.val, req.body.id, auth.shopId]
+        [val, bId, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.post('/api/warehouse/bouquet/delete', async (req, res) => {
@@ -1818,7 +1913,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [req.body.id, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
   app.post('/api/warehouse/bouquet/restore', async (req, res) => {
@@ -1831,7 +1928,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [req.body.id, auth.shopId]
       );
       res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
   app.get('/api/warehouse/bouquets/info', async (req, res) => {
@@ -1845,7 +1944,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       if (r.rows.length === 0) return res.json({ ok: false });
       res.json({ ok: true, bouquet: r.rows[0] });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.post('/api/warehouse/bouquet/save', async (req, res) => {
@@ -1853,7 +1954,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
-      const bId = parseInt(req.body.id);
+      const bId = parseInt(req.body.id) || 0;
       const name = String(req.body.name || '').trim();
       const price = parseFloat(
         String(req.body.price).replace(',', '.')
@@ -1865,7 +1966,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       if (!name || !price || price <= 0) {
         return res.json({ ok: false, error: 'Неверные данные' });
       }
-      let photos = []; if (photoUrl) { photos.push(photoUrl); }
+      
+      let photos = []; 
+      if (photoUrl) { photos.push(photoUrl); }
       let finalId = bId;
 
       if (bId > 0) {
@@ -1885,24 +1988,23 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           );
         }
       } else {
-        const shopNumberRes = await pool.query(
-          "SELECT COALESCE(MAX(shop_number), 0) + 1 AS next " +
-          "FROM bouquets WHERE shop_id = $1", [auth.shopId]
-        );
-        const shopNumber = shopNumberRes.rows[0].next;
         const ins = await pool.query(
           "INSERT INTO bouquets (shop_id, shop_number, name, price, " +
           "photos, chat_id, confirmed_at, wh_linked, preorder_only, " +
           "deleted) " +
-          "VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, FALSE) " +
+          "SELECT $1, COALESCE(MAX(shop_number), 0) + 1, $2, $3, $4, " +
+          "$5, NOW(), $6, $7, FALSE " +
+          "FROM bouquets WHERE shop_id = $1 " +
           "RETURNING id",
-          [auth.shopId, shopNumber, name, price, 
+          [auth.shopId, name, price, 
            JSON.stringify(photos), auth.chatId, isLinked, isPreorder]
         );
         finalId = ins.rows[0].id;
       }
       res.json({ ok: true, id: finalId });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false, error: e.message }); 
+    }
   });
 
   app.get('/api/warehouse/bouquets/recipe', async (req, res) => {
@@ -1919,7 +2021,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         [req.query.id, auth.shopId]
       );
       res.json({ ok: true, items: r.rows });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.post('/api/warehouse/bouquets/recipe/save', async (req, res) => {
@@ -1995,260 +2099,8 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "ORDER BY l.date DESC LIMIT 100", params
       );
       res.json({ ok: true, logs: r.rows });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-
-  // ====== УМНЫЕ ОТЧЁТЫ ======
-  app.get('/api/warehouse/reports', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      const shopId = auth.shopId;
-      const start = req.query.start;
-      const end = req.query.end;
-      
-      let fSales = ''; let fWrites = ''; let fRec = '';
-      let pSales = [shopId]; let pWrites = [shopId]; let pRec = [shopId];
-      
-      if (start && end) {
-        fSales = "AND s.date >= $2 AND s.date < $3 ";
-        fWrites = "AND w.date >= $2 AND w.date < $3 ";
-        fRec = "AND r.date >= $2 AND r.date < $3 ";
-        let endNext = new Date(end);
-        endNext.setDate(endNext.getDate() + 1);
-        let endStr = endNext.toISOString().slice(0, 10);
-        pSales.push(start, endStr);
-        pWrites.push(start, endStr);
-        pRec.push(start, endStr);
-      }
-
-      const rev = await pool.query(
-        "SELECT COALESCE(SUM(real_price), 0) AS total, " +
-        "COALESCE(SUM(pay_cash), 0) as cash, " +
-        "COALESCE(SUM(pay_card), 0) as card, " +
-        "COALESCE(SUM(pay_qr), 0) as qr, COUNT(id) as count " +
-        "FROM wh_sales s WHERE s.shop_id = $1 " + fSales +
-        "AND s.status = 'active'", pSales
-      );
-      
-      const cost = await pool.query(
-        "SELECT COALESCE(SUM(si.qty * si.cost_at_sale), 0) AS " +
-        "total FROM wh_sale_items si " +
-        "JOIN wh_sales s ON s.id = si.sale_id " +
-        "WHERE s.shop_id = $1 " + fSales +
-        "AND s.status = 'active'", pSales
-      );
-      
-      const loss = await pool.query(
-        "SELECT COALESCE(SUM(w.qty * i.avg_cost), 0) AS total, " +
-        "w.reason FROM wh_writeoffs w " +
-        "JOIN wh_shop_items i ON i.id = w.shop_item_id " +
-        "WHERE w.shop_id = $1 " + fWrites +
-        "AND w.status = 'completed' GROUP BY w.reason", pWrites
-      );
-
-      // Бэклог Б.4: Детализация потерь
-      const lossDetails = await pool.query(
-        "SELECT COALESCE(shi.custom_name, wi.name) as name, " +
-        "SUM(w.qty) as qty, SUM(w.qty * i.avg_cost) as total_cost, " +
-        "w.reason FROM wh_writeoffs w " +
-        "JOIN wh_shop_items i ON i.id = w.shop_item_id " +
-        "JOIN wh_items wi ON wi.id = i.item_id " +
-        "LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id " +
-        "WHERE w.shop_id = $1 " + fWrites +
-        "AND w.status = 'completed' " +
-        "GROUP BY shi.custom_name, wi.name, w.reason", pWrites
-      );
-      
-      // Бэклог Б.5: Чистая прибыль в Топ-5
-      const top = await pool.query(
-        "SELECT shi.id as shop_item_id, " +
-        "COALESCE(shi.custom_name, i.name) as name, " +
-        "SUM(si.qty) as total_qty, " +
-        "SUM(si.qty * (s.real_price / " +
-        "(SELECT SUM(qty) FROM wh_sale_items " +
-        "WHERE sale_id = s.id))) as total_rev, " +
-        "SUM(si.qty * (s.real_price / (SELECT SUM(qty) " +
-        "FROM wh_sale_items WHERE sale_id = s.id))) - " +
-        "SUM(si.qty * si.cost_at_sale) as total_profit " +
-        "FROM wh_sale_items si " +
-        "JOIN wh_sales s ON s.id = si.sale_id " +
-        "JOIN wh_shop_items shi ON shi.id = si.shop_item_id " +
-        "JOIN wh_items i ON i.id = shi.item_id " +
-        "WHERE s.shop_id = $1 " + fSales +
-        "AND s.status = 'active' " +
-        "GROUP BY shi.id, shi.custom_name, i.name " +
-        "ORDER BY total_rev DESC LIMIT 5", pSales
-      );
-      
-      const receiptSum = await pool.query(
-        "SELECT COALESCE(SUM(total_sum), 0) AS total " +
-        "FROM wh_receipts r WHERE r.shop_id = $1 " +
-        "AND r.status = 'completed' " + fRec, pRec
-      );
-      
-      const daily = await pool.query(
-        "SELECT DATE(s.date) as day, " +
-        "SUM(s.real_price) as total, " +
-        "SUM((SELECT SUM(si.qty * si.cost_at_sale) " +
-        "FROM wh_sale_items si WHERE si.sale_id = s.id)) as cost " +
-        "FROM wh_sales s WHERE s.shop_id = $1 " + fSales +
-        "AND s.status = 'active' " +
-        "GROUP BY DATE(s.date) ORDER BY DATE(s.date) DESC", pSales
-      );
-
-      const abcRaw = await pool.query(
-        "SELECT COALESCE(shi.custom_name, i.name) as name, " +
-        "SUM(si.qty * (s.real_price / (SELECT SUM(qty) " +
-        "FROM wh_sale_items WHERE sale_id = s.id))) as total_rev " +
-        "FROM wh_sale_items si " +
-        "JOIN wh_sales s ON s.id = si.sale_id " +
-        "JOIN wh_shop_items shi ON shi.id = si.shop_item_id " +
-        "JOIN wh_items i ON i.id = shi.item_id " +
-        "WHERE s.shop_id = $1 " + fSales + "AND s.status = 'active' " +
-        "GROUP BY shi.id, shi.custom_name, i.name " +
-        "ORDER BY total_rev DESC", pSales
-      );
-      
-      let abc = { A: [], B: [], C: [] };
-      let abcTotal = abcRaw.rows.reduce(
-        (sum, r) => sum + parseFloat(r.total_rev), 0
-      );
-      let runningSum = 0;
-      
-      abcRaw.rows.forEach(function(r) {
-        let rev = parseFloat(r.total_rev);
-        runningSum += rev;
-        let pct = abcTotal > 0 ? (runningSum / abcTotal) * 100 : 0;
-        let item = { name: r.name, rev: rev };
-        if (pct <= 80) abc.A.push(item);
-        else if (pct <= 95) abc.B.push(item);
-        else abc.C.push(item);
-      });
-
-      const frozen = await pool.query(
-        "SELECT COALESCE(shi.custom_name, i.name) as name, " +
-        "shi.current_stock, shi.avg_cost, " +
-        "(shi.current_stock * shi.avg_cost) as total_cost " +
-        "FROM wh_shop_items shi " +
-        "JOIN wh_items i ON i.id = shi.item_id " +
-        "WHERE shi.shop_id = $1 AND shi.current_stock > 0 " +
-        "AND (shi.hidden = FALSE OR shi.hidden IS NULL) " +
-        "ORDER BY total_cost DESC", [shopId]
-      );
-
-      const revenue = parseFloat(rev.rows[0].total) || 0;
-      const costVal = parseFloat(cost.rows[0].total) || 0;
-      const profit = revenue - costVal;
-      let marginPct = 0;
-      if (revenue > 0) marginPct = Math.round((profit / revenue) * 100);
-      
-      let losses = 0; let lossReasons = {};
-      loss.rows.forEach(function(r) {
-        let amt = parseFloat(r.total) || 0;
-        losses += amt;
-        lossReasons[r.reason] = amt;
-      });
-      let lossPercent = 0;
-      if ((revenue + losses) > 0) {
-        lossPercent = Math.round((losses / (revenue + losses)) * 100);
-      }
-      
-      res.json({
-        ok: true,
-        finance: {
-          revenue: revenue, cost: costVal, profit: profit,
-          margin_pct: marginPct,
-          avg_check: rev.rows[0].count > 0 ? 
-            (revenue / rev.rows[0].count) : 0,
-          cash: parseFloat(rev.rows[0].cash) || 0,
-          card: parseFloat(rev.rows[0].card) || 0,
-          qr: parseFloat(rev.rows[0].qr) || 0,
-          count: parseInt(rev.rows[0].count) || 0
-        },
-        losses: { total: losses, percent: lossPercent, reasons: lossReasons },
-        loss_details: lossDetails.rows,
-        top: top.rows,
-        abc: abc,
-        frozen: frozen.rows,
-        movement: {
-          receipts: parseFloat(receiptSum.rows[0].total) || 0,
-          sales: revenue, writeoffs: losses
-        },
-        daily: daily.rows
-      });
-    } catch (e) {
-      console.error('Report error:', e.message);
-      res.status(500).json({ ok: false, error: e.message });
-    }
-  });
-
-  // ====== ЭКСПОРТ ОТЧЁТА В CSV ======
-  app.get('/api/warehouse/reports/export', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).send('Unauthorized');
-      
-      const shopId = auth.shopId;
-      const start = req.query.start;
-      const end = req.query.end;
-      
-      let fSales = '';
-      let pSales = [shopId];
-      
-      if (start && end) {
-        fSales = "AND s.date >= $2 AND s.date < $3 ";
-        let endNext = new Date(end);
-        endNext.setDate(endNext.getDate() + 1);
-        let endStr = endNext.toISOString().slice(0, 10);
-        pSales.push(start, endStr);
-      }
-
-      const daily = await pool.query(
-        "SELECT DATE(s.date) as day, " +
-        "SUM(s.real_price) as total, " +
-        "SUM((SELECT SUM(si.qty * si.cost_at_sale) " +
-        "FROM wh_sale_items si WHERE si.sale_id = s.id)) as cost, " +
-        "SUM(pay_cash) as cash, SUM(pay_card) as card, " +
-        "SUM(pay_qr) as qr " +
-        "FROM wh_sales s WHERE s.shop_id = $1 " + fSales +
-        "AND s.status = 'active' " +
-        "GROUP BY DATE(s.date) ORDER BY DATE(s.date) DESC",
-        pSales
-      );
-
-      let csv = '\uFEFF';
-      csv += 'Дата;Выручка;Себестоимость;Прибыль;';
-      csv += 'Наличные;Карта;QR\n';
-
-      daily.rows.forEach(function(r) {
-        let d = new Date(r.day).toLocaleDateString('ru-RU');
-        let rev = parseFloat(r.total) || 0;
-        let cost = parseFloat(r.cost) || 0;
-        let prof = rev - cost;
-        let cash = parseFloat(r.cash) || 0;
-        let card = parseFloat(r.card) || 0;
-        let qr = parseFloat(r.qr) || 0;
-
-        let revStr = rev.toFixed(2).replace('.', ',');
-        let costStr = cost.toFixed(2).replace('.', ',');
-        let profStr = prof.toFixed(2).replace('.', ',');
-        let cashStr = cash.toFixed(2).replace('.', ',');
-        let cardStr = card.toFixed(2).replace('.', ',');
-        let qrStr = qr.toFixed(2).replace('.', ',');
-
-        csv += d + ';' + revStr + ';' + costStr + ';';
-        csv += profStr + ';' + cashStr + ';' + cardStr + ';';
-        csv += qrStr + '\n';
-      });
-
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', 
-        'attachment; filename="report.csv"');
-      res.send(csv);
-    } catch (e) {
-      console.error('Export error:', e.message);
-      res.status(500).send('Ошибка сервера');
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
     }
   });
 
@@ -2416,16 +2268,22 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
+      
       const pin = String(req.body.pin);
-      const pinHash = hashPin(pin);
-
+      
       const r = await pool.query(
-        "SELECT chat_id FROM admins WHERE shop_id = $1 " +
-        "AND (warehouse_pin = $2 OR warehouse_pin_hash = $3)", 
-        [auth.shopId, pin, pinHash]
+        "SELECT warehouse_pin_hash FROM admins " +
+        "WHERE shop_id = $1 AND chat_id = $2", 
+        [auth.shopId, auth.chatId]
       );
 
-      if (r.rows.length === 0) {
+      if (r.rows.length === 0 || !r.rows[0].warehouse_pin_hash) {
+        return res.json({ ok: false, error: 'PIN не установлен' });
+      }
+      
+      const isMatch = await bcrypt.compare(pin, r.rows[0].warehouse_pin_hash);
+      
+      if (!isMatch) {
         return res.json({ ok: false, error: 'Неверный PIN' });
       }
       res.json({ ok: true });
@@ -2434,149 +2292,53 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
-  // ====== ФЛОРИСТЫ ======
-  app.get('/api/warehouse/staff', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      const ownerCheck = await pool.query(
-        "SELECT role, login FROM admins WHERE chat_id = $1 " +
-        "AND shop_id = $2 LIMIT 1",
-        [auth.chatId, auth.shopId]
-      );
-      if (!ownerCheck.rows[0] || 
-          ownerCheck.rows[0].role !== 'owner') {
-        return res.status(403).json({ 
-          ok: false, error: 'Только владелец' 
-        });
-      }
-      const shopInfo = await pool.query(
-        "SELECT invite_code FROM shops WHERE shop_id = $1",
-        [auth.shopId]
-      );
-      const r = await pool.query(
-        "SELECT a.name, a.warehouse_pin, a.can_receipt, " +
-        "a.can_sale, a.can_writeoff, a.chat_id, a.role, " +
-        "COALESCE(SUM(s.real_price), 0) as total_sales " +
-        "FROM admins a " +
-        "LEFT JOIN wh_sales s ON a.chat_id = s.chat_id " +
-        "AND s.status = 'active' " +
-        "WHERE a.shop_id = $1 AND a.role = 'florist' " +
-        "GROUP BY a.chat_id, a.name, a.warehouse_pin, " +
-        "a.can_receipt, a.can_sale, a.can_writeoff, a.role",
-        [auth.shopId]
-      );
-      res.json({
-        ok: true, staff: r.rows,
-        inviteCode: shopInfo.rows.length > 0 ? 
-          shopInfo.rows[0].invite_code : '',
-        ownerLogin: ownerCheck.rows[0].login || ''
-      });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-
-  app.post('/api/warehouse/florist/pin', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      const ownerCheck = await pool.query(
-        "SELECT role FROM admins WHERE chat_id = $1 " +
-        "AND shop_id = $2 LIMIT 1",
-        [auth.chatId, auth.shopId]
-      );
-      if (!ownerCheck.rows[0] || 
-          ownerCheck.rows[0].role !== 'owner') {
-        return res.status(403).json({ ok: false });
-      }
-      
-      const pinHash = hashPin(String(req.body.pin));
-      await pool.query(
-        "UPDATE admins SET warehouse_pin = NULL, " +
-        "warehouse_pin_hash = $1 " +
-        "WHERE shop_id = $2 AND chat_id = $3",
-        [pinHash, auth.shopId, req.body.chatId]
-      );
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-
-  app.post('/api/warehouse/florist/rights', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      const ownerCheck = await pool.query(
-        "SELECT role FROM admins WHERE chat_id = $1 " +
-        "AND shop_id = $2 LIMIT 1",
-        [auth.chatId, auth.shopId]
-      );
-      if (!ownerCheck.rows[0] || 
-          ownerCheck.rows[0].role !== 'owner') {
-        return res.status(403).json({ ok: false });
-      }
-      var col = req.body.field;
-      if (col === 'receipt') col = 'can_receipt';
-      if (col === 'sale') col = 'can_sale';
-      if (col === 'writeoff') col = 'can_writeoff';
-      await pool.query(
-        "UPDATE admins SET " + col + " = $1 " +
-        "WHERE shop_id = $2 AND chat_id = $3",
-        [req.body.val, auth.shopId, req.body.chatId]
-      );
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-
-  app.post('/api/warehouse/florist/delete', async (req, res) => {
-    try {
-      const auth = getAuth(req);
-      if (!auth) return res.status(401).json({ ok: false });
-      const ownerCheck = await pool.query(
-        "SELECT role FROM admins WHERE chat_id = $1 " +
-        "AND shop_id = $2 LIMIT 1",
-        [auth.chatId, auth.shopId]
-      );
-      if (!ownerCheck.rows[0] || 
-          ownerCheck.rows[0].role !== 'owner') {
-        return res.status(403).json({ ok: false });
-      }
-      await pool.query(
-        "DELETE FROM admins WHERE shop_id = $1 " +
-        "AND chat_id = $2 AND role = 'florist'",
-        [auth.shopId, req.body.chatId]
-      );
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ ok: false }); }
-  });
-
   // ====== НАСТРОЙКИ ======
   app.get('/api/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
+      
       const r = await pool.query(
         "SELECT settings FROM shops WHERE shop_id = $1",
         [auth.shopId]
       );
+      
       const adm = await pool.query(
-        "SELECT login FROM admins WHERE chat_id = $1 LIMIT 1",
-        [auth.chatId]
+        "SELECT login FROM admins WHERE chat_id = $1 AND shop_id = $2 LIMIT 1",
+        [auth.chatId, auth.shopId]
       );
+      
       const currentLogin = adm.rows.length > 0 ? 
         adm.rows[0].login : '';
+        
       res.json({
         ok: true,
         settings: r.rows.length > 0 ? 
           (r.rows[0].settings || {}) : {},
         currentLogin: currentLogin || ''
       });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   app.post('/api/warehouse/settings', async (req, res) => {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
-      var obj = {}; obj[req.body.key] = req.body.val;
+      
+      const allowed = [
+        'inv_view', 'writeoff_threshold', 'notif_discount', 
+        'notif_cancel', 'notif_writeoff'
+      ];
+      
+      const key = req.body.key;
+      if (!allowed.includes(key)) {
+        return res.status(403).json({ ok: false });
+      }
+      
+      let obj = {}; obj[key] = req.body.val;
+      
       await pool.query(
         "UPDATE shops SET settings = " +
         "COALESCE(settings, '{}'::jsonb) || $1::jsonb " +
@@ -2594,6 +2356,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     try {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
+      
       const ownerCheck = await pool.query(
         "SELECT role FROM admins WHERE chat_id = $1 " +
         "AND shop_id = $2 LIMIT 1",
@@ -2603,16 +2366,19 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           ownerCheck.rows[0].role !== 'owner') {
         return res.status(403).json({ ok: false });
       }
+      
       const login = String(req.body.login || '').trim();
       const password = String(req.body.password || '');
+      
       if (!login || login.length < 3) {
         return res.json({ ok: false, error: 'Логин от 3 символов' });
       }
       if (!password || password.length < 4) {
         return res.json({ ok: false, error: 'Пароль от 4 символов' });
       }
-      const hash = crypto.createHash('sha256')
-        .update(password).digest('hex');
+      
+      const hash = await bcrypt.hash(password, 10);
+      
       await pool.query(
         "UPDATE admins SET login = $1, password_hash = $2 " +
         "WHERE chat_id = $3 AND shop_id = $4",
@@ -2621,6 +2387,257 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ ok: false, error: 'Ошибка сохранения' });
+    }
+  });
+  // ====== УМНЫЕ ОТЧЁТЫ ======
+  app.get('/api/warehouse/reports', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const shopId = auth.shopId;
+      const start = req.query.start;
+      const end = req.query.end;
+      
+      let fSales = ''; let fWrites = ''; let fRec = '';
+      let pSales = [shopId]; let pWrites = [shopId]; let pRec = [shopId];
+      
+      if (start && end) {
+        fSales = "AND s.date >= $2 AND s.date < $3 ";
+        fWrites = "AND w.date >= $2 AND w.date < $3 ";
+        fRec = "AND r.date >= $2 AND r.date < $3 ";
+        let endNext = new Date(end);
+        endNext.setDate(endNext.getDate() + 1);
+        let endStr = endNext.toISOString().slice(0, 10);
+        pSales.push(start, endStr);
+        pWrites.push(start, endStr);
+        pRec.push(start, endStr);
+      }
+
+      const rev = await pool.query(
+        "SELECT COALESCE(SUM(real_price), 0) AS total, " +
+        "COALESCE(SUM(pay_cash), 0) as cash, " +
+        "COALESCE(SUM(pay_card), 0) as card, " +
+        "COALESCE(SUM(pay_qr), 0) as qr, COUNT(id) as count " +
+        "FROM wh_sales s WHERE s.shop_id = $1 " + fSales +
+        "AND s.status = 'active'", pSales
+      );
+      
+      const cost = await pool.query(
+        "SELECT COALESCE(SUM(si.qty * si.cost_at_sale), 0) AS " +
+        "total FROM wh_sale_items si " +
+        "JOIN wh_sales s ON s.id = si.sale_id " +
+        "WHERE s.shop_id = $1 " + fSales +
+        "AND s.status = 'active'", pSales
+      );
+      
+      const loss = await pool.query(
+        "SELECT COALESCE(SUM(w.qty * i.avg_cost), 0) AS total, " +
+        "w.reason FROM wh_writeoffs w " +
+        "JOIN wh_shop_items i ON i.id = w.shop_item_id " +
+        "WHERE w.shop_id = $1 " + fWrites +
+        "AND w.status = 'completed' GROUP BY w.reason", pWrites
+      );
+
+      const lossDetails = await pool.query(
+        "SELECT COALESCE(shi.custom_name, wi.name) as name, " +
+        "SUM(w.qty) as qty, SUM(w.qty * i.avg_cost) as total_cost, " +
+        "w.reason FROM wh_writeoffs w " +
+        "JOIN wh_shop_items i ON i.id = w.shop_item_id " +
+        "JOIN wh_items wi ON wi.id = i.item_id " +
+        "LEFT JOIN wh_shop_items shi ON shi.id = w.shop_item_id " +
+        "WHERE w.shop_id = $1 " + fWrites +
+        "AND w.status = 'completed' " +
+        "GROUP BY shi.custom_name, wi.name, w.reason", pWrites
+      );
+      
+      const top = await pool.query(
+        "SELECT shi.id as shop_item_id, " +
+        "COALESCE(shi.custom_name, i.name) as name, " +
+        "SUM(si.qty) as total_qty, " +
+        "SUM(si.qty * (s.real_price / " +
+        "(SELECT SUM(qty) FROM wh_sale_items " +
+        "WHERE sale_id = s.id))) as total_rev, " +
+        "SUM(si.qty * (s.real_price / (SELECT SUM(qty) " +
+        "FROM wh_sale_items WHERE sale_id = s.id))) - " +
+        "SUM(si.qty * si.cost_at_sale) as total_profit " +
+        "FROM wh_sale_items si " +
+        "JOIN wh_sales s ON s.id = si.sale_id " +
+        "JOIN wh_shop_items shi ON shi.id = si.shop_item_id " +
+        "JOIN wh_items i ON i.id = shi.item_id " +
+        "WHERE s.shop_id = $1 " + fSales +
+        "AND s.status = 'active' " +
+        "GROUP BY shi.id, shi.custom_name, i.name " +
+        "ORDER BY total_rev DESC LIMIT 5", pSales
+      );
+      
+      const receiptSum = await pool.query(
+        "SELECT COALESCE(SUM(total_sum), 0) AS total " +
+        "FROM wh_receipts r WHERE r.shop_id = $1 " +
+        "AND r.status = 'completed' " + fRec, pRec
+      );
+      
+      const daily = await pool.query(
+        "SELECT DATE(s.date) as day, " +
+        "SUM(s.real_price) as total, " +
+        "SUM((SELECT SUM(si.qty * si.cost_at_sale) " +
+        "FROM wh_sale_items si WHERE si.sale_id = s.id)) as cost " +
+        "FROM wh_sales s WHERE s.shop_id = $1 " + fSales +
+        "AND s.status = 'active' " +
+        "GROUP BY DATE(s.date) ORDER BY DATE(s.date) DESC", pSales
+      );
+
+      const abcRaw = await pool.query(
+        "SELECT COALESCE(shi.custom_name, i.name) as name, " +
+        "SUM(si.qty * (s.real_price / (SELECT SUM(qty) " +
+        "FROM wh_sale_items WHERE sale_id = s.id))) as total_rev " +
+        "FROM wh_sale_items si " +
+        "JOIN wh_sales s ON s.id = si.sale_id " +
+        "JOIN wh_shop_items shi ON shi.id = si.shop_item_id " +
+        "JOIN wh_items i ON i.id = shi.item_id " +
+        "WHERE s.shop_id = $1 " + fSales + "AND s.status = 'active' " +
+        "GROUP BY shi.id, shi.custom_name, i.name " +
+        "ORDER BY total_rev DESC", pSales
+      );
+      
+      let abc = { A: [], B: [], C: [] };
+      let abcTotal = abcRaw.rows.reduce(
+        (sum, r) => sum + parseFloat(r.total_rev), 0
+      );
+      let runningSum = 0;
+      
+      abcRaw.rows.forEach(function(r) {
+        let revVal = parseFloat(r.total_rev);
+        runningSum += revVal;
+        let pct = abcTotal > 0 ? (runningSum / abcTotal) * 100 : 0;
+        let item = { name: r.name, rev: revVal };
+        if (pct <= 80) abc.A.push(item);
+        else if (pct <= 95) abc.B.push(item);
+        else abc.C.push(item);
+      });
+
+      const frozen = await pool.query(
+        "SELECT COALESCE(shi.custom_name, i.name) as name, " +
+        "shi.current_stock, shi.avg_cost, " +
+        "(shi.current_stock * shi.avg_cost) as total_cost " +
+        "FROM wh_shop_items shi " +
+        "JOIN wh_items i ON i.id = shi.item_id " +
+        "WHERE shi.shop_id = $1 AND shi.current_stock > 0 " +
+        "AND (shi.hidden = FALSE OR shi.hidden IS NULL) " +
+        "ORDER BY total_cost DESC", [shopId]
+      );
+
+      const revenue = parseFloat(rev.rows[0].total) || 0;
+      const costVal = parseFloat(cost.rows[0].total) || 0;
+      const profit = revenue - costVal;
+      let marginPct = 0;
+      if (revenue > 0) marginPct = Math.round((profit / revenue) * 100);
+      
+      let losses = 0; let lossReasons = {};
+      loss.rows.forEach(function(r) {
+        let amt = parseFloat(r.total) || 0;
+        losses += amt;
+        lossReasons[r.reason] = amt;
+      });
+      let lossPercent = 0;
+      if ((revenue + losses) > 0) {
+        lossPercent = Math.round((losses / (revenue + losses)) * 100);
+      }
+      
+      res.json({
+        ok: true,
+        finance: {
+          revenue: revenue, cost: costVal, profit: profit,
+          margin_pct: marginPct,
+          avg_check: rev.rows[0].count > 0 ? 
+            (revenue / rev.rows[0].count) : 0,
+          cash: parseFloat(rev.rows[0].cash) || 0,
+          card: parseFloat(rev.rows[0].card) || 0,
+          qr: parseFloat(rev.rows[0].qr) || 0,
+          count: parseInt(rev.rows[0].count) || 0
+        },
+        losses: { total: losses, percent: lossPercent, reasons: lossReasons },
+        loss_details: lossDetails.rows,
+        top: top.rows,
+        abc: abc,
+        frozen: frozen.rows,
+        movement: {
+          receipts: parseFloat(receiptSum.rows[0].total) || 0,
+          sales: revenue, writeoffs: losses
+        },
+        daily: daily.rows
+      });
+    } catch (e) {
+      console.error('Report error:', e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ====== ЭКСПОРТ ОТЧЁТА В CSV ======
+  app.get('/api/warehouse/reports/export', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).send('Unauthorized');
+      
+      const shopId = auth.shopId;
+      const start = req.query.start;
+      const end = req.query.end;
+      
+      let fSales = '';
+      let pSales = [shopId];
+      
+      if (start && end) {
+        fSales = "AND s.date >= $2 AND s.date < $3 ";
+        let endNext = new Date(end);
+        endNext.setDate(endNext.getDate() + 1);
+        let endStr = endNext.toISOString().slice(0, 10);
+        pSales.push(start, endStr);
+      }
+
+      const daily = await pool.query(
+        "SELECT DATE(s.date) as day, " +
+        "SUM(s.real_price) as total, " +
+        "SUM((SELECT SUM(si.qty * si.cost_at_sale) " +
+        "FROM wh_sale_items si WHERE si.sale_id = s.id)) as cost, " +
+        "SUM(pay_cash) as cash, SUM(pay_card) as card, " +
+        "SUM(pay_qr) as qr " +
+        "FROM wh_sales s WHERE s.shop_id = $1 " + fSales +
+        "AND s.status = 'active' " +
+        "GROUP BY DATE(s.date) ORDER BY DATE(s.date) DESC",
+        pSales
+      );
+
+      let csv = '\uFEFF';
+      csv += 'Дата;Выручка;Себестоимость;Прибыль;';
+      csv += 'Наличные;Карта;QR\n';
+
+      daily.rows.forEach(function(r) {
+        let d = new Date(r.day).toLocaleDateString('ru-RU');
+        let revVal = parseFloat(r.total) || 0;
+        let costVal = parseFloat(r.cost) || 0;
+        let prof = revVal - costVal;
+        let cash = parseFloat(r.cash) || 0;
+        let card = parseFloat(r.card) || 0;
+        let qr = parseFloat(r.qr) || 0;
+
+        let revStr = revVal.toFixed(2).replace('.', ',');
+        let costStr = costVal.toFixed(2).replace('.', ',');
+        let profStr = prof.toFixed(2).replace('.', ',');
+        let cashStr = cash.toFixed(2).replace('.', ',');
+        let cardStr = card.toFixed(2).replace('.', ',');
+        let qrStr = qr.toFixed(2).replace('.', ',');
+
+        csv += d + ';' + revStr + ';' + costStr + ';';
+        csv += profStr + ';' + cashStr + ';' + cardStr + ';';
+        csv += qrStr + '\n';
+      });
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 
+        'attachment; filename="report.csv"');
+      res.send(csv);
+    } catch (e) {
+      console.error('Export error:', e.message);
+      res.status(500).send('Ошибка сервера');
     }
   });
 
@@ -2761,7 +2778,9 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.json({
         ok: true, sale: sale.rows[0], items: items.rows
       });
-    } catch (e) { res.status(500).json({ ok: false }); }
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
   });
 
   // ====== ВОЗВРАТ (ОТМЕНА ЧЕКА) ======
@@ -2782,7 +2801,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       await client.query('BEGIN');
       const checkSale = await client.query(
         "SELECT status FROM wh_sales WHERE id = $1 " +
-        "AND shop_id = $2", [saleId, shopId]
+        "AND shop_id = $2 FOR UPDATE", [saleId, shopId]
       );
       if (checkSale.rows.length === 0) {
         await client.query('ROLLBACK'); client.release();
@@ -2798,11 +2817,13 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       );
       for (let i = 0; i < itemsRes.rows.length; i++) {
         const item = itemsRes.rows[i];
-        await client.query(
-          "UPDATE wh_shop_items SET current_stock = " +
-          "current_stock + $1 WHERE id = $2 AND shop_id = $3",
-          [item.qty, item.shop_item_id, shopId]
-        );
+        if (item.shop_item_id) {
+          await client.query(
+            "UPDATE wh_shop_items SET current_stock = " +
+            "current_stock + $1 WHERE id = $2 AND shop_id = $3",
+            [item.qty, item.shop_item_id, shopId]
+          );
+        }
       }
       await client.query(
         "UPDATE wh_sales SET status = 'cancelled' " +
@@ -2819,6 +2840,139 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
+  // ====== ФЛОРИСТЫ ======
+  app.get('/api/warehouse/staff', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const ownerCheck = await pool.query(
+        "SELECT role, login FROM admins WHERE chat_id = $1 " +
+        "AND shop_id = $2 LIMIT 1",
+        [auth.chatId, auth.shopId]
+      );
+      if (!ownerCheck.rows[0] || 
+          ownerCheck.rows[0].role !== 'owner') {
+        return res.status(403).json({ 
+          ok: false, error: 'Только владелец' 
+        });
+      }
+      const shopInfo = await pool.query(
+        "SELECT invite_code FROM shops WHERE shop_id = $1",
+        [auth.shopId]
+      );
+      const r = await pool.query(
+        "SELECT a.name, a.can_receipt, " +
+        "a.can_sale, a.can_writeoff, a.chat_id, a.role, " +
+        "(a.warehouse_pin_hash IS NOT NULL) as has_pin, " +
+        "COALESCE(SUM(s.real_price), 0) as total_sales " +
+        "FROM admins a " +
+        "LEFT JOIN wh_sales s ON a.chat_id = s.chat_id " +
+        "AND s.status = 'active' AND s.shop_id = $1 " +
+        "WHERE a.shop_id = $1 AND a.role = 'florist' " +
+        "GROUP BY a.chat_id, a.name, a.warehouse_pin_hash, " +
+        "a.can_receipt, a.can_sale, a.can_writeoff, a.role",
+        [auth.shopId]
+      );
+      res.json({
+        ok: true, staff: r.rows,
+        inviteCode: shopInfo.rows.length > 0 ? 
+          shopInfo.rows[0].invite_code : '',
+        ownerLogin: ownerCheck.rows[0].login || ''
+      });
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
+  app.post('/api/warehouse/florist/pin', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const ownerCheck = await pool.query(
+        "SELECT role FROM admins WHERE chat_id = $1 " +
+        "AND shop_id = $2 LIMIT 1",
+        [auth.chatId, auth.shopId]
+      );
+      if (!ownerCheck.rows[0] || 
+          ownerCheck.rows[0].role !== 'owner') {
+        return res.status(403).json({ ok: false });
+      }
+      
+      const pinHash = await bcrypt.hash(String(req.body.pin), 10);
+      
+      await pool.query(
+        "UPDATE admins SET warehouse_pin = NULL, " +
+        "warehouse_pin_hash = $1 " +
+        "WHERE shop_id = $2 AND chat_id = $3",
+        [pinHash, auth.shopId, req.body.chatId]
+      );
+      res.json({ ok: true });
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
+  app.post('/api/warehouse/florist/rights', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const ownerCheck = await pool.query(
+        "SELECT role FROM admins WHERE chat_id = $1 " +
+        "AND shop_id = $2 LIMIT 1",
+        [auth.chatId, auth.shopId]
+      );
+      if (!ownerCheck.rows[0] || 
+          ownerCheck.rows[0].role !== 'owner') {
+        return res.status(403).json({ ok: false });
+      }
+      
+      const map = {
+        receipt: 'can_receipt',
+        sale: 'can_sale',
+        writeoff: 'can_writeoff'
+      };
+      
+      const col = map[req.body.field];
+      if (!col) return res.json({ ok: false, error: 'Неверное поле' });
+      
+      const val = req.body.val === true;
+      
+      await pool.query(
+        "UPDATE admins SET " + col + " = $1 " +
+        "WHERE shop_id = $2 AND chat_id = $3",
+        [val, auth.shopId, req.body.chatId]
+      );
+      res.json({ ok: true });
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
+  app.post('/api/warehouse/florist/delete', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      const ownerCheck = await pool.query(
+        "SELECT role FROM admins WHERE chat_id = $1 " +
+        "AND shop_id = $2 LIMIT 1",
+        [auth.chatId, auth.shopId]
+      );
+      if (!ownerCheck.rows[0] || 
+          ownerCheck.rows[0].role !== 'owner') {
+        return res.status(403).json({ ok: false });
+      }
+      await pool.query(
+        "DELETE FROM admins WHERE shop_id = $1 " +
+        "AND chat_id = $2 AND role = 'florist'",
+        [auth.shopId, req.body.chatId]
+      );
+      res.json({ ok: true });
+    } catch (e) { 
+      res.status(500).json({ ok: false }); 
+    }
+  });
+
 }
 
 module.exports = { setupWarehouseApi };
