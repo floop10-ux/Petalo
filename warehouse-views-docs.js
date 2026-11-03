@@ -39,6 +39,8 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '.doc-left { display: flex; flex-direction: column; gap: 4px; }';
       html += '.doc-title { font-weight: 700; font-size: 16px; }';
       html += '.meta { font-size: 13px; color: var(--f-text-2); } ';
+      html += '.supplier-name { font-size: 13px; color: #3C7A89; ';
+      html += 'font-weight: 700; margin-top: 2px; }';
       html += '.amount { font-weight: 800; font-size: 18px; ';
       html += 'text-align: right; }';
       
@@ -81,7 +83,6 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '</div></div>';
 
       html += getUnifiedMenu('documents');
-
       html += '<script>';
       html += 'var currentType = new URLSearchParams(';
       html += 'window.location.search).get("type") || "receipts";';
@@ -139,6 +140,14 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '    if (currentType === "receipts") { ';
       html += '      title.textContent = "Накладная №" + shortId(doc.id); ';
       html += '      meta.textContent = ds + " · " + author; ';
+      
+      html += '      if (doc.supplier) {';
+      html += '        var supD = document.createElement("div");';
+      html += '        supD.className = "supplier-name";';
+      html += '        supD.textContent = "🏢 " + doc.supplier;';
+      html += '        left.appendChild(supD);';
+      html += '      }';
+      
       html += '      amount.textContent = parseFloat(doc.amount)';
       html += '      .toLocaleString("ru-RU") + " ₽"; ';
       html += '      amount.style.color = "#3C7A89"; ';
@@ -223,6 +232,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
+
   // ====== 11. ЭКРАН ДЕТАЛЕЙ ДОКУМЕНТА ======
   app.get('/warehouse/documents/details', async (req, res) => {
     try {
@@ -299,9 +309,18 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       
       html += '  var meta = document.createElement("div"); ';
       html += '  meta.style = "font-size:13px; color:var(--f-text-2); ';
-      html += '  margin-bottom:16px;"; ';
+      html += '  margin-bottom:16px; line-height: 1.4;"; ';
       html += '  meta.textContent = ds + " · Сделал: " + ';
       html += '  (h.author || "Неизвестно"); ';
+      
+      html += '  if (docType === "receipts" && h.supplier) {';
+      html += '    var br = document.createElement("br");';
+      html += '    meta.appendChild(br);';
+      html += '    var supB = document.createElement("b");';
+      html += '    supB.textContent = "Поставщик: " + h.supplier;';
+      html += '    meta.appendChild(supB);';
+      html += '  }';
+      
       html += '  content.appendChild(meta);';
       
       html += '  d.items.forEach(function(i){ ';
@@ -358,7 +377,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       
       html += '  if (docType === "receipts" && h.status === "completed") {';
       html += '    var cancelBtn = document.createElement("button"); ';
-      html += '    cancelBtn.type = "button"; '; // Защита от POST
+      html += '    cancelBtn.type = "button"; ';
       html += '    cancelBtn.className = "btn-cancel-doc"; ';
       html += '    cancelBtn.innerText = "Отменить проведение";';
       
@@ -391,6 +410,7 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
+
   // ====== 12. ЭКРАН ОТЧЁТОВ ======
   app.get('/warehouse/reports', async (req, res) => {
     try {
@@ -768,7 +788,12 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '        " (" + fmtNum(t.total_qty) + " шт) →";';
       html += '        var v = document.createElement("span"); ';
       html += '        v.style = "font-weight:800; color:var(--f-success);";';
-      html += '        v.textContent = fmtMoney(t.total_rev);';
+      
+      // Добавлен расчет прибыли в Топ-5 (Б.5)
+      html += '        var profitVal = t.total_profit ? ';
+      html += '        t.total_profit : t.total_rev;';
+      html += '        v.textContent = "Приб: " + fmtMoney(profitVal);';
+      
       html += '        row.appendChild(n); row.appendChild(v); ';
       html += '        topCard.appendChild(row);';
       html += '      });';
@@ -829,7 +854,6 @@ function setupWarehouseViewsDocs(app, bot, s3ctx, getAuth) {
       html += '        row.className = "list-item";';
       html += '        var n = document.createElement("div");';
       
-      // Безопасное создание структуры вместо innerHTML
       html += '        var b1 = document.createElement("b");';
       html += '        b1.textContent = it.name;';
       html += '        var br = document.createElement("br");';
