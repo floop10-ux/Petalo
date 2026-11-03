@@ -3,10 +3,7 @@ const inventory = require('./warehouse-views-inventory');
 const sales = require('./warehouse-views-sales');
 const docs = require('./warehouse-views-docs');
 
-function setupWarehouseViews(app, bot, s3ctx, getAuth, 
-  fmtNum, translateReason, esc, getUnifiedMenu, 
-  metaSafari, fontLink, uiScript) {
-
+function setupWarehouseViews(app, bot, s3ctx, getAuth) {
   // 1. Подключаем базовые экраны (Логин, Главная)
   core.setupWarehouseViewsCore(app, bot, s3ctx, getAuth);
 
@@ -20,7 +17,7 @@ function setupWarehouseViews(app, bot, s3ctx, getAuth,
   docs.setupWarehouseViewsDocs(app, bot, s3ctx, getAuth);
 }
 
-// Экспортируем утилиты для совместимости с warehouse-ui.js и warehouse-api.js
+// Экспортируем утилиты для совместимости с warehouse-ui.js
 module.exports = { 
   setupWarehouseViews,
   esc: core.esc, 
