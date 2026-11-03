@@ -223,8 +223,11 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       
       html += '<button class="btn-shift btn-open" onclick="doCashOp()">';
       html += 'Выполнить</button>';
-      html += '<button class="btn-shift" style="background:#eee;color:#555;" ';
-      html += 'onclick="closeModal(&quot;cashModal&quot;)">Отмена</button>';
+      
+      html += '<button class="btn-shift" ';
+      html += 'style="background:#eee;color:#555;" ';
+      html += 'onclick="closeModal(&quot;cashModal&quot;)">';
+      html += 'Отмена</button>';
       html += '</div></div>';
 
       // Модалка PIN
@@ -238,10 +241,14 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'inputmode="numeric" placeholder="****" ';
       html += 'style="font-size:24px; text-align:center; ';
       html += 'letter-spacing:10px;">';
-      html += '<button class="btn-shift btn-close" onclick="verifyPin()">';
-      html += 'Подтвердить</button>';
-click      html += '<button class="="btn-shift" style="background:#eee;color:#555;" ';
-      html += 'closeonModal(&quot;pinModal&quot;)">Отмена</button>';
+      
+      html += '<button class="btn-shift btn-close" ';
+      html += 'onclick="verifyPin()">Подтвердить</button>';
+      
+      html += '<button class="btn-shift" ';
+      html += 'style="background:#eee;color:#555;" ';
+      html += 'onclick="closeModal(&quot;pinModal&quot;)">';
+      html += 'Отмена</button>';
       html += '</div></div>';
 
       // Модалка Закрытия смены (ввод факта)
@@ -250,15 +257,17 @@ click      html += '<button class="="btn-shift" style="background:#eee;color:#55
       html += '<div class="modal-title">Закрытие смены</div>';
       html += '<label>Фактически наличных в кассе (₽)</label>';
       html += '<input type="number" id="endCash" inputmode="numeric">';
-      html += '<button class="btn-shift btn-close" onclick="closeShift()">';
-      html += 'Закрыть смену</button>';
-      html += '<button class="btn-shift" style="background:#eee;color:#555;" ';
-      html += 'onclick="closeModal(&quot;closeModal&quot;)">Отмена</button>';
-';
+      
+      html += '<button class="btn-shift btn-close" ';
+      html += 'onclick="closeShift()">Закрыть смену</button>';
+      
+      html += '<button class="btn-shift" ';
+      html += 'style="background:#eee;color:#555;" ';
+      html += 'onclick="closeModal(&quot;closeModal&quot;)">';
+      html += 'Отмена</button>';
+      html += '</div></div>';
 
-      html += '</div></      htmldiv>';
-
-      += html += getUnifiedMenu('shift '');
+      html += getUnifiedMenu('shift');
 
       html += '<script>';
       html += 'var curCashType = "in";';
@@ -266,7 +275,9 @@ click      html += '<button class="="btn-shift" style="background:#eee;color:#55
 
       html += 'function closeModal(id) {';
       html += '  document.getElementById(id).style.display = "none";';
-      html += '}function loadCashOps() {';
+      html += '}';
+
+      html += 'function loadCashOps() {';
       html += '  fetch("/api/warehouse/shift/ops")';
       html += '  .then(function(r){return r.json();}).then(function(d){';
       html += '    if(d.ok && d.ops && d.ops.length > 0) {';
@@ -645,8 +656,8 @@ click      html += '<button class="="btn-shift" style="background:#eee;color:#55
       html += '.sup-item:last-child { border-bottom: none; }';
       html += '.sup-name { font-weight: 600; font-size: 15px; }';
       html += '.sup-actions { display: flex; gap: 8px; }';
-      html += '.btn-icon { background: none; border: none; cursor: pointer; ';
-      html += 'font-size: 18px; padding: 4px; }';
+      html += '.btn-icon { background: none; border: none; ';
+      html += 'cursor: pointer; font-size: 18px; padding: 4px; }';
       html += '</style></head><body>';
       
       html += '<div class="page-header">';
