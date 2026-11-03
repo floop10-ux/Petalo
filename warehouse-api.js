@@ -104,7 +104,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     ");"
   ).catch(function() {});
 
-  // ДОБАВЛЕНО: Создание таблицы поставщиков
   pool.query(
     "CREATE TABLE IF NOT EXISTS wh_suppliers (" +
     "id SERIAL PRIMARY KEY, " +
@@ -342,7 +341,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const shopId = auth.shopId;
       const showArchive = req.query.show_archive === 'true';
       
-      // Бэклог Б.1: Читаем настройку inv_view из базы
+      // Читаем настройку inv_view из базы (Бэклог Б.1)
       const shopRes = await pool.query(
         "SELECT settings FROM shops WHERE shop_id = $1",
         [shopId]
@@ -744,7 +743,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           [item.id, shopId]
         );
         
-        // Минусовой остаток разрешен, просто списываем
+        // Минусовой остаток разрешен (правило 6)
         await client.query(
           "UPDATE wh_shop_items SET current_stock = " +
           "current_stock - $1 WHERE id = $2 AND shop_id = $3",
@@ -916,15 +915,25 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
-      const r = await pool.query(
+      const supplierId = req.query.supplier_id;
+      let query = 
         "SELECT r.id, r.date, r.updated_at, r.total_sum, r.status, " +
         "r.supplier_id, s.name as supplier_name, a.name as author " +
         "FROM wh_receipts r " +
         "LEFT JOIN wh_suppliers s ON s.id = r.supplier_id " +
         "LEFT JOIN admins a ON a.chat_id = r.chat_id " +
-        "WHERE r.shop_id = $1 ORDER BY r.date DESC LIMIT 30",
-        [auth.shopId]
-      );
+        "WHERE r.shop_id = $1 ";
+        
+      let params = [auth.shopId];
+      
+      if (supplierId) {
+        query += "AND r.supplier_id = $2 ";
+        params.push(supplierId);
+      }
+      
+      query += "ORDER BY r.date DESC LIMIT 50";
+      
+      const r = await pool.query(query, params);
       res.json({ ok: true, docs: r.rows });
     } catch (e) { res.status(500).json({ ok: false }); }
   });
@@ -1179,6 +1188,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         }
       }
       
+      // Сохраняем supplier_id при проведении
       await client.query(
         "UPDATE wh_receipts SET total_sum = $1, supplier_id = $2 " +
         "WHERE id = $3", [totalSum, supplierId, receiptId]
@@ -1310,7 +1320,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     } catch (e) { res.status(500).json({ ok: false }); }
   });
 
-  // Исправлено: фронтенд стучится на /create
   app.post('/api/warehouse/suppliers/create', async (req, res) => {
     try {
       const auth = getAuth(req);
