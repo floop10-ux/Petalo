@@ -459,7 +459,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var isPayAmountEdited = false; ';
       html += 'var isTotalPriceEdited = false;';
 
-      // Надежная анимация полета карточки вниз
+      // Анимация улетающего товара
       html += 'function flyToBasket(el) {';
       html += '  var rect = el.getBoundingClientRect();';
       html += '  var clone = el.cloneNode(true);';
@@ -494,6 +494,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  setTimeout(function() { clone.remove(); }, 650);';
       html += '}';
 
+      // Тряска корзины при добавлении
       html += 'function shakeElement(el) {';
       html += '  if (!el) return;';
       html += '  el.classList.add("shake");';
@@ -1264,7 +1265,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var els = document.querySelectorAll(".pay-btn"); ';
       html += 'els.forEach(function(el) { el.classList.remove("active"); });';
       html += 'document.getElementById("pcm-" + m).classList.add("active"); }';
-
       html += 'function openPrecheck() {';
       html += '  var btn = document.getElementById("btnSubmit");';
       html += '  if (!btn.classList.contains("ready")) { ';
@@ -1343,6 +1343,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'function closePrecheck() { ';
       html += 'document.getElementById("precheckModal")';
       html += '.style.display = "none"; }';
+
       html += 'function saveSale() {';
       html += '  var btn = document.getElementById("btnSubmit");';
       html += '  if (btn.disabled) return;';
@@ -2265,7 +2266,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += fontLink + uiScript + '<style>';
       html += 'body { padding: 0 16px 32px 16px; }';
       
-      // Анимация улетающего товара в Списании
+      // Анимация улетающего товара
       html += '.fly-anim { position: fixed; z-index: 9999; ';
       html += 'pointer-events: none; border-radius: 12px; ';
       html += 'background: #fff; display: flex; flex-direction: column; ';
@@ -2316,7 +2317,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '.card .stock.green { color: var(--f-success); }';
       html += '.card .stock.red { color: var(--f-danger); }';
       
-      // Плавающая корзина для Списания
+      // Плавающая корзина
       html += '.floating-writeoff { position: fixed; bottom: 20px; left: 16px; ';
       html += 'right: 16px; background: #fff; border-radius: 16px; ';
       html += 'box-shadow: 0 4px 20px rgba(0,0,0,0.15); z-index: 900; ';
@@ -2387,6 +2388,12 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<button type="button" class="btn-back" ';
       html += 'onclick="hideForm()">← Вернуться к выбору</button>';
       
+      html += '<h3 style="margin-top:0; font-size:16px; font-weight:800; ';
+      html += 'margin-bottom:12px;">Вы списываете:</h3>';
+      
+      // Сюда будем рендерить список товаров
+      html += '<div id="formItemsList" style="margin-bottom: 16px; padding: 0; border-bottom: 1px solid #eee;"></div>';
+      
       html += '<label style="display:block; font-size:13px; font-weight:600; ';
       html += 'color:var(--f-text-2); margin-bottom:8px;">';
       html += 'Причина списания</label>';
@@ -2439,7 +2446,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var svgPh = \'<div style="width:40px;height:40px;\';';
       html += 'svgPh += \'background:#D8E4E4;border-radius:50%"></div>\';';
 
-      // Анимация для Списания (летит вниз в плавающую корзину)
       html += 'function flyToBasket(el) {';
       html += '  var rect = el.getBoundingClientRect();';
       html += '  var clone = el.cloneNode(true);';
@@ -2495,8 +2501,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '});';
 
       html += 'function onSearchInput() {';
-      html += '  var q = document.getElementById("search").value';
-      html += '  .toLowerCase();';
+      html += '  var q = document.getElementById("search").value.toLowerCase();';
       html += '  var dd = document.getElementById("ddList");';
       html += '  while(dd.firstChild) dd.removeChild(dd.firstChild);';
       html += '  if (q.length > 0) {';
@@ -2513,8 +2518,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '        st.className = "dd-stock"; ';
       html += '        var s = parseFloat(i.current_stock);';
       html += '        st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
-      html += '        st.style.color = s > 0 ? "var(--f-success)" : ';
-      html += '        "var(--f-danger)";';
+      html += '        st.style.color = s > 0 ? "var(--f-success)" : "var(--f-danger)";';
       html += '        row.appendChild(nm); row.appendChild(st);';
       html += '        row.onclick = function() { ';
       html += '          document.getElementById("search").value = "";';
@@ -2529,8 +2533,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '}';
 
       html += 'function renderGrid() {';
-      html += '  var q = document.getElementById("search").value';
-      html += '  .toLowerCase();';
+      html += '  var q = document.getElementById("search").value.toLowerCase();';
       html += '  var items = allItems.filter(function(i) { ';
       html += '    return i.name.toLowerCase().includes(q); });';
       html += '  drawCards(items);';
@@ -2554,8 +2557,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    var st = document.createElement("div");';
       html += '    var stockVal = parseFloat(i.current_stock) || 0;';
       html += '    st.className = "stock " + (stockVal > 0 ? "green" : "red");';
-      html += '    st.textContent = "Ост: " + ';
-      html += '    fmtNum(stockVal) + " " + (i.unit || "шт");';
+      html += '    st.textContent = "Ост: " + fmtNum(stockVal) + " " + (i.unit || "шт");';
       html += '    d.appendChild(nm); d.appendChild(st);';
       html += '    d.onclick = function() { ';
       html += '      flyToBasket(d); addToBasket(i); ';
@@ -2567,18 +2569,22 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'function addToBasket(item) {';
       html += '  var ex = cart.find(function(c) { return c.id === item.id; });';
       html += '  if (ex) { ex.qty += 1; }';
-      html += '  else { cart.push({ id: item.id, name: item.name, qty: 1, ';
-      html += '    avg_cost: item.avg_cost || 0 }); }';
+      html += '  else { cart.push({ id: item.id, name: item.name, qty: 1, avg_cost: item.avg_cost || 0 }); }';
       html += '  renderBasket(); ';
       html += '}';
 
       html += 'function changeQty(idx, delta) {';
       html += '  cart[idx].qty += delta;';
       html += '  if (cart[idx].qty <= 0) {';
-      html += '    cart.splice(idx, 1); renderBasket();';
-      html += '  } else { renderBasket(); }';
+      html += '    cart.splice(idx, 1); ';
+      html += '  }';
+      html += '  renderBasket();';
+      html += '  if (document.getElementById("formBlock").style.display === "block") {';
+      html += '    renderFormList();';
+      html += '  }';
       html += '}';
 
+      // Отрисовка списка в плавающей корзине
       html += 'function renderBasket() {';
       html += '  var b = document.getElementById("floatingWriteoff");';
       html += '  var list = document.getElementById("fwList");';
@@ -2586,18 +2592,19 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    b.classList.remove("show"); ';
       html += '    document.getElementById("formBlock").style.display = "none";';
       html += '    return; }';
+      
       html += '  if (document.getElementById("formBlock").style.display === "block") {';
       html += '    b.classList.remove("show");';
       html += '  } else {';
       html += '    b.classList.add("show");';
       html += '    shakeElement(b);';
       html += '  }';
+      
       html += '  while(list.firstChild) list.removeChild(list.firstChild);';
       html += '  var totQty = 0; var totSum = 0;';
       html += '  cart.forEach(function(item, idx) {';
       html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
-      html += '    var c = parseFloat(String(item.avg_cost)';
-      html += '    .replace(",", ".")) || 0;';
+      html += '    var c = parseFloat(String(item.avg_cost).replace(",", ".")) || 0;';
       html += '    totQty += q; totSum += q * c;';
       html += '    var div = document.createElement("div");';
       html += '    div.className = "b-row";';
@@ -2613,45 +2620,92 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    inp.type = "number"; inp.className = "qty-input"; ';
       html += '    inp.value = item.qty; inp.inputMode = "decimal";';
       html += '    inp.onchange = function() { ';
-      html += '      var v = parseFloat(String(this.value)';
-      html += '      .replace(",", ".")); ';
-      html += '      if (v > 0) { cart[idx].qty = v; renderBasket(); } ';
+      html += '      var v = parseFloat(String(this.value).replace(",", ".")); ';
+      html += '      if (v > 0) { cart[idx].qty = v; renderBasket(); if (document.getElementById("formBlock").style.display === "block") renderFormList(); } ';
       html += '      else { this.value = item.qty; }';
       html += '    };';
       html += '    var pl = document.createElement("button"); ';
       html += '    pl.type = "button"; pl.textContent = "+"; ';
       html += '    pl.className = "qty-btn"; ';
       html += '    pl.onclick = function() { changeQty(idx, 1); };';
-      html += '    ctrl.appendChild(mn); ctrl.appendChild(inp); ';
-      html += '    ctrl.appendChild(pl);';
+      html += '    ctrl.appendChild(mn); ctrl.appendChild(inp); ctrl.appendChild(pl);';
       html += '    var del = document.createElement("span"); ';
       html += '    del.textContent = "✕"; ';
-      html += '    del.style = "color:red; cursor:pointer; font-size:18px; ';
-      html += '    margin-left:10px;";';
+      html += '    del.style = "color:red; cursor:pointer; font-size:18px; margin-left:10px;";';
       html += '    del.onclick = function() { ';
-      html += '      cart.splice(idx, 1); renderBasket(); ';
+      html += '      cart.splice(idx, 1); renderBasket(); if (document.getElementById("formBlock").style.display === "block") renderFormList();';
       html += '    };';
       html += '    ctrl.appendChild(del);';
       html += '    div.appendChild(n); div.appendChild(ctrl); ';
       html += '    list.appendChild(div);';
       html += '  });';
       html += '  document.getElementById("fwCount").textContent = totQty;';
-      html += '  document.getElementById("fwSum").textContent = ';
-      html += '  Math.round(totSum).toLocaleString("ru-RU") + " ₽";';
+      html += '  document.getElementById("fwSum").textContent = Math.round(totSum).toLocaleString("ru-RU") + " ₽";';
+      html += '}';
+
+      // Отрисовка списка внутри формы оформления
+      html += 'function renderFormList() {';
+      html += '  var list = document.getElementById("formItemsList");';
+      html += '  if (!list) return;';
+      html += '  while(list.firstChild) list.removeChild(list.firstChild);';
+      html += '  var totQty = 0; var totSum = 0;';
+      html += '  cart.forEach(function(item, idx) {';
+      html += '    var q = parseFloat(String(item.qty).replace(",", ".")) || 0;';
+      html += '    var c = parseFloat(String(item.avg_cost).replace(",", ".")) || 0;';
+      html += '    totQty += q; totSum += q * c;';
+      html += '    var div = document.createElement("div");';
+      html += '    div.className = "b-row";';
+      html += '    var n = document.createElement("div"); ';
+      html += '    n.textContent = item.name;';
+      html += '    var ctrl = document.createElement("div"); ';
+      html += '    ctrl.className = "b-controls";';
+      html += '    var mn = document.createElement("button"); ';
+      html += '    mn.type = "button"; mn.textContent = "-"; ';
+      html += '    mn.className = "qty-btn"; ';
+      html += '    mn.onclick = function() { changeQty(idx, -1); };';
+      html += '    var inp = document.createElement("input"); ';
+      html += '    inp.type = "number"; inp.className = "qty-input"; ';
+      html += '    inp.value = item.qty; inp.inputMode = "decimal";';
+      html += '    inp.onchange = function() { ';
+      html += '      var v = parseFloat(String(this.value).replace(",", ".")); ';
+      html += '      if (v > 0) { cart[idx].qty = v; renderBasket(); renderFormList(); } ';
+      html += '      else { this.value = item.qty; }';
+      html += '    };';
+      html += '    var pl = document.createElement("button"); ';
+      html += '    pl.type = "button"; pl.textContent = "+"; ';
+      html += '    pl.className = "qty-btn"; ';
+      html += '    pl.onclick = function() { changeQty(idx, 1); };';
+      html += '    ctrl.appendChild(mn); ctrl.appendChild(inp); ctrl.appendChild(pl);';
+      html += '    var del = document.createElement("span"); ';
+      html += '    del.textContent = "✕"; ';
+      html += '    del.style = "color:red; cursor:pointer; font-size:18px; margin-left:10px;";';
+      html += '    del.onclick = function() { ';
+      html += '      cart.splice(idx, 1); renderBasket(); renderFormList();';
+      html += '    };';
+      html += '    ctrl.appendChild(del);';
+      html += '    div.appendChild(n); div.appendChild(ctrl); ';
+      html += '    list.appendChild(div);';
+      html += '  });';
+      
+      html += '  var totalDiv = document.createElement("div");';
+      html += '  totalDiv.style = "display:flex; justify-content:space-between; font-weight:800; margin-top:12px; color:var(--f-accent);";';
+      html += '  totalDiv.innerHTML = "<span>Всего: " + totQty + " шт</span><span>" + Math.round(totSum).toLocaleString("ru-RU") + " ₽</span>";';
+      html += '  list.appendChild(totalDiv);';
       html += '}';
 
       html += 'function showForm() {';
-      html += '  document.getElementById("floatingWriteoff")';
-      html += '  .classList.remove("show");';
+      html += '  if (cart.length === 0) return;';
+      html += '  document.getElementById("floatingWriteoff").classList.remove("show");';
       html += '  document.getElementById("formBlock").style.display = "block";';
-      html += '  document.getElementById("formBlock").scrollIntoView({ ';
-      html += '    behavior: "smooth" });';
+      html += '  renderFormList();'; 
+      html += '  document.getElementById("formBlock").scrollIntoView({ behavior: "smooth" });';
       html += '}';
 
       html += 'function hideForm() {';
       html += '  document.getElementById("formBlock").style.display = "none";';
-      html += '  document.getElementById("floatingWriteoff")';
-      html += '  .classList.add("show");';
+      html += '  if (cart.length > 0) {';
+      html += '    document.getElementById("floatingWriteoff").classList.add("show");';
+      html += '  }';
       html += '  window.scrollTo({ top: 0, behavior: "smooth" });';
       html += '}';
 
@@ -2685,8 +2739,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '}';
 
       html += 'function submit(url, c) {';
-      html += '  var payload = { items: cart, ';
-      html += '    reason: selReason, comment: c, photo: url };';
+      html += '  var payload = { items: cart, reason: selReason, comment: c, photo: url };';
       html += '  fetch("/api/warehouse/writeoff", { method: "POST", ';
       html += '    headers: { "Content-Type": "application/json" }, ';
       html += '    body: JSON.stringify(payload) })';
@@ -2694,18 +2747,12 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  .then(function(d) {';
       html += '    if (d.ok) {';
       html += '      showAlert("Готово", "Успешно списано!", true);';
-      
-      // Бэклог В.2: Проваливаемся в детали (если есть ID)
       html += '      var targetId = d.doc_id || d.id;';
       html += '      if (targetId) {';
-      html += '        setTimeout(function() { window.location.href = ';
-      html += '          "/warehouse/documents/details?id=" + targetId + ';
-      html += '          "&type=writeoffs"; }, 1000);';
+      html += '        setTimeout(function() { window.location.href = "/warehouse/documents/details?id=" + targetId + "&type=writeoffs"; }, 1000);';
       html += '      } else {';
-      html += '        setTimeout(function() { window.location.href = ';
-      html += '          "/warehouse/history"; }, 1000);';
+      html += '        setTimeout(function() { window.location.href = "/warehouse/history"; }, 1000);';
       html += '      }';
-      
       html += '    } else {';
       html += '      btn.disabled = false; btn.innerText = "Списать всё"; ';
       html += '      showAlert("Ошибка", d.error, false);';
