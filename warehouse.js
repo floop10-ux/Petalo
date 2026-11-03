@@ -84,8 +84,8 @@ async function initWarehouseDb() {
       id SERIAL PRIMARY KEY,
       receipt_id INTEGER NOT NULL REFERENCES wh_receipts(id)
         ON DELETE CASCADE,
-      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
-        ON DELETE RESTRICT,
+      shop_item_id INTEGER REFERENCES wh_shop_items(id)
+        ON DELETE SET NULL,
       qty NUMERIC(10,3) NOT NULL,
       unit_cost NUMERIC(10,2) NOT NULL,
       sum NUMERIC(10,2) NOT NULL
@@ -98,8 +98,8 @@ async function initWarehouseDb() {
       id SERIAL PRIMARY KEY,
       shop_id VARCHAR(50) NOT NULL REFERENCES shops(shop_id)
         ON DELETE CASCADE,
-      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
-        ON DELETE RESTRICT,
+      shop_item_id INTEGER REFERENCES wh_shop_items(id)
+        ON DELETE SET NULL,
       qty NUMERIC(10,3) NOT NULL,
       reason VARCHAR(20) NOT NULL
         CHECK (reason IN ('markdown','loss','spoilage','sorting')),
@@ -107,6 +107,8 @@ async function initWarehouseDb() {
       comment TEXT,
       photo_url TEXT,
       chat_id BIGINT,
+      doc_id VARCHAR(100),
+      status VARCHAR(20) DEFAULT 'completed',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
@@ -127,6 +129,7 @@ async function initWarehouseDb() {
       pay_card NUMERIC(10,2) DEFAULT 0,
       pay_qr NUMERIC(10,2) DEFAULT 0,
       idempotency_key VARCHAR(100),
+      status VARCHAR(20) DEFAULT 'active',
       date TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -138,8 +141,8 @@ async function initWarehouseDb() {
       id SERIAL PRIMARY KEY,
       sale_id INTEGER NOT NULL REFERENCES wh_sales(id)
         ON DELETE CASCADE,
-      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
-        ON DELETE RESTRICT,
+      shop_item_id INTEGER REFERENCES wh_shop_items(id)
+        ON DELETE SET NULL,
       qty NUMERIC(10,3) NOT NULL,
       cost_at_sale NUMERIC(10,2) NOT NULL
     );
@@ -173,6 +176,8 @@ async function initWarehouseDb() {
       cash_sales NUMERIC(10,2) DEFAULT 0,
       card_sales NUMERIC(10,2) DEFAULT 0,
       qr_sales NUMERIC(10,2) DEFAULT 0,
+      cash_in NUMERIC(10,2) DEFAULT 0,
+      cash_out NUMERIC(10,2) DEFAULT 0,
       discrepancy NUMERIC(10,2) DEFAULT 0,
       status VARCHAR(20) DEFAULT 'open'
     );
@@ -184,13 +189,28 @@ async function initWarehouseDb() {
       id SERIAL PRIMARY KEY,
       bouquet_id INTEGER NOT NULL REFERENCES bouquets(id)
         ON DELETE CASCADE,
-      shop_item_id INTEGER NOT NULL REFERENCES wh_shop_items(id)
+      shop_item_id INTEGER REFERENCES wh_shop_items(id)
         ON DELETE CASCADE,
-      qty NUMERIC(10,3) NOT NULL DEFAULT 1
+      qty NUMERIC(10,3) NOT NULL DEFAULT 1,
+      alternatives JSONB DEFAULT '[]'::jsonb
     );
   `);
 
-  // --- МИГРАЦИИ ---
+  // 13. Кассовые операции (Внесение/Изъятие)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wh_cash_ops (
+      id SERIAL PRIMARY KEY,
+      shift_id INTEGER REFERENCES wh_shifts(id) ON DELETE CASCADE,
+      shop_id VARCHAR(50),
+      chat_id BIGINT,
+      type VARCHAR(20),
+      amount NUMERIC(10,2),
+      comment TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  // --- МИГРАЦИИ (Для обновления уже существующих баз) ---
   await pool.query(
     'ALTER TABLE wh_items ADD COLUMN ' +
     'IF NOT EXISTS photo_url_backup TEXT'
@@ -203,13 +223,10 @@ async function initWarehouseDb() {
     'ALTER TABLE wh_receipts ADD COLUMN ' +
     'IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\''
   );
-  
-  // Миграция для Правки №9 (Дата изменения накладной)
   await pool.query(
     'ALTER TABLE wh_receipts ADD COLUMN ' +
     'IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()'
   );
-
   await pool.query(
     'ALTER TABLE wh_writeoffs ADD COLUMN ' +
     'IF NOT EXISTS chat_id BIGINT'
@@ -217,6 +234,14 @@ async function initWarehouseDb() {
   await pool.query(
     'ALTER TABLE wh_writeoffs ADD COLUMN ' +
     'IF NOT EXISTS photo_url TEXT'
+  );
+  await pool.query(
+    'ALTER TABLE wh_writeoffs ADD COLUMN ' +
+    'IF NOT EXISTS doc_id VARCHAR(100)'
+  );
+  await pool.query(
+    'ALTER TABLE wh_writeoffs ADD COLUMN ' +
+    'IF NOT EXISTS status VARCHAR(20) DEFAULT \'completed\''
   );
   await pool.query(
     'ALTER TABLE wh_sales ADD COLUMN ' +
@@ -243,79 +268,51 @@ async function initWarehouseDb() {
     'IF NOT EXISTS pay_qr NUMERIC(10,2) DEFAULT 0'
   );
   await pool.query(
-    'ALTER TABLE wh_audit_log ADD COLUMN ' +
-    'IF NOT EXISTS ref_id INTEGER'
+    'ALTER TABLE wh_sales ADD COLUMN ' +
+    'IF NOT EXISTS status VARCHAR(20) DEFAULT \'active\''
   );
-
-  // Поле для закрепления товара (огонек)
-  await pool.query(
-    'ALTER TABLE wh_shop_items ADD COLUMN ' +
-    'IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE'
-  );
-
-  // Поле для архивации товаров
-  await pool.query(
-    'ALTER TABLE wh_shop_items ADD COLUMN ' +
-    'IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE'
-  );
-
-  // Подготовка к интеграции с витриной
-  await pool.query(
-    'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS ' +
-    'wh_linked BOOLEAN DEFAULT FALSE'
-  );
-  await pool.query(
-    'ALTER TABLE bouquets ADD COLUMN IF NOT EXISTS ' +
-    'lifetime_type VARCHAR(20) DEFAULT \'auto_3_days\''
-  );
-
-  // Миграция для Правки №7 (Защита от двойного тапа)
   await pool.query(
     'ALTER TABLE wh_sales ADD COLUMN ' +
     'IF NOT EXISTS idempotency_key VARCHAR(100)'
   );
+  await pool.query(
+    'ALTER TABLE wh_audit_log ADD COLUMN ' +
+    'IF NOT EXISTS ref_id INTEGER'
+  );
+  await pool.query(
+    'ALTER TABLE wh_shop_items ADD COLUMN ' +
+    'IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE'
+  );
+  await pool.query(
+    'ALTER TABLE wh_shop_items ADD COLUMN ' +
+    'IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE'
+  );
+  await pool.query(
+    'ALTER TABLE wh_shifts ADD COLUMN ' +
+    'IF NOT EXISTS cash_in NUMERIC(10,2) DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_shifts ADD COLUMN ' +
+    'IF NOT EXISTS cash_out NUMERIC(10,2) DEFAULT 0'
+  );
+  await pool.query(
+    'ALTER TABLE wh_bouquet_recipes ADD COLUMN ' +
+    'IF NOT EXISTS alternatives JSONB DEFAULT \'[]\'::jsonb'
+  );
 
-  // Смена типов с INTEGER на NUMERIC(10,2)
+  // Снимаем запрет NOT NULL для работы функции "Удалить навсегда"
   await pool.query(
-    'ALTER TABLE wh_shop_items ALTER COLUMN avg_cost ' +
-    'TYPE NUMERIC(10,2) USING avg_cost::numeric(10,2)'
-  );
+    'ALTER TABLE wh_sale_items ALTER COLUMN shop_item_id DROP NOT NULL'
+  ).catch(function(){});
   await pool.query(
-    'ALTER TABLE wh_shop_items ALTER COLUMN last_cost ' +
-    'TYPE NUMERIC(10,2) USING last_cost::numeric(10,2)'
-  );
+    'ALTER TABLE wh_receipt_items ALTER COLUMN shop_item_id DROP NOT NULL'
+  ).catch(function(){});
   await pool.query(
-    'ALTER TABLE wh_shop_items ALTER COLUMN retail_price ' +
-    'TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)'
-  );
+    'ALTER TABLE wh_writeoffs ALTER COLUMN shop_item_id DROP NOT NULL'
+  ).catch(function(){});
   await pool.query(
-    'ALTER TABLE wh_sales ALTER COLUMN real_price ' +
-    'TYPE NUMERIC(10,2) USING real_price::numeric(10,2)'
-  );
-  await pool.query(
-    'ALTER TABLE wh_sales ALTER COLUMN retail_price ' +
-    'TYPE NUMERIC(10,2) USING retail_price::numeric(10,2)'
-  );
-  await pool.query(
-    'ALTER TABLE wh_receipts ALTER COLUMN total_sum ' +
-    'TYPE NUMERIC(10,2) USING total_sum::numeric(10,2)'
-  );
-  await pool.query(
-    'ALTER TABLE wh_receipts ALTER COLUMN delivery_cost ' +
-    'TYPE NUMERIC(10,2) USING delivery_cost::numeric(10,2)'
-  );
-  await pool.query(
-    'ALTER TABLE wh_receipt_items ALTER COLUMN unit_cost ' +
-    'TYPE NUMERIC(10,2) USING unit_cost::numeric(10,2)'
-  );
-  await pool.query(
-    'ALTER TABLE wh_receipt_items ALTER COLUMN sum ' +
-    'TYPE NUMERIC(10,2) USING sum::numeric(10,2)'
-  );
-  await pool.query(
-    'ALTER TABLE wh_sale_items ALTER COLUMN cost_at_sale ' +
-    'TYPE NUMERIC(10,2) USING cost_at_sale::numeric(10,2)'
-  );
+    'ALTER TABLE wh_bouquet_recipes ALTER COLUMN shop_item_id DROP NOT NULL'
+  ).catch(function(){});
 
   // Индексы
   await pool.query(
@@ -346,17 +343,17 @@ async function initWarehouseDb() {
     'CREATE INDEX IF NOT EXISTS idx_wh_shifts ' +
     'ON wh_shifts(shop_id, status)'
   );
-  
-  // Индекс для быстрой работы Журнала и Отчетов
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_wh_audit_log ' +
     'ON wh_audit_log(shop_id, date DESC)'
   );
 
-  // Уникальный индекс для пломбы (Защита от двойного тапа)
+  // Защита от двойных нажатий (привязка к магазину)
+  await pool.query('DROP INDEX IF EXISTS idx_wh_sales_idem');
   await pool.query(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_wh_sales_idem ' +
-    'ON wh_sales(idempotency_key) WHERE idempotency_key IS NOT NULL'
+    'ON wh_sales(shop_id, idempotency_key) ' +
+    'WHERE idempotency_key IS NOT NULL'
   );
 
   // --- ДОБАВЛЕНИЕ БАЗОВЫХ КАТЕГОРИЙ ---
@@ -364,9 +361,9 @@ async function initWarehouseDb() {
     'Цветы', 'Упаковка', 'Декор', 'Игрушки', 'Канцелярия'
   ];
   
-  for (var i = 0; i < defaultCats.length; i++) {
-    var catName = defaultCats[i];
-    var checkRes = await pool.query(
+  for (let i = 0; i < defaultCats.length; i++) {
+    let catName = defaultCats[i];
+    let checkRes = await pool.query(
       'SELECT id FROM wh_categories WHERE name = $1', [catName]
     );
     if (checkRes.rows.length === 0) {
@@ -377,7 +374,7 @@ async function initWarehouseDb() {
     }
   }
 
-  console.log('✅ Таблицы склада готовы (v5.5 + batch 2)');
+  console.log('✅ Таблицы склада готовы (v10.0)');
   console.log('✅ Базовые категории проверены');
 }
 
