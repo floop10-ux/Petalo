@@ -15,11 +15,11 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       const shopId = auth.shopId;
 
       const statsRes = await pool.query(
-        'SELECT COALESCE(SUM(current_stock), 0) as stems, ' +
-        'COALESCE(SUM(current_stock * avg_cost), 0) as cost, ' +
-        'COALESCE(SUM(current_stock * retail_price), 0) as retail ' +
-        'FROM wh_shop_items WHERE shop_id = $1 ' +
-        'AND current_stock > 0 AND (hidden = FALSE OR hidden IS NULL)',
+        "SELECT COALESCE(SUM(current_stock), 0) as stems, " +
+        "COALESCE(SUM(current_stock * avg_cost), 0) as cost, " +
+        "COALESCE(SUM(current_stock * retail_price), 0) as retail " +
+        "FROM wh_shop_items WHERE shop_id = $1 " +
+        "AND current_stock > 0 AND (hidden = FALSE OR hidden IS NULL)",
         [shopId]
       );
       const stats = statsRes.rows[0];
@@ -82,12 +82,14 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += 'box-shadow: var(--sh-1); color: var(--f-text); }';
       html += '.spec-btn.active { background: var(--f-brand); color: #fff; }';
       
-      html += '.grid-tiles { display: grid; grid-template-columns: 1fr 1fr; ';
+      // Исправленная Flex-верстка для плиток
+      html += '.grid-tiles { display: flex; flex-wrap: wrap; ';
       html += 'gap: 12px; }';
       html += '.card-tile { background: #fff; padding: 12px; ';
       html += 'border-radius: var(--r-lg); text-align: center; ';
       html += 'text-decoration: none; color: var(--f-text); ';
-      html += 'position: relative; box-shadow: var(--sh-1); }';
+      html += 'position: relative; box-shadow: var(--sh-1); ';
+      html += 'flex: 1 1 calc(50% - 12px); box-sizing: border-box; }';
       html += '.card-tile img { width: 100%; height: 100px; ';
       html += 'object-fit: cover; border-radius: var(--r-md); ';
       html += 'margin-bottom: 8px; }';
@@ -95,7 +97,8 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += 'background: #F0F4F4; display: flex; align-items: center; ';
       html += 'justify-content: center; margin-bottom: 8px; }';
       
-      html += '.grid-rows { display: flex; flex-direction: column; gap: 8px; }';
+      html += '.grid-rows { display: flex; flex-direction: column; ';
+      html += 'gap: 8px; }';
       html += '.card-row { background: #fff; padding: 12px 16px; ';
       html += 'border-radius: var(--r-md); display: flex; align-items: center; ';
       html += 'justify-content: space-between; text-decoration: none; ';
@@ -131,7 +134,8 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse-app" class="back-btn">←</a>';
       html += '<h2 class="page-title">Обзор склада</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
       
       html += '<div class="stats-bar">';
@@ -153,25 +157,25 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       
       html += '<div class="controls">';
       html += '  <div style="display:flex; gap:6px; flex-wrap:wrap;">';
-      html += '    <button class="spec-btn" id="cat-noprice" ';
+      html += '    <button type="button" class="spec-btn" id="cat-noprice" ';
       html += 'onclick="toggleNoPrice()">Без цены</button>';
-      html += '    <button class="spec-btn" id="cat-minus" ';
+      html += '    <button type="button" class="spec-btn" id="cat-minus" ';
       html += 'onclick="toggleMinus()">Минус</button>';
-      html += '    <button class="spec-btn" id="cat-archive" ';
+      html += '    <button type="button" class="spec-btn" id="cat-archive" ';
       html += 'onclick="toggleArchive()">Архив</button>';
       html += '  </div>';
       html += '  <div style="display:flex; gap:8px; align-items:center;">';
       html += '    <div class="view-toggles">';
-      html += '      <button class="view-btn active" id="btn-view-tile" ';
-      html += 'onclick="setViewMode(&apos;tile&apos;)">';
+      html += '      <button type="button" class="view-btn active" ';
+      html += 'id="btn-view-tile" onclick="setViewMode(&quot;tile&quot;)">';
       html += '<svg viewBox="0 0 24 24" fill="none" ';
       html += 'stroke="currentColor" stroke-width="2">';
       html += '<rect x="3" y="3" width="7" height="7"/>';
       html += '<rect x="14" y="3" width="7" height="7"/>';
       html += '<rect x="14" y="14" width="7" height="7"/>';
       html += '<rect x="3" y="14" width="7" height="7"/></svg></button>';
-      html += '      <button class="view-btn" id="btn-view-row" ';
-      html += 'onclick="setViewMode(&apos;row&apos;)">';
+      html += '      <button type="button" class="view-btn" ';
+      html += 'id="btn-view-row" onclick="setViewMode(&quot;row&quot;)">';
       html += '<svg viewBox="0 0 24 24" fill="none" ';
       html += 'stroke="currentColor" stroke-width="2">';
       html += '<line x1="8" y1="6" x2="21" y2="6"/>';
@@ -192,7 +196,7 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '</div>';
 
       html += '<div class="h-scroll" id="catList">';
-      html += '<button class="cat-btn active" id="cat-0" ';
+      html += '<button type="button" class="cat-btn active" id="cat-0" ';
       html += 'onclick="setCat(0)">Все</button></div>';
       
       html += '<div id="itemsContainer"></div>';
@@ -208,10 +212,10 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += 'var noPriceFilter = false; var minusFilter = false; ';
       html += 'var showArchive = false;';
 
-      html += 'var svgPh = "<div style=width:100%;height:100px;';
-      html += 'background:#F0F4F4;border-radius:8px;></div>";';
-      html += 'var svgPhRow = "<div style=width:48px;height:48px;';
-      html += 'background:#F0F4F4;border-radius:8px;></div>";';
+      html += 'var svgPh = \'<div style="width:100%;height:100px;\';';
+      html += 'svgPh += \'background:#F0F4F4;border-radius:8px"></div>\';';
+      html += 'var svgPhRow = \'<div style="width:48px;height:48px;\';';
+      html += 'svgPhRow += \'background:#F0F4F4;border-radius:8px"></div>\';';
 
       html += 'if (localStorage.getItem("wh_view_mode")) ';
       html += 'viewMode = localStorage.getItem("wh_view_mode");';
@@ -275,8 +279,9 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '    b.id !== "cat-minus" && b.id !== "cat-archive") ';
       html += '    b.classList.remove("active"); });';
       html += '  } else {';
-      html += '    document.getElementById("cat-" + currentCat)';
-      html += '    .classList.add("active");';
+      html += '    var activeCatBtn = document.getElementById(';
+      html += '    "cat-" + currentCat);';
+      html += '    if (activeCatBtn) activeCatBtn.classList.add("active");';
       html += '  }';
       html += '}';
 
@@ -286,6 +291,7 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '  var cl = document.getElementById("catList"); ';
       html += '  d.categories.forEach(function(c){ ';
       html += '    var b = document.createElement("button"); ';
+      html += '    b.type = "button";';
       html += '    b.className = "cat-btn"; b.id = "cat-" + c.id; ';
       html += '    b.innerText = c.name; ';
       html += '    b.onclick = function(){setCat(c.id);}; ';
@@ -315,7 +321,8 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += 'currentCat = id; currentPage = 1; ';
       html += 'var els = document.querySelectorAll(".cat-btn"); ';
       html += 'els.forEach(function(el){el.classList.remove("active");}); ';
-      html += 'document.getElementById("cat-" + id).classList.add("active"); ';
+      html += 'var btn = document.getElementById("cat-" + id);';
+      html += 'if (btn) btn.classList.add("active"); ';
       html += 'applyFilters(); }';
 
       html += 'function applyFilters() {';
@@ -473,6 +480,7 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '    while (pag.firstChild) pag.removeChild(pag.firstChild);';
       html += '    if (totalPages > 1) {';
       html += '      var prevBtn = document.createElement("button"); ';
+      html += '      prevBtn.type = "button";';
       html += '      prevBtn.className = "cat-btn"; ';
       html += '      prevBtn.innerText = "←"; ';
       html += '      prevBtn.disabled = currentPage === 1; ';
@@ -481,6 +489,7 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '      if(currentPage === 1) prevBtn.style.opacity = "0.3";';
       
       html += '      var nextBtn = document.createElement("button"); ';
+      html += '      nextBtn.type = "button";';
       html += '      nextBtn.className = "cat-btn"; ';
       html += '      nextBtn.innerText = "→"; ';
       html += '      nextBtn.disabled = currentPage === totalPages; ';
@@ -581,7 +590,8 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += '<div class="page-header-left">';
       html += '<a href="/warehouse/inventory" class="back-btn">←</a>';
       html += '<h2 class="page-title">Выписка</h2></div>';
-      html += '<button class="burger-btn" onclick="toggleMenu()">☰</button>';
+      html += '<button type="button" class="burger-btn" ';
+      html += 'onclick="toggleMenu()">☰</button>';
       html += '</div>';
 
       html += '<input type="file" id="photoInput" accept="image/*" ';
@@ -592,21 +602,29 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
 
       html += '<div class="actions" id="actions" style="display:none;">';
       
-      html += '<button class="btn-act success full" id="btnRestore" ';
-      html += 'style="display:none;" onclick="restoreItem()">';
+      // Кнопки действий (включая восстановление и удаление)
+      html += '<button type="button" class="btn-act success full" ';
+      html += 'id="btnRestore" style="display:none;" ';
+      html += 'onclick="restoreItem()">';
       html += 'Восстановить из архива</button>';
       
-      html += '<button class="btn-act primary" id="btnSetPrice" ';
-      html += 'style="display:none;" onclick="setRetailPrice()">';
+      html += '<button type="button" class="btn-act primary" ';
+      html += 'id="btnSetPrice" style="display:none;" ';
+      html += 'onclick="setRetailPrice()">';
       html += 'Задать цену</button>';
-      html += '<button class="btn-act" id="btnPin" ';
+      
+      html += '<button type="button" class="btn-act" id="btnPin" ';
       html += 'onclick="togglePin()">Закрепить</button>';
-      html += '<button class="btn-act" onclick="renameItem()">';
-      html += 'Переименовать</button>';
-      html += '<button class="btn-act" onclick="clickPhoto()">';
-      html += 'Загрузить фото</button>';
-      html += '<button class="btn-act danger full" id="btnDelete" ';
-      html += 'onclick="deleteItem()">Удалить товар</button>';
+      
+      html += '<button type="button" class="btn-act" ';
+      html += 'onclick="renameItem()">Переименовать</button>';
+      
+      html += '<button type="button" class="btn-act" ';
+      html += 'onclick="clickPhoto()">Загрузить фото</button>';
+      
+      html += '<button type="button" class="btn-act danger full" ';
+      html += 'id="btnDelete" onclick="deleteItem()">';
+      html += 'Удалить товар</button>';
       html += '</div>';
 
       html += '<div class="controls" id="historyControls" ';
@@ -623,12 +641,12 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
 
       html += '<div style="display:flex; justify-content:center; ';
       html += 'gap:10px; align-items:center; margin-bottom:16px;">';
-      html += '<button class="pag-btn" id="btnPrev" onclick="prevPage()" ';
-      html += 'style="opacity:0.3;">←</button>';
-      html += '<span id="pageInfo" style="font-weight:800; font-size:14px;">';
-      html += '1 / 1</span>';
-      html += '<button class="pag-btn" id="btnNext" onclick="nextPage()" ';
-      html += 'style="opacity:0.3;">→</button>';
+      html += '<button type="button" class="pag-btn" id="btnPrev" ';
+      html += 'onclick="prevPage()" style="opacity:0.3;">←</button>';
+      html += '<span id="pageInfo" style="font-weight:800; ';
+      html += 'font-size:14px;">1 / 1</span>';
+      html += '<button type="button" class="pag-btn" id="btnNext" ';
+      html += 'onclick="nextPage()" style="opacity:0.3;">→</button>';
       html += '</div>';
 
       html += '<div id="list">Загрузка...</div>';
@@ -888,7 +906,8 @@ function setupWarehouseViewsInventory(app, bot, s3ctx, getAuth) {
       html += 'function updatePinBtn() {';
       html += '  var b = document.getElementById("btnPin");';
       html += '  if (isPinned) { b.style.background = "#FFF3E0"; ';
-      html += '    b.style.color = "#E67E22"; b.style.borderColor = "#E67E22";';
+      html += '    b.style.color = "#E67E22"; ';
+      html += '    b.style.borderColor = "#E67E22";';
       html += '    b.innerText = "Открепить"; }';
       html += '  else { b.style.background = "#fff"; ';
       html += '    b.style.color = "var(--f-text)"; ';
