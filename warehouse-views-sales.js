@@ -52,6 +52,18 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<style>';
       html += 'body { padding: 0 16px 80px 16px; }';
       
+      // Анимация улетающего товара и тряски корзины
+      html += '.fly-anim { position: fixed; z-index: 9999; ';
+      html += 'pointer-events: none; border-radius: 12px; ';
+      html += 'transition: all 0.6s cubic-bezier(0.25, 0.1, 0.25, 1); ';
+      html += 'box-shadow: 0 10px 20px rgba(0,0,0,0.3); opacity: 0.8; }';
+      html += '@keyframes shakeCart { 0% { transform: translateX(0); } ';
+      html += '25% { transform: translateX(-4px); } ';
+      html += '50% { transform: translateX(4px); } ';
+      html += '75% { transform: translateX(-4px); } ';
+      html += '100% { transform: translateX(0); } }';
+      html += '.shake { animation: shakeCart 0.4s ease-in-out; }';
+      
       html += '.alt-modal-overlay { position: fixed; top: 0; left: 0; ';
       html += 'width: 100%; height: 100%; background: rgba(0,0,0,0.5); ';
       html += 'display: none; z-index: 3500; align-items: center; ';
@@ -442,6 +454,32 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var activeInputId = "payAmount"; var isFirstInput = true; ';
       html += 'var isPayAmountEdited = false; ';
       html += 'var isTotalPriceEdited = false;';
+
+      // Анимация улетающего товара
+      html += 'function flyToBasket(el) {';
+      html += '  var rect = el.getBoundingClientRect();';
+      html += '  var clone = el.cloneNode(true);';
+      html += '  clone.className = "fly-anim";';
+      html += '  clone.style.left = rect.left + "px";';
+      html += '  clone.style.top = rect.top + "px";';
+      html += '  clone.style.width = rect.width + "px";';
+      html += '  clone.style.height = rect.height + "px";';
+      html += '  document.body.appendChild(clone);';
+      html += '  setTimeout(function() {';
+      html += '    clone.style.left = "50%";';
+      html += '    clone.style.top = "0px";';
+      html += '    clone.style.width = "0px";';
+      html += '    clone.style.height = "0px";';
+      html += '    clone.style.opacity = "0";';
+      html += '  }, 10);';
+      html += '  setTimeout(function() { clone.remove(); }, 600);';
+      html += '}';
+
+      // Тряска корзины при добавлении
+      html += 'function shakeElement(el) {';
+      html += '  el.classList.add("shake");';
+      html += '  setTimeout(function(){ el.classList.remove("shake"); }, 400);';
+      html += '}';
       
       html += 'var svgPh = \'<div style="width:40px;height:40px;\';';
       html += 'svgPh += \'background:#D8E4E4;border-radius:50%"></div>\';';
@@ -592,7 +630,9 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    tag.textContent = ok ? "✓ в наличии" : "⚠ нет ингр.";';
       html += '    if (!ok) tag.style.color = "red";';
       html += '    d.appendChild(tag);';
-      html += '    d.onclick = function() { addBouquetToCart(b); };';
+      html += '    d.onclick = function() { ';
+      html += '      flyToBasket(d); addBouquetToCart(b); ';
+      html += '    };';
       html += '    g.appendChild(d);';
       html += '  });';
       html += '}';
@@ -834,7 +874,9 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    st.textContent = "Ост: " + fmtNum(stockVal) ';
       html += '    + " " + (item.unit || "шт");';
       html += '    d.appendChild(st);';
-      html += '    d.onclick = function() { addToCart(item); };';
+      html += '    d.onclick = function() { ';
+      html += '      flyToBasket(d); addToCart(item); ';
+      html += '    };';
       html += '    var pressTimer;';
       html += '    d.addEventListener("touchstart", function() {';
       html += '      pressTimer = setTimeout(function() { ';
@@ -878,7 +920,9 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
 
       html += 'function recalculateTotals() { ';
       html += 'currentIdempotencyKey = null; ';
-      html += 'saveCart(); renderBasket(); }';
+      html += 'saveCart(); renderBasket(); ';
+      html += 'shakeElement(document.getElementById("floatingCart"));';
+      html += '}';
 
       html += 'function clearCartAndPayments() { ';
       html += 'cart = []; payments = []; isPayAmountEdited = false; ';
