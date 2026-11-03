@@ -504,8 +504,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += getUnifiedMenu('staff');
 
       html += '<script>';
-      html += 'var svgEdit = \'' + getIconSvg('edit') + '\';';
-      html += 'var svgTrash = \'' + getIconSvg('trash') + '\';';
+      html += 'var svgEdit = \'' + getIconSvg('edit').replace(/"/g, '&quot;') + '\';';
+      html += 'var svgTrash = \'' + getIconSvg('trash').replace(/"/g, '&quot;') + '\';';
       html += 'var globalInvite = "";';
 
       html += 'fetch("/api/warehouse/staff")';
@@ -747,8 +747,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += getUnifiedMenu('settings');
 
       html += '<script>';
-      html += 'var svgEdit = \'' + getIconSvg('edit') + '\';';
-      html += 'var svgTrash = \'' + getIconSvg('trash') + '\';';
+      html += 'var svgEdit = \'' + getIconSvg('edit').replace(/"/g, '&quot;') + '\';';
+      html += 'var svgTrash = \'' + getIconSvg('trash').replace(/"/g, '&quot;') + '\';';
       html += 'var shopSettings = {}; ';
       
       html += 'fetch("/api/warehouse/settings")';
@@ -1485,8 +1485,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.redirect('/warehouse-login');
       
-      const svgHelp = getIconSvg('help').replace(/"/g, '&quot;');
-      const svgTrash = getIconSvg('trash').replace(/"/g, '&quot;');
+      const svgHelp = getIconSvg('help').replace(/"/g, "'");
+      const svgTrash = getIconSvg('trash').replace(/"/g, "'");
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
@@ -1910,8 +1910,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       if (!auth) return res.redirect('/warehouse-login');
       
       const bId = req.query.id ? parseInt(req.query.id) : 0;
-      const svgTrash = getIconSvg('trash').replace(/"/g, '&quot;');
-      const svgHelp = getIconSvg('help').replace(/"/g, '&quot;');
+      const svgTrash = getIconSvg('trash').replace(/"/g, "'");
+      const svgHelp = getIconSvg('help').replace(/"/g, "'");
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
@@ -2548,11 +2548,11 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '<script>';
       html += 'var currentPeriod = "today"; var currentDate = "";';
       html += 'var icons = {';
-      html += '  sale: \'' + getIconSvg('sale').replace(/"/g, '&quot;') + '\',';
-      html += '  receipt: \'' + getIconSvg('receipt').replace(/"/g, '&quot;') + '\',';
-      html += '  writeoff: \'' + getIconSvg('writeoff').replace(/"/g, '&quot;') + '\',';
-      html += '  shift: \'' + getIconSvg('history').replace(/"/g, '&quot;') + '\',';
-      html += '  warn: \'' + getIconSvg('warn').replace(/"/g, '&quot;') + '\'';
+      html += '  sale: \'' + getIconSvg('sale').replace(/"/g, "'") + '\',';
+      html += '  receipt: \'' + getIconSvg('receipt').replace(/"/g, "'") + '\',';
+      html += '  writeoff: \'' + getIconSvg('writeoff').replace(/"/g, "'") + '\',';
+      html += '  shift: \'' + getIconSvg('history').replace(/"/g, "'") + '\',';
+      html += '  warn: \'' + getIconSvg('warn').replace(/"/g, "'") + '\'';
       html += '};';
 
       html += 'function setPeriod(p) {';
