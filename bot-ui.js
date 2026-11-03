@@ -1,34 +1,14 @@
 const { 
-  esc, 
-  formatPrice, 
-  calculateOldPrice, 
-  shortName, 
-  getBouquetStatus, 
-  isConfirmedRecently,
-  COUNTRIES 
+  esc, formatPrice, calculateOldPrice, shortName, 
+  getBouquetStatus, isConfirmedRecently, COUNTRIES 
 } = require('./config');
-
-const { getBouquetsFromDb } = require('./db-actions');
+const { getBouquetsFromDb, getShopFromDb } = require('./db-actions');
+const { sendNav } = require('./bot-core');
 
 // ========== КОНСТАНТЫ ==========
-const OWNER_STEPS = [
-  'add_bouquet', 'view_shop', 'edit_price',
-  'hide_bouquet', 'restore_bouquet',
-  'check_stock', 'settings_tour', 'done'
-];
-
-const FLORIST_STEPS = [
-  'add_bouquet', 'check_stock', 'on_shift'
-];
-
 const MENU_BUTTONS = [
-  '📷 Добавить букет',
-  '✅ Что в наличии?',
-  '✏️ Мои букеты',
-  '🔗 Витрина',
-  '📦 Склад',
-  '⚙️ Настройки',
-  '⚙️ Меню'
+  '📷 Добавить букет', '✅ Что в наличии?', '✏️ Мои букеты',
+  '🔗 Витрина', '📦 Склад', '⚙️ Настройки', '⚙️ Меню'
 ];
 
 const ADD_BOUQUET_HINT =
@@ -37,9 +17,7 @@ const ADD_BOUQUET_HINT =
   `Цена — <b>последнее слово</b>, одно число.\n\n` +
   `✅ <b>Правильно:</b>\n` +
   `  31 роза 3500\n` +
-  `  Пионы 4500\n` +
-  `  31 роза 50см сорт Аваланж 3500\n` +
-  `  Микс 2800\n\n` +
+  `  Пионы 4500\n\n` +
   `❌ <b>Неправильно:</b>\n` +
   `  31 роза 3500 сорт Аваланж цена\n` +
   `     (после цены есть слова)\n` +
@@ -49,86 +27,23 @@ const ADD_BOUQUET_HINT =
 
 const REG_STEPS = {
   shopId: {
-    text: '📝 <b>Шаг 1 из 9. Короткое название ' +
-          'для ссылки</b>\n\n' +
-          'Только латинские буквы, цифры и _, ' +
-          'без пробелов.\n' +
-          'Например: <code>cveti_msk</code>\n\n' +
-          'Это будет адрес витрины:\n' +
-          '<code>flowind.ru/shop/cveti_msk</code>\n\n' +
-          '<i>Если не знаете — нажмите ' +
-          '«Пропустить», я сгенерирую сам.</i>',
+    text: '📝 <b>Шаг 1 из 9. Короткое название для ссылки</b>\n\nТолько латинские буквы, цифры и _.', 
     skip: true, mandatory: true
   },
   displayName: {
-    text: '✅ <b>Шаг 2 из 9. Красивое название</b>\n\n' +
-          'Как назвать магазин для клиентов?\n' +
-          'Оно появится на витрине. ' +
-          'Можно с эмодзи.\n\n' +
-          'Например: <i>🌸 Цветы на Фрунзе</i>',
+    text: '✅ <b>Шаг 2 из 9. Красивое название</b>\n\nКак назвать магазин для клиентов?', 
     skip: false, mandatory: true
   },
   country: {
-    text: '🌍 <b>Шаг 3 из 9. В какой стране ' +
-          'магазин?</b>\n\n' +
-          'Нужно, чтобы правильно работали цены ' +
-          'и валюта.\n\n' +
-          '<i>Выберите кнопкой ниже.</i>',
+    text: '🌍 <b>Шаг 3 из 9. В какой стране магазин?</b>', 
     skip: true, mandatory: false
   },
-  address: {
-    text: '✅ <b>Шаг 4 из 9. Адрес</b>\n\n' +
-          'Клиенты увидят адрес на витрине.\n' +
-          'Например: <i>Москва, ул. Фрунзе, 15</i>\n\n' +
-          '<i>Можно пропустить и добавить позже.</i>',
-    skip: true, mandatory: false
-  },
-  hours: {
-    text: '✅ <b>Шаг 5 из 9. Часы работы</b>\n\n' +
-          'Например: <i>Пн-Вс 10:30-21:00</i>\n\n' +
-          '<i>Можно пропустить.</i>',
-    skip: true, mandatory: false
-  },
-  phone: {
-    text: '✅ <b>Шаг 6 из 9. Телефон</b>\n\n' +
-          'Для кнопки «Позвонить» на витрине.\n' +
-          'Например: <i>+7 962 402-51-75</i>\n\n' +
-          '<i>Можно пропустить.</i>',
-    skip: true, mandatory: false
-  },
-  telegram: {
-    text: '✅ <b>Шаг 7 из 9. Ваш юзернейм ' +
-          'в Telegram</b>\n\n' +
-          'Клиенты будут писать вам, нажав ' +
-          'кнопку на витрине.\n' +
-          'Пришлите без @.\n\n' +
-          'Например: если ваш юзернейм ' +
-          '@KupidonAdm — напишите ' +
-          '<code>KupidonAdm</code>\n\n' +
-          '<i>Если у вас нет юзернейма — можно ' +
-          'пропустить, и клиенты смогут только ' +
-          'позвонить или написать в WhatsApp.</i>',
-    skip: true, mandatory: false
-  },
-  whatsapp: {
-    text: '✅ <b>Шаг 8 из 9. Номер WhatsApp</b>\n\n' +
-          'Клиенты смогут написать вам одним ' +
-          'нажатием.\n' +
-          'Например: <i>+7 962 402-51-75</i>\n\n' +
-          '<i>Можно пропустить.</i>',
-    skip: true, mandatory: false
-  },
-  max: {
-    text: '✅ <b>Шаг 9 из 9. Ссылка на профиль ' +
-          'в MAX</b>\n\n' +
-          '<i>Можно пропустить и добавить позже — ' +
-          '«Меню» → «🏪 Данные магазина».</i>\n\n' +
-          'Она начинается с ' +
-          '<code>https://max.ru/u/...</code>\n\n' +
-          'Пришлите её сюда или нажмите ' +
-          '«Пропустить».',
-    skip: true, mandatory: false
-  }
+  address: { text: '✅ <b>Шаг 4 из 9. Адрес</b>', skip: true, mandatory: false },
+  hours: { text: '✅ <b>Шаг 5 из 9. Часы работы</b>', skip: true, mandatory: false },
+  phone: { text: '✅ <b>Шаг 6 из 9. Телефон</b>', skip: true, mandatory: false },
+  telegram: { text: '✅ <b>Шаг 7 из 9. Ваш юзернейм в Telegram</b>', skip: true, mandatory: false },
+  whatsapp: { text: '✅ <b>Шаг 8 из 9. Номер WhatsApp</b>', skip: true, mandatory: false },
+  max: { text: '✅ <b>Шаг 9 из 9. Ссылка на профиль в MAX</b>', skip: true, mandatory: false }
 };
 
 const REG_ORDER = [
@@ -137,8 +52,8 @@ const REG_ORDER = [
 ];
 
 const CHECK_PER_PAGE = 25;
-const LIST_PER_PAGE = 25;
-const SEARCH_PER_PAGE = 25;
+const LIST_PER_PAGE = 10;
+const SEARCH_PER_PAGE = 10;
 
 // ========== УТИЛИТЫ ==========
 function plural(n, one, few, many) {
@@ -150,22 +65,15 @@ function plural(n, one, few, many) {
   return many;
 }
 
-// ========== ГЛАВНЫЕ МЕНЮ ==========
 function getMainKeyboard(shop, chatId) {
   const me = shop && shop.admins
-    ? shop.admins.find(a => a.chatId === chatId)
+    ? shop.admins.find(function(a) { return a.chatId === chatId; })
     : null;
   const onShift = !!(me && me.onShift);
 
   const rows = [
-    [
-      { text: '📷 Добавить букет' },
-      { text: '✅ Что в наличии?' }
-    ],
-    [
-      { text: '✏️ Мои букеты' },
-      { text: '🔗 Витрина' }
-    ]
+    [{ text: '📷 Добавить букет' }, { text: '✅ Что в наличии?' }],
+    [{ text: '✏️ Мои букеты' }, { text: '🔗 Витрина' }]
   ];
 
   if (onShift) {
@@ -177,14 +85,13 @@ function getMainKeyboard(shop, chatId) {
   rows.push([{ text: '📦 Склад' }]);
   rows.push([{ text: '⚙️ Настройки' }]);
 
-  return {
-    keyboard: rows,
-    resize_keyboard: true
-  };
+  return { keyboard: rows, resize_keyboard: true };
 }
 
 function getSettingsMenu(shop, chatId) {
   const { isOwner } = require('./config');
+  if (!shop) return { reply_markup: { inline_keyboard: [] } };
+  
   if (isOwner(shop, chatId)) {
     return { reply_markup: { inline_keyboard: [
       [{ text: '🔑 Пригласить флориста', callback_data: 'menu_invite' }],
@@ -192,10 +99,7 @@ function getSettingsMenu(shop, chatId) {
       [{ text: '🏪 Данные магазина', callback_data: 'menu_shopdata' }],
       [{ text: '📊 Статистика', callback_data: 'menu_stats' }],
       [{ text: '💰 Наценка', callback_data: 'menu_markup' }],
-      [
-        { text: '🎨 Логотип', callback_data: 'menu_logo' },
-        { text: '🖼 Фон', callback_data: 'menu_background' }
-      ],
+      [{ text: '🎨 Логотип', callback_data: 'menu_logo' }, { text: '🖼 Фон', callback_data: 'menu_background' }],
       [{ text: '🖼 Обложка', callback_data: 'menu_cover' }],
       [{ text: '🔘 Цвет кнопки', callback_data: 'menu_buttoncolor' }],
       [{ text: '💱 Валюта', callback_data: 'menu_currency' }],
@@ -215,44 +119,24 @@ function getSettingsMenu(shop, chatId) {
 
 function buildShopDataMessage(shop) {
   const { 
-    findCountryByCode, 
-    getShopCurrency, 
-    findCurrencyByCode,
-    formatPhone 
+    findCountryByCode, getShopCurrency, 
+    findCurrencyByCode, formatPhone 
   } = require('./config');
 
   let txt = `🏪 <b>Данные магазина</b>\n\n`;
   txt += `📝 Название: ${esc(shop.displayName)}\n`;
-  
-  const addr = shop.address ? esc(shop.address) : '<i>не указан</i>';
-  txt += `📍 Адрес: ${addr}\n`;
-  
-  const hrs = shop.hours ? esc(shop.hours) : '<i>не указаны</i>';
-  txt += `🕐 Часы: ${hrs}\n`;
-  
-  const ph = shop.phone ? esc(formatPhone(shop.phone)) : '<i>не указан</i>';
-  txt += `📞 Телефон: ${ph}\n\n`;
-  
-  const tg = shop.telegramUsername
-    ? '@' + esc(shop.telegramUsername) : '<i>не указан</i>';
-  txt += `📱 Telegram: ${tg}\n`;
-  
-  const wa = shop.whatsappPhone
-    ? esc(formatPhone(shop.whatsappPhone)) : '<i>не указан</i>';
-  txt += `💬 WhatsApp: ${wa}\n`;
-  
-  const mx = shop.maxLink ? '✅ установлена' : '<i>не указана</i>';
-  txt += `🅼 MAX: ${mx}\n`;
+  txt += `📍 Адрес: ${shop.address ? esc(shop.address) : '<i>не указан</i>'}\n`;
+  txt += `🕐 Часы: ${shop.hours ? esc(shop.hours) : '<i>не указаны</i>'}\n`;
+  txt += `📞 Телефон: ${shop.phone ? esc(formatPhone(shop.phone)) : '<i>не указан</i>'}\n\n`;
+  txt += `📱 Telegram: ${shop.telegramUsername ? '@' + esc(shop.telegramUsername) : '<i>не указан</i>'}\n`;
+  txt += `💬 WhatsApp: ${shop.whatsappPhone ? esc(formatPhone(shop.whatsappPhone)) : '<i>не указан</i>'}\n`;
+  txt += `🅼 MAX: ${shop.maxLink ? '✅ установлена' : '<i>не указана</i>'}\n`;
   
   const country = findCountryByCode(shop.country);
-  const cLabel = country ? country.label : '<i>не указана</i>';
-  txt += `🌍 Страна: ${cLabel}\n`;
+  txt += `🌍 Страна: ${country ? country.label : '<i>не указана</i>'}\n`;
   
-  const curCode = getShopCurrency(shop);
-  const curObj = findCurrencyByCode(curCode);
-  const curLabel = curObj 
-    ? curObj.label + ' (' + curObj.sym + ')' : '₽';
-  txt += `💱 Валюта: ${curLabel}\n\n`;
+  const curObj = findCurrencyByCode(getShopCurrency(shop));
+  txt += `💱 Валюта: ${curObj ? curObj.label : '₽'}\n\n`;
   txt += `<i>Что изменить?</i>`;
   
   return {
@@ -279,7 +163,7 @@ function buildShopDataMessage(shop) {
 // ========== ПРОВЕРКА НАЛИЧИЯ ==========
 async function getCheckableBouquets(shopId) {
   const all = await getBouquetsFromDb(shopId);
-  return all.filter(b => {
+  return all.filter(function(b) {
     const s = getBouquetStatus(b);
     return s === 'fresh' || s === 'stale' || s === 'pinned';
   });
@@ -288,12 +172,8 @@ async function getCheckableBouquets(shopId) {
 async function buildCheckStartScreen(shopId) {
   const bouquets = await getCheckableBouquets(shopId);
   const count = bouquets.length;
-  
   if (count === 0) {
-    return {
-      text: '🌿 На витрине нет букетов — проверять нечего.',
-      options: { parse_mode: 'HTML' }
-    };
+    return { text: '🌿 На витрине нет букетов.', options: { parse_mode: 'HTML' } };
   }
   
   const pages = Math.ceil(count / CHECK_PER_PAGE);
@@ -305,8 +185,7 @@ async function buildCheckStartScreen(shopId) {
   txt += `Мы разбили их на <b>${pages}</b> `;
   txt += `${pgWord} по ${CHECK_PER_PAGE}.\n\n`;
   txt += `<i>💾 Если отвлечётесь — не страшно. `;
-  txt += `Проверка сохранится, и вы сможете `;
-  txt += `продолжить с того же места в течение часа.</i>`;
+  txt += `Проверка сохранится в течение часа.</i>`;
   
   return {
     text: txt,
@@ -344,8 +223,8 @@ function buildCheckListKeyboard(session) {
   const end = Math.min(start + CHECK_PER_PAGE, total);
   const slice = session.bouquets.slice(start, end);
 
-  const checked = slice.filter(b => session.checked[b.id]);
-  const unchecked = slice.filter(b => !session.checked[b.id]);
+  const checked = slice.filter(function(b) { return session.checked[b.id]; });
+  const unchecked = slice.filter(function(b) { return !session.checked[b.id]; });
 
   for (const b of checked) {
     const st = session.checked[b.id];
@@ -362,11 +241,11 @@ function buildCheckListKeyboard(session) {
   if (totalPages > 1) {
     const navRow = [];
     if (page > 0) {
-      navRow.push({ text: '⬅️ Назад', callback_data: `check_page_${page - 1}` });
+      navRow.push({ text: '⬅️', callback_data: `check_page_${page - 1}` });
     }
     navRow.push({ text: `${page + 1} / ${totalPages}`, callback_data: 'noop' });
     if (page < totalPages - 1) {
-      navRow.push({ text: 'Дальше ➡️', callback_data: `check_page_${page + 1}` });
+      navRow.push({ text: '➡️', callback_data: `check_page_${page + 1}` });
     }
     rows.push(navRow);
   }
@@ -378,11 +257,11 @@ function buildCheckListKeyboard(session) {
 // ========== АРХИВ ==========
 async function getArchivedBouquets(shopId) {
   const all = await getBouquetsFromDb(shopId);
-  const arch = all.filter(b => {
+  const arch = all.filter(function(b) {
     const s = getBouquetStatus(b);
     return s === 'hidden' || s === 'expired';
   });
-  arch.sort((a, b) => {
+  arch.sort(function(a, b) {
     const da = new Date(a.confirmedAt || a.createdAt);
     const db = new Date(b.confirmedAt || b.createdAt);
     return db - da;
@@ -390,33 +269,103 @@ async function getArchivedBouquets(shopId) {
   return arch;
 }
 
-async function buildArchiveModeSelection(chatId, shopId) {
-  const { sendNav } = require('./bot-core');
+async function buildArchiveModeSelection(bot, chatId, shopId) {
   const arch = await getArchivedBouquets(shopId);
-  if (arch.length === 0) {
-    return sendNav(chatId, '📦 Архив пуст — все букеты на витрине.');
-  }
+  if (arch.length === 0) return sendNav(bot, chatId, '📦 Архив пуст.');
+  
   const total = arch.length;
   const word = plural(total, 'букет', 'букета', 'букетов');
   
   let txt = `📦 <b>Архив</b> · ${total} ${word}\n\n`;
   txt += `<i>Как удобнее смотреть?</i>`;
   
-  return sendNav(chatId, txt, {
+  return sendNav(bot, chatId, txt, {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
         [{ text: '📋 Списком', callback_data: 'arch_mode_list' }],
-        [{ text: '🖼 По одному (с фото)', callback_data: 'arch_mode_card' }],
+        [{ text: '🖼 По одному', callback_data: 'arch_mode_card' }],
         [{ text: '❌ Отмена', callback_data: 'arch_close' }]
       ]
     }
   });
 }
 
+async function showArchiveList(bot, chatId, session, editMessageId) {
+  const totalPages = Math.max(
+    1, Math.ceil(session.bouquets.length / LIST_PER_PAGE)
+  );
+  const start = session.page * LIST_PER_PAGE;
+  const slice = session.bouquets.slice(start, start + LIST_PER_PAGE);
+  
+  const rows = slice.map(function(b) {
+    return [{ 
+      text: `№${b.shopNumber} ${shortName(b.name, 20)}`, 
+      callback_data: `arch_item_${b.id}` 
+    }];
+  });
+  
+  if (totalPages > 1) {
+    const nav = [];
+    if (session.page > 0) {
+      nav.push({ 
+        text: '⬅️', 
+        callback_data: `arch_list_page_${session.page - 1}` 
+      });
+    }
+    nav.push({ text: `${session.page + 1} / ${totalPages}`, callback_data: 'noop' });
+    if (session.page < totalPages - 1) {
+      nav.push({ 
+        text: '➡️', 
+        callback_data: `arch_list_page_${session.page + 1}` 
+      });
+    }
+    rows.push(nav);
+  }
+  rows.push([{ text: '❌ Закрыть', callback_data: 'arch_close' }]);
+  
+  const txt = '📦 <b>Архив (список)</b>';
+  const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } };
+  
+  if (editMessageId) {
+    try { 
+      await bot.editMessageText(txt, { 
+        chat_id: chatId, message_id: editMessageId, ...opts 
+      }); 
+      return; 
+    } catch(e){}
+  }
+  return bot.sendMessage(chatId, txt, opts);
+}
+
+async function showArchiveCard(bot, chatId, session) {
+  if (session.currentIndex >= session.bouquets.length) {
+    return bot.sendMessage(chatId, '📦 Конец архива.', { 
+      reply_markup: getMainKeyboard(null, chatId) 
+    });
+  }
+  const b = session.bouquets[session.currentIndex];
+  const btns = [
+    [{ text: '🌿 Вернуть', callback_data: `arch_restore_${b.id}` }],
+    [{ text: '🗑 Удалить', callback_data: `arch_del_${b.id}` }],
+    [{ text: '➡️ Следующий', callback_data: 'arch_next' }],
+    [{ text: '❌ Закрыть', callback_data: 'arch_close' }]
+  ];
+  return sendBouquetPreview(bot, chatId, b, '📦 <b>Букет в архиве</b>', btns);
+}
+
+async function showArchiveItemCard(bot, chatId, session, itemId) {
+  const b = session.bouquets.find(function(x) { return x.id === itemId; });
+  if (!b) return;
+  const btns = [
+    [{ text: '🌿 Вернуть', callback_data: `arch_restore_${b.id}` }],
+    [{ text: '🗑 Удалить', callback_data: `arch_del_${b.id}` }],
+    [{ text: '⬅️ К списку', callback_data: 'arch_list_back' }]
+  ];
+  return sendBouquetPreview(bot, chatId, b, '📦 <b>Букет в архиве</b>', btns);
+}
 // ========== МОИ БУКЕТЫ ==========
-async function buildMyBouquetsMenu(chatId, shopId) {
-  const { sendNav } = require('./bot-core');
+async function buildMyBouquetsMenu(bot, chatId, shopId) {
   const all = await getBouquetsFromDb(shopId);
   const active = all.filter(isConfirmedRecently);
   const arch = await getArchivedBouquets(shopId);
@@ -429,7 +378,7 @@ async function buildMyBouquetsMenu(chatId, shopId) {
   txt += `📦 В архиве: <b>${arch.length}</b> ${archWord}\n\n`;
   txt += `<i>Что делаем?</i>`;
   
-  return sendNav(chatId, txt, {
+  return sendNav(bot, chatId, txt, {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
@@ -442,52 +391,146 @@ async function buildMyBouquetsMenu(chatId, shopId) {
   });
 }
 
-async function buildSearchPrompt(chatId) {
-  const { sendNav } = require('./bot-core');
-  let txt = `🔍 <b>Что ищем?</b>\n\n`;
-  txt += `Напишите любое слово из названия или номер букета.\n\n`;
-  txt += `Например:\n`;
-  txt += `• <code>роза</code>\n`;
-  txt += `• <code>Pink Avalanche</code>\n`;
-  txt += `• <code>гортензия</code>\n`;
-  txt += `• <code>58</code>\n\n`;
-  txt += `<i>Ищем и на витрине, и в архиве.</i>`;
+async function showActiveBouquetsList(bot, chatId, shopId, page, editMessageId) {
+  const all = await getBouquetsFromDb(shopId);
+  const active = all.filter(isConfirmedRecently);
   
-  return sendNav(chatId, txt, {
+  const rows = active.map(function(b) {
+    return [{ 
+      text: `№${b.shopNumber} ${shortName(b.name, 20)}`, 
+      callback_data: `show_${b.id}` 
+    }];
+  });
+  
+  if (rows.length === 0) {
+    rows.push([{ text: 'Нет активных букетов', callback_data: 'mb_back' }]);
+  } else {
+    rows.push([{ text: '⬅️ Назад', callback_data: 'mb_back' }]);
+  }
+  
+  const txt = `🟢 <b>Активные букеты</b> (${active.length})`;
+  const opts = { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } };
+  
+  if (editMessageId) {
+    try { 
+      await bot.editMessageText(txt, { 
+        chat_id: chatId, message_id: editMessageId, ...opts 
+      }); 
+      return; 
+    } catch(e){}
+  }
+  return bot.sendMessage(chatId, txt, opts);
+}
+
+async function buildSearchPrompt(bot, chatId) {
+  let txt = `🔍 <b>Что ищем?</b>\n\nНапишите слово из названия или номер.\n\n<i>Отмена — /cancel</i>`;
+  return sendNav(bot, chatId, txt, {
     parse_mode: 'HTML',
-    reply_markup: {
-      inline_keyboard: [[{ text: '❌ Отмена', callback_data: 'mb_close' }]]
+    reply_markup: { inline_keyboard: [[{ text: '❌ Отмена', callback_data: 'mb_close' }]] }
+  });
+}
+
+async function renderSearchResults(bot, chatId, shopId, query, results) {
+  if (results.length === 0) {
+    return sendNav(bot, chatId, `🔍 По запросу «${esc(query)}» ничего не найдено.`);
+  }
+  
+  const rows = results.map(function(b) {
+    return [{ 
+      text: `№${b.shopNumber} ${shortName(b.name, 20)}`, 
+      callback_data: `sres_${b.id}` 
+    }];
+  });
+  
+  rows.push([{ text: '⬅️ Назад', callback_data: 'mb_back' }]);
+  
+  let txt = `🔍 Результаты по «${esc(query)}»\nНайдено: ${results.length}`;
+  return sendNav(bot, chatId, txt, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: rows }
+  });
+}
+
+function buildBouquetActionButtons(b, yesText, yesData, noData) {
+  return [
+    [{ text: yesText, callback_data: yesData }],
+    [{ text: '❌ Отмена', callback_data: noData }]
+  ];
+}
+
+async function sendBouquetPreview(bot, chatId, b, headerText, buttons) {
+  const { formatPrice } = require('./config');
+  const { getShopFromDb } = require('./db-actions');
+  const shop = await getShopFromDb(b.shopId);
+  const priceStr = formatPrice(b.price, shop);
+  
+  let txt = `${headerText}\n\n<b>№${b.shopNumber}</b> ${esc(b.name)}\n💰 ${priceStr}`;
+  
+  if (b.photos && b.photos.length > 0) {
+    const firstPhoto = b.photos[0];
+    let fileId = null;
+    if (typeof firstPhoto === 'string') fileId = firstPhoto;
+    else if (firstPhoto && firstPhoto.tg) fileId = firstPhoto.tg;
+    
+    if (fileId) {
+      return bot.sendPhoto(chatId, fileId, {
+        caption: txt,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: buttons }
+      }).catch(function() {
+        return bot.sendMessage(chatId, txt, { 
+          parse_mode: 'HTML', 
+          reply_markup: { inline_keyboard: buttons } 
+        }).catch(function(){});
+      });
     }
+  }
+  
+  return bot.sendMessage(chatId, txt, { 
+    parse_mode: 'HTML', 
+    reply_markup: { inline_keyboard: buttons } 
+  }).catch(function(){});
+}
+
+async function showBouquetCard(bot, chatId, b, shopId) {
+  const btns = [
+    [{ text: '✏️ Изменить цену', callback_data: `editprice_ok_${b.id}` }],
+    [{ text: '📝 Переименовать', callback_data: `rename_ok_${b.id}` }],
+    [{ text: '📥 Убрать с витрины', callback_data: `hideit_${b.id}` }],
+    [{ text: '⬅️ Назад', callback_data: 'mb_back' }]
+  ];
+  return sendBouquetPreview(bot, chatId, b, '🌸 <b>Карточка букета</b>', btns);
+}
+
+async function showBouquetList(bot, chatId, shopId, action, headerText, page) {
+  const all = await getBouquetsFromDb(shopId);
+  const active = all.filter(isConfirmedRecently);
+  
+  const rows = active.map(function(b) {
+    return [{ 
+      text: `№${b.shopNumber} ${shortName(b.name, 20)}`, 
+      callback_data: `${action}_${b.id}` 
+    }];
+  });
+  
+  rows.push([{ text: '❌ Отмена', callback_data: 'mb_close' }]);
+  
+  return bot.sendMessage(chatId, headerText, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: rows }
   });
 }
 
 // ========== РЕГИСТРАЦИЯ ==========
 function buildRegFinalText(shopId, displayName) {
   const { SITE_URL } = require('./config');
-  const link = SITE_URL + '/shop/' + shopId;
   let t = '🎉 <b>Готово! Ваша витрина создана.</b>\n\n';
   t += '🏪 Магазин: «' + esc(displayName) + '»\n\n';
-  t += '🔗 <b>Ссылка для клиентов:</b>\n';
-  t += link + '\n\n';
-  t += '━━━━━━━━━━━━━━━\n\n';
+  t += '🔗 <b>Ссылка для клиентов:</b>\n' + SITE_URL + '/shop/' + shopId + '\n\n';
   t += '📷 <b>Что делать дальше:</b>\n\n';
-  t += '1. Нажмите «📷 Добавить букет» и ';
-  t += 'отправьте фото с подписью.\n\n';
-  t += '2. В подписи: название + пробел + цена.\n';
-  t += '   ✅ <code>31 роза 3500</code>\n';
-  t += '   ✅ <code>Пионы 4500</code>\n';
-  t += '   ❌ <code>31 роза 3500 сорт Аваланж</code>\n';
-  t += '      (цена должна быть последней)\n\n';
-  t += '3. Букет сразу появится на витрине.\n\n';
-  t += '4. Через 3 дня бот напомнит — ';
-  t += 'надо будет подтвердить, что он ещё есть.\n\n';
-  t += '━━━━━━━━━━━━━━━\n\n';
-  t += '⚙️ Чтобы заполнить адрес, телефон и ';
-  t += 'другое — «Меню» → «🏪 Данные магазина»\n\n';
-  t += '💡 Если что-то непонятно — напишите ';
-  t += '<code>/help</code>.\n\n';
-  t += '<b>Попробуйте прямо сейчас — ';
-  t += 'отправьте первый букет.</b>';
+  t += 'Нажмите «📷 Добавить букет» и отправьте фото с подписью.\n';
+  t += '✅ <code>31 роза 3500</code>\n\n';
+  t += '<b>Попробуйте прямо сейчас!</b>';
   return t;
 }
 
@@ -495,26 +538,20 @@ function buildCountrySelect() {
   const rows = [];
   for (let i = 0; i < COUNTRIES.length; i += 2) {
     const row = [];
-    row.push({
-      text: COUNTRIES[i].label,
-      callback_data: 'reg_country_' + COUNTRIES[i].code
+    row.push({ 
+      text: COUNTRIES[i].label, 
+      callback_data: 'reg_country_' + COUNTRIES[i].code 
     });
     if (i + 1 < COUNTRIES.length) {
-      row.push({
-        text: COUNTRIES[i + 1].label,
-        callback_data: 'reg_country_' + COUNTRIES[i + 1].code
+      row.push({ 
+        text: COUNTRIES[i + 1].label, 
+        callback_data: 'reg_country_' + COUNTRIES[i + 1].code 
       });
     }
     rows.push(row);
   }
-  rows.push([{
-    text: '⏭ Пропустить',
-    callback_data: 'reg_skip'
-  }]);
-  return {
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: rows }
-  };
+  rows.push([{ text: '⏭ Пропустить', callback_data: 'reg_skip' }]);
+  return { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } };
 }
 
 // ========== ПОМОЩЬ ==========
@@ -695,8 +732,6 @@ function buildHelpSupport() {
 }
 
 module.exports = {
-  OWNER_STEPS,
-  FLORIST_STEPS,
   MENU_BUTTONS,
   ADD_BOUQUET_HINT,
   REG_STEPS,
@@ -722,5 +757,14 @@ module.exports = {
   buildHelpGuide,
   buildHelpFAQ,
   buildFaqAnswer,
-  buildHelpSupport
+  buildHelpSupport,
+  showActiveBouquetsList,
+  renderSearchResults,
+  showBouquetCard,
+  showBouquetList,
+  sendBouquetPreview,
+  buildBouquetActionButtons,
+  showArchiveList,
+  showArchiveItemCard,
+  showArchiveCard
 };
