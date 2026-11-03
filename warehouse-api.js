@@ -538,6 +538,59 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
     }
   });
 
+  // Новый эндпоинт: Полное удаление (Purge)
+  app.post('/api/warehouse/item/purge', async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const auth = getAuth(req);
+      if (!auth) { 
+        client.release(); 
+        return res.status(401).json({ ok: false }); 
+      }
+      
+      const itemId = parseInt(req.body.id);
+      if (!itemId || isNaN(itemId)) {
+        client.release(); return res.json({ ok: false });
+      }
+      
+      await client.query('BEGIN');
+      
+      // Отвязываем от букетов
+      await client.query(
+        "DELETE FROM wh_bouquet_recipes " +
+        "WHERE shop_item_id = $1", [itemId]
+      );
+      
+      // Обнуляем ссылки в истории (чтобы не было ошибок FK)
+      await client.query(
+        "UPDATE wh_sale_items SET shop_item_id = NULL " +
+        "WHERE shop_item_id = $1", [itemId]
+      );
+      await client.query(
+        "UPDATE wh_receipt_items SET shop_item_id = NULL " +
+        "WHERE shop_item_id = $1", [itemId]
+      );
+      await client.query(
+        "UPDATE wh_writeoffs SET shop_item_id = NULL " +
+        "WHERE shop_item_id = $1", [itemId]
+      );
+      
+      // Удаляем сам товар
+      await client.query(
+        "DELETE FROM wh_shop_items WHERE id = $1 AND shop_id = $2", 
+        [itemId, auth.shopId]
+      );
+      
+      await client.query('COMMIT');
+      client.release();
+      res.json({ ok: true });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (e2) {}
+      client.release(); 
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.post('/api/warehouse/item/restore', async (req, res) => {
     try {
       const auth = getAuth(req);
@@ -743,7 +796,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
           [item.id, shopId]
         );
         
-        // Минусовой остаток разрешен (по правилам)
+        // Минусовой остаток разрешен
         await client.query(
           "UPDATE wh_shop_items SET current_stock = " +
           "current_stock - $1 WHERE id = $2 AND shop_id = $3",
@@ -864,7 +917,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
       
       await client.query('BEGIN');
       
-      // Ищем все строки списания по этому документу
       const items = await client.query(
         "SELECT id, shop_item_id, qty, status FROM wh_writeoffs " +
         "WHERE (doc_id = $1 OR id::text = $1) " +
@@ -876,13 +928,11 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         return res.json({ ok: false, error: 'Документ не найден' });
       }
 
-      // Проверяем, не отменено ли уже
       if (items.rows[0].status === 'cancelled') {
         await client.query('ROLLBACK'); client.release(); 
         return res.json({ ok: false, error: 'Списание уже отменено' });
       }
 
-      // Возвращаем остатки на склад
       for (let i = 0; i < items.rows.length; i++) {
         const item = items.rows[i];
         await client.query(
@@ -892,7 +942,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         );
       }
       
-      // Меняем статус на отменено
       await client.query(
         "UPDATE wh_writeoffs SET status = 'cancelled' " +
         "WHERE (doc_id = $1 OR id::text = $1) AND shop_id = $2", 
@@ -1257,7 +1306,6 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         }
       }
       
-      // Сохраняем supplier_id при проведении
       await client.query(
         "UPDATE wh_receipts SET total_sum = $1, supplier_id = $2 " +
         "WHERE id = $3", [totalSum, supplierId, receiptId]
@@ -1402,6 +1450,52 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "VALUES ($1, $2) RETURNING id, name", [auth.shopId, name]
       );
       res.json({ ok: true, id: r.rows[0].id, supplier: r.rows[0] });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // Новое: Переименование поставщика
+  app.post('/api/warehouse/suppliers/rename', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const id = parseInt(req.body.id);
+      const name = String(req.body.name || '').trim();
+      if (!id || isNaN(id) || !name) {
+        return res.json({ ok: false, error: 'Неверные данные' });
+      }
+      
+      await pool.query(
+        "UPDATE wh_suppliers SET name = $1 " +
+        "WHERE id = $2 AND shop_id = $3", 
+        [name, id, auth.shopId]
+      );
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // Новое: Удаление поставщика
+  app.post('/api/warehouse/suppliers/delete', async (req, res) => {
+    try {
+      const auth = getAuth(req);
+      if (!auth) return res.status(401).json({ ok: false });
+      
+      const id = parseInt(req.body.id);
+      if (!id || isNaN(id)) return res.json({ ok: false });
+      
+      // Отвязываем от накладных, чтобы не сломать историю
+      await pool.query(
+        "UPDATE wh_receipts SET supplier_id = NULL " +
+        "WHERE supplier_id = $1 AND shop_id = $2", 
+        [id, auth.shopId]
+      );
+      
+      await pool.query(
+        "DELETE FROM wh_suppliers WHERE id = $1 AND shop_id = $2", 
+        [id, auth.shopId]
+      );
+      
+      res.json({ ok: true });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
   // ====== ДОКУМЕНТЫ (СПИСОК) ======
@@ -1953,7 +2047,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "AND w.status = 'completed' GROUP BY w.reason", pWrites
       );
 
-      // Бэклог Б.4: Детализация потерь (Drill-down)
+      // Бэклог Б.4: Детализация потерь
       const lossDetails = await pool.query(
         "SELECT COALESCE(shi.custom_name, wi.name) as name, " +
         "SUM(w.qty) as qty, SUM(w.qty * i.avg_cost) as total_cost, " +
@@ -1966,7 +2060,7 @@ function setupWarehouseApi(app, bot, s3ctx, getAuth) {
         "GROUP BY shi.custom_name, wi.name, w.reason", pWrites
       );
       
-      // Бэклог Б.5: Расчет чистой прибыли в Топ-5
+      // Бэклог Б.5: Чистая прибыль в Топ-5
       const top = await pool.query(
         "SELECT shi.id as shop_item_id, " +
         "COALESCE(shi.custom_name, i.name) as name, " +
