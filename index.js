@@ -14,14 +14,18 @@ const {
 
 const { 
   initDb, getShopFromDb, createShopInDb,
-  updateShopField, getBouquetsFromDb,
-  getShopFromDb: getShop
+  updateShopField, getBouquetsFromDb
 } = require('./db-actions');
 
 const { setupStorefront } = require('./storefront');
 const { setupBotHandlers } = require('./bot-handlers');
 const { setupWarehouse } = require('./warehouse-ui');
 const { initWarehouseDb } = require('./warehouse');
+
+// Глобальная защита от падения сервера
+process.on('unhandledRejection', function(reason) {
+  console.error('⚠️ Необработанная ошибка (сервер работает):', reason);
+});
 
 const app = express();
 const token = process.env.BOT_TOKEN;
@@ -74,16 +78,21 @@ const s3ctx = {
 };
 
 // ========== БОТ ==========
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '2mb' }));
 const bot = new TelegramBot(token);
 
-const WEBHOOK_PATH = `/bot${token}`;
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'flowind_secret_2024';
+const WEBHOOK_PATH = '/wh/' + WEBHOOK_SECRET;
+
 app.post(WEBHOOK_PATH, (req, res) => {
-  try {
-    bot.processUpdate(req.body);
-  } catch (e) {
-    console.error('⚠️ Ошибка апдейта:', e?.message || e);
+  const sec = req.headers['x-telegram-bot-api-secret-token'];
+  if (sec !== WEBHOOK_SECRET) {
+    return res.sendStatus(403);
   }
+  
+  bot.processUpdate(req.body).catch(function(e) {
+    console.error('Update error:', e?.message || e);
+  });
   res.sendStatus(200);
 });
 
@@ -107,14 +116,22 @@ function verifyAuth(cookieValue) {
   const parts = cookieValue.split('.');
   if (parts.length !== 3) return null;
   
-  const chatId = parts[0];
+  const chatIdStr = parts[0];
   const shopId = parts[1];
   const signature = parts[2];
   const expected = crypto.createHmac('sha256', COOKIE_SECRET)
-    .update(chatId + '.' + shopId).digest('hex');
+    .update(chatIdStr + '.' + shopId).digest('hex');
     
-  if (signature !== expected) return null;
-  return { chatId: Number(chatId), shopId: shopId };
+  const sigBuf = Buffer.from(signature, 'hex');
+  const expBuf = Buffer.from(expected, 'hex');
+  if (sigBuf.length !== expBuf.length) return null;
+  if (!crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+  
+  const cid = Number(chatIdStr);
+  if (!Number.isFinite(cid) || cid <= 0) return null;
+  if (!/^[a-z0-9_-]{2,50}$/i.test(shopId)) return null;
+  
+  return { chatId: cid, shopId: shopId };
 }
 
 function getAuth(req) {
@@ -126,7 +143,6 @@ function getAuth(req) {
 
 // ========== ФОНОВЫЕ ЗАДАЧИ ==========
 const morningReminderSent = {};
-const morningLaterSent = {};
 const weeklyReportSent = {};
 const { checkSessions } = require('./bot-handlers');
 
@@ -175,7 +191,9 @@ async function morningReminder() {
       const active = all.filter(isConfirmedRecently);
       if (active.length < 3) continue;
 
-      const targets = shop.admins.filter(a => a.role === 'owner' || a.onShift);
+      const targets = shop.admins.filter(function(a) {
+        return a.role === 'owner' || a.onShift;
+      });
       const unique = new Set();
       const text = '🌸 <b>Доброе утро!</b>\n\nМагазин открылся. Проверьте наличие?';
       const kb = {
@@ -204,7 +222,6 @@ async function weeklyReport() {
     const now = getNowMoscow();
     if (now.getDay() !== 0 || now.getHours() !== 19) return;
 
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const shops = await pool.query('SELECT shop_id FROM shops WHERE blocked = FALSE');
     
     for (const s of shops.rows) {
@@ -221,7 +238,9 @@ async function weeklyReport() {
       txt += '🌿 Продолжайте — витрина работает!\n';
       txt += SITE_URL + '/shop/' + s.shop_id;
 
-      const targets = shop.admins.filter(a => a.role === 'owner' || a.onShift);
+      const targets = shop.admins.filter(function(a) {
+        return a.role === 'owner' || a.onShift;
+      });
       const unique = new Set();
       for (const admin of targets) {
         if (unique.has(admin.chatId)) continue;
@@ -241,16 +260,11 @@ async function start() {
     await initDb();
     await initWarehouseDb();
 
-    // Подключаем Склад (Express)
     setupWarehouse(app, bot, s3ctx);
-
-    // Подключаем Витрину (Express)
     setupStorefront(app, bot, s3ctx);
+    
+    setupBotHandlers(bot, s3ctx);
 
-    // Подключаем Обработчики Бота (Telegram)
-    setupBotHandlers(bot, OWNER_CHAT_ID, s3ctx);
-
-    // Проверка Preset-магазина (Kupidon)
     const existing = await getShopFromDb(PRESET_SHOP.shopId);
     if (!existing) {
       const now = new Date();
@@ -290,7 +304,6 @@ async function start() {
       }
     }
 
-    // Установка Webhook и команд
     try {
       await bot.setMyCommands([
         { command: 'start', description: 'Открыть меню' },
@@ -299,14 +312,12 @@ async function start() {
       ]);
       
       const WEBHOOK_URL = SITE_URL + WEBHOOK_PATH;
-      await bot.deleteWebHook();
-      await bot.setWebHook(WEBHOOK_URL);
-      console.log('✅ Webhook установлен:', WEBHOOK_URL);
+      await bot.setWebHook(WEBHOOK_URL, { secret_token: WEBHOOK_SECRET });
+      console.log('✅ Webhook установлен (с секретом)');
     } catch (e) {
       console.error('❌ Ошибка Webhook:', e?.message || e);
     }
 
-    // Интервалы (Cron)
     setInterval(checkAndNotify, 10 * 60 * 1000);
     setInterval(morningReminder, 5 * 60 * 1000);
     setInterval(weeklyReport, 30 * 60 * 1000);
