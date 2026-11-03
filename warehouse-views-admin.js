@@ -549,13 +549,13 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    btnWrap.style = "display:flex;";';
       
       html += '    var btn = document.createElement("button"); ';
-      html += '    btn.innerHTML = getIconSvg("edit") + "Задать PIN"; ';
+      html += '    btn.innerHTML = \'' + getIconSvg('edit') + 'Задать PIN\'; ';
       html += '    btn.className = "btn-pin"; ';
       html += '    btn.onclick = function(){setPin(f.chat_id);}; ';
       html += '    btnWrap.appendChild(btn);';
       
       html += '    var delBtn = document.createElement("button"); ';
-      html += '    delBtn.innerHTML = getIconSvg("trash") + "Удалить"; ';
+      html += '    delBtn.innerHTML = \'' + getIconSvg('trash') + 'Удалить\'; ';
       html += '    delBtn.className = "btn-del"; ';
       html += '    delBtn.onclick = function(){delStaff(f.chat_id);}; ';
       html += '    btnWrap.appendChild(delBtn);';
@@ -814,14 +814,14 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       
       html += '      var btnEdit = document.createElement("button");';
       html += '      btnEdit.className = "btn-icon";';
-      html += '      btnEdit.innerHTML = getIconSvg("edit");';
+      html += '      btnEdit.innerHTML = \'' + getIconSvg('edit') + '\';';
       html += '      btnEdit.onclick = (function(id, oldName) {';
       html += '        return function() { renameSupplier(id, oldName); };';
       html += '      })(s.id, s.name);';
       
       html += '      var btnDel = document.createElement("button");';
       html += '      btnDel.className = "btn-icon";';
-      html += '      btnDel.innerHTML = getIconSvg("trash");';
+      html += '      btnDel.innerHTML = \'' + getIconSvg('trash') + '\';';
       html += '      btnDel.onclick = (function(id, name) {';
       html += '        return function() { deleteSupplier(id, name); };';
       html += '      })(s.id, s.name);';
@@ -1479,6 +1479,9 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.redirect('/warehouse-login');
       
+      const svgHelp = getIconSvg('help').replace(/"/g, '&quot;');
+      const svgTrash = getIconSvg('trash').replace(/"/g, '&quot;');
+      
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
       html += '<meta name="viewport" content="width=device-width, ';
@@ -1642,6 +1645,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'var allBouquets = []; var currentView = "grid"; ';
       html += 'var currentFilter = "all";';
       
+      html += 'var svgHelp = "' + svgHelp + '";';
+      html += 'var svgTrash = "' + svgTrash + '";';
       html += 'var svgPh = \'<div style="background:#D8E4E4;';
       html += 'width:40px;height:40px;border-radius:50%">\' + \'</div>\';';
 
@@ -1784,7 +1789,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '      btnEdit.type = "button";';
       html += '      btnEdit.className = "btn-setup"; ';
       html += '      btnEdit.style.cssText = "flex:1;";';
-      html += '      btnEdit.innerHTML = "Изм."; ';
+      html += '      btnEdit.innerHTML = "Изм. " + svgHelp; ';
       html += '      btnEdit.onclick = function(e) { ';
       html += '        window.location.href = "/warehouse/bouquet/edit?id=" ';
       html += '        + bq.id; }; ';
@@ -1805,7 +1810,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '      btnDel.type = "button";';
       html += '      btnDel.className = "btn-setup"; ';
       html += '      btnDel.style.cssText = "flex:1; color:var(--f-danger);";';
-      html += '      btnDel.innerHTML = getIconSvg("trash"); ';
+      html += '      btnDel.innerHTML = "Удал. " + svgHelp; ';
       html += '      btnDel.onclick = function(e) { ';
       html += '        delBouquet(bq.id); }; ';
       html += '      btnRow.appendChild(btnDel);';
@@ -2239,7 +2244,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    pl.onclick = function() { changeQty(idx, 1); };';
       
       html += '    var del = document.createElement("span"); ';
-      html += '    del.innerHTML = getIconSvg("trash"); ';
+      html += '    del.innerHTML = "' + getIconSvg('trash').replace(/"/g, '&quot;') + '"; ';
       html += '    del.style.cssText = "cursor:pointer; ';
       html += '    margin-left:10px; color:var(--f-danger);";';
       html += '    del.onclick = function() { ';
@@ -2260,7 +2265,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    onclick=&quot;showAlert(&apos;Подсказка&apos;, &apos;Букет ';
       html += '    останется на витрине, если его можно собрать из основного и ';
       html += '    альтернативных цветов вместе.&apos;, true)&quot;>' + 
-               getIconSvg('help') + '</span>";';
+               getIconSvg('help').replace(/"/g, '&quot;') + '</span>";';
       html += '    altBox.appendChild(altTitle);';
       
       html += '    if (item.alternatives && item.alternatives.length > 0) {';
@@ -2503,7 +2508,14 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
 
       html += '<script>';
       html += 'var currentPeriod = "today"; var currentDate = "";';
-      
+      html += 'var icons = {';
+      html += '  sale: \'' + getIconSvg('sale').replace(/"/g, '&quot;') + '\',';
+      html += '  receipt: \'' + getIconSvg('receipt').replace(/"/g, '&quot;') + '\',';
+      html += '  writeoff: \'' + getIconSvg('writeoff').replace(/"/g, '&quot;') + '\',';
+      html += '  shift: \'' + getIconSvg('history').replace(/"/g, '&quot;') + '\',';
+      html += '  warn: \'' + getIconSvg('warn').replace(/"/g, '&quot;') + '\'';
+      html += '};';
+
       html += 'function setPeriod(p) {';
       html += '  currentPeriod = p; currentDate = "";';
       html += '  var dInp = document.getElementById("auditDate");';
@@ -2525,15 +2537,6 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '  loadData();';
       html += '}';
       
-      html += 'function getActionIcon(action) {';
-      html += '  if (action === "sale") return getIconSvg("sale");';
-      html += '  if (action === "receipt") return getIconSvg("receipt");';
-      html += '  if (action === "writeoff" || action === "cancel") ';
-      html += '  return getIconSvg("writeoff");';
-      html += '  if (action === "shift") return getIconSvg("history");';
-      html += '  return getIconSvg("warn");';
-      html += '}';
-
       html += 'function loadData() {';
       html += '  var listEl = document.getElementById("list");';
       html += '  listEl.textContent = "Загрузка...";';
@@ -2569,7 +2572,12 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '      top.className = "log-top";';
       html += '      var titleDiv = document.createElement("div");';
       html += '      titleDiv.className = "log-title";';
-      html += '      titleDiv.innerHTML = getActionIcon(l.action);';
+      
+      html += '      var iconSvg = icons.warn;';
+      html += '      if (icons[l.action]) iconSvg = icons[l.action];';
+      html += '      if (l.action === "cancel") iconSvg = icons.writeoff;';
+      
+      html += '      titleDiv.innerHTML = iconSvg;';
       html += '      var nameSpan = document.createElement("span");';
       html += '      nameSpan.textContent = p;';
       html += '      titleDiv.appendChild(nameSpan);';
