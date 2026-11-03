@@ -90,9 +90,17 @@ app.post(WEBHOOK_PATH, (req, res) => {
     return res.sendStatus(403);
   }
   
-  bot.processUpdate(req.body).catch(function(e) {
-    console.error('Update error:', e?.message || e);
-  });
+  try {
+    const result = bot.processUpdate(req.body);
+    if (result && typeof result.catch === 'function') {
+      result.catch(function(e) {
+        console.error('Update error:', e?.message || e);
+      });
+    }
+  } catch (err) {
+    console.error('Update error (sync):', err?.message || err);
+  }
+  
   res.sendStatus(200);
 });
 
@@ -163,7 +171,11 @@ async function checkAndNotify() {
           n += esc(b.name) + '» скоро скроется. Продлить?';
           bot.sendMessage(b.chatId, n, {
             parse_mode: 'HTML',
-            reply_markup: { inline_keyboard: [[{ text: '🌿 Продлить', callback_data: 'extend_' + b.id }]] }
+            reply_markup: { 
+              inline_keyboard: [
+                [{ text: '🌿 Продлить', callback_data: 'extend_' + b.id }]
+              ] 
+            }
           }).catch(function(){});
           await pool.query('UPDATE bouquets SET reminded = TRUE WHERE id = $1', [b.id]);
         }
