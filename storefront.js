@@ -19,39 +19,55 @@ const notifiedClicks = {};
 
 const CLICK_TYPE_NAMES = {
   tg: '📩 Telegram', wa: '💬 WhatsApp',
-  max: '🅼 MAX', call: '📞 Звонок'
+  max: '🟼 MAX', call: '📞 Звонок'
 };
 
 const BUTTON_COLORS = [
-  { id: 'red', name: 'Красный', emoji: '🔴', color: '#e74c3c', dark: '#c0392b' },
-  { id: 'pink', name: 'Розовый', emoji: '🌸', color: '#e91e63', dark: '#ad1457' },
-  { id: 'green', name: 'Зелёный', emoji: '💚', color: '#27ae60', dark: '#1e8449' },
-  { id: 'graphite', name: 'Графит', emoji: '🖤', color: '#2c3e50', dark: '#1a252f' },
-  { id: 'blue', name: 'Синий', emoji: '🔵', color: '#3498db', dark: '#21618c' },
-  { id: 'lavender', name: 'Лаванда', emoji: '🟣', color: '#9b59b6', dark: '#71368a' }
+  { id: 'red', name: 'Красный', emoji: '🔴', 
+    color: '#e74c3c', dark: '#c0392b' },
+  { id: 'pink', name: 'Розовый', emoji: '🌸', 
+    color: '#e91e63', dark: '#ad1457' },
+  { id: 'green', name: 'Зелёный', emoji: '💚', 
+    color: '#27ae60', dark: '#1e8449' },
+  { id: 'graphite', name: 'Графит', emoji: '🖤', 
+    color: '#2c3e50', dark: '#1a252f' },
+  { id: 'blue', name: 'Синий', emoji: '🔵', 
+    color: '#3498db', dark: '#21618c' },
+  { id: 'lavender', name: 'Лаванда', emoji: '🟣', 
+    color: '#9b59b6', dark: '#71368a' }
 ];
 
 const PRESET_BACKGROUNDS = [
   { id: 1, name: 'Тёплый крем', emoji: '🍦',
-    gradient: 'linear-gradient(180deg,#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%)' },
+    gradient: 'linear-gradient(180deg,#fdf9f3 0%,#fafaf8 40%,' +
+              '#f7f5f1 100%)' },
   { id: 2, name: 'Чистый белый', emoji: '⚪',
-    gradient: 'linear-gradient(180deg,#ffffff 0%,#fafafa 60%,#f5f5f5 100%)' },
+    gradient: 'linear-gradient(180deg,#ffffff 0%,#fafafa 60%,' +
+              '#f5f5f5 100%)' },
   { id: 3, name: 'Нежный розовый', emoji: '🌸',
-    gradient: 'linear-gradient(180deg,#fdf2f5 0%,#fbe8ef 50%,#f7dae5 100%)' },
+    gradient: 'linear-gradient(180deg,#fdf2f5 0%,#fbe8ef 50%,' +
+              '#f7dae5 100%)' },
   { id: 4, name: 'Ботанический', emoji: '🌿',
-    gradient: 'linear-gradient(180deg,#f2f7f0 0%,#e8f0e5 50%,#dfe8db 100%)' },
+    gradient: 'linear-gradient(180deg,#f2f7f0 0%,#e8f0e5 50%,' +
+              '#dfe8db 100%)' },
   { id: 5, name: 'Серо-голубой', emoji: '💎',
-    gradient: 'linear-gradient(180deg,#f5f7fa 0%,#eaeef3 50%,#dee5ec 100%)' },
+    gradient: 'linear-gradient(180deg,#f5f7fa 0%,#eaeef3 50%,' +
+              '#dee5ec 100%)' },
   { id: 6, name: 'Акварель', emoji: '🎨',
-    gradient: 'linear-gradient(180deg,#fdf5f0 0%,#f9e8de 50%,#f4dcd0 100%)' },
+    gradient: 'linear-gradient(180deg,#fdf5f0 0%,#f9e8de 50%,' +
+              '#f4dcd0 100%)' },
   { id: 7, name: 'Мрамор', emoji: '🏛',
-    gradient: 'linear-gradient(180deg,#fbfaf8 0%,#f2eeea 50%,#e8e3dc 100%)' },
+    gradient: 'linear-gradient(180deg,#fbfaf8 0%,#f2eeea 50%,' +
+              '#e8e3dc 100%)' },
   { id: 8, name: 'Новогодний', emoji: '❄️',
-    gradient: 'linear-gradient(180deg,#f5f7fa 0%,#e8edf3 50%,#dce3ea 100%)' },
+    gradient: 'linear-gradient(180deg,#f5f7fa 0%,#e8edf3 50%,' +
+              '#dce3ea 100%)' },
   { id: 9, name: 'Весенний', emoji: '🌷',
-    gradient: 'linear-gradient(180deg,#fff5f7 0%,#fce4ea 50%,#f8d5de 100%)' },
+    gradient: 'linear-gradient(180deg,#fff5f7 0%,#fce4ea 50%,' +
+              '#f8d5de 100%)' },
   { id: 10, name: 'Осенний', emoji: '🍂',
-    gradient: 'linear-gradient(180deg,#fdf4ea 0%,#f8e4cf 50%,#f2d4b6 100%)' }
+    gradient: 'linear-gradient(180deg,#fdf4ea 0%,#f8e4cf 50%,' +
+              '#f2d4b6 100%)' }
 ];
 
 const PLACEHOLDER_GRADIENTS = [
@@ -97,19 +113,33 @@ function getPhotoRefsLocal(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
     if (photo.startsWith('http')) return { primary: photo, fallback: null };
-    if (isValidFileId(photo)) return { primary: '/photo/tg/' + photo, fallback: null };
+    if (isValidFileId(photo)) {
+      return { primary: '/photo/tg/' + photo, fallback: null };
+    }
     return { primary: null, fallback: null };
   }
   if (typeof photo === 'object') {
     if (photo.s3 && photo.s3b && photo.tg) {
-      return { primary: photo.s3, fallback: photo.s3b, fallback2: '/photo/tg/' + photo.tg };
+      return { 
+        primary: photo.s3, 
+        fallback: photo.s3b, 
+        fallback2: '/photo/tg/' + photo.tg 
+      };
     }
-    if (photo.s3 && photo.s3b) return { primary: photo.s3, fallback: photo.s3b };
-    if (photo.s3b && photo.tg) return { primary: photo.s3b, fallback: '/photo/tg/' + photo.tg };
+    if (photo.s3 && photo.s3b) {
+      return { primary: photo.s3, fallback: photo.s3b };
+    }
+    if (photo.s3b && photo.tg) {
+      return { primary: photo.s3b, fallback: '/photo/tg/' + photo.tg };
+    }
     if (photo.s3b) return { primary: photo.s3b, fallback: null };
-    if (photo.s3 && photo.tg) return { primary: photo.s3, fallback: '/photo/tg/' + photo.tg };
+    if (photo.s3 && photo.tg) {
+      return { primary: photo.s3, fallback: '/photo/tg/' + photo.tg };
+    }
     if (photo.s3) return { primary: photo.s3, fallback: null };
-    if (photo.tg) return { primary: '/photo/tg/' + photo.tg, fallback: null };
+    if (photo.tg) {
+      return { primary: '/photo/tg/' + photo.tg, fallback: null };
+    }
   }
   return { primary: null, fallback: null };
 }
@@ -118,8 +148,8 @@ function renderImgTag(refs, style) {
   if (!refs || !refs.primary) return null;
   const p = escAttr(refs.primary);
   const st = style || '';
-  let html = `<img src="${p}"`;
-  if (st) html += ` style="${st}"`;
+  let html = '<img src="' + p + '"';
+  if (st) html += ' style="' + st + '"';
   
   if (refs.fallback && refs.fallback2) {
     const f1 = escAttr(refs.fallback);
@@ -127,10 +157,10 @@ function renderImgTag(refs, style) {
     let h = 'this.onerror=null;this.onerror=function(){';
     h += 'this.onerror=null;this.src=\'' + f2 + '\';};';
     h += 'this.src=\'' + f1 + '\';';
-    html += ` onerror="${h}"`;
+    html += ' onerror="' + h + '"';
   } else if (refs.fallback) {
     const f = escAttr(refs.fallback);
-    html += ` onerror="this.onerror=null;this.src='${f}'"`;
+    html += ' onerror="this.onerror=null;this.src=\'' + f + '\'"';
   }
   html += '>';
   return html;
@@ -143,20 +173,25 @@ function absoluteUrl(url) {
 }
 
 function getBackgroundStyle(bgSetting) {
-  const def = 'background:linear-gradient(180deg,#fdf9f3 0%,#fafaf8 40%,#f7f5f1 100%);background-attachment:fixed;';
-  if (!bgSetting) return def;
+  const def = 'background:linear-gradient(180deg,#fdf9f3 0%,#fafaf8 40%,';
+  const def2 = '#f7f5f1 100%);background-attachment:fixed;';
+  const fullDef = def + def2;
+  if (!bgSetting) return fullDef;
   if (isPresetBackground(bgSetting)) {
     const preset = findPresetById(bgSetting.id);
-    if (preset) return 'background:' + preset.gradient + ';background-attachment:fixed;';
-    return def;
+    if (preset) {
+      return 'background:' + preset.gradient + ';background-attachment:fixed;';
+    }
+    return fullDef;
   }
   const refs = getPhotoRefsLocal(bgSetting);
   if (refs && refs.primary) {
-    return "background-image:url('" + refs.primary + "');background-size:cover;background-attachment:fixed;";
+    let st = "background-image:url('" + refs.primary + "');";
+    st += "background-size:cover;background-attachment:fixed;";
+    return st;
   }
-  return def;
+  return fullDef;
 }
-
 // ========== HTML: КАРТОЧКА БУКЕТА ==========
 function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const bouquetNameEsc = esc(bouquet.name);
@@ -179,10 +214,13 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
     ogTags += '<meta name="twitter:image" content="' + escAttr(primaryPhotoUrl) + '">';
   }
 
-  const imgStyle = 'width:100%;max-width:500px;border-radius:20px;box-shadow:0 6px 24px rgba(0,0,0,0.12);';
+  const imgStyle = 'width:100%;max-width:500px;border-radius:20px;';
+  const imgStyle2 = 'box-shadow:0 6px 24px rgba(0,0,0,0.12);';
+  const fullImgStyle = imgStyle + imgStyle2;
+
   let mainPhotoHtml = '';
   if (photoRefs && photoRefs.primary) {
-    mainPhotoHtml = renderImgTag(photoRefs, imgStyle);
+    mainPhotoHtml = renderImgTag(photoRefs, fullImgStyle);
   } else {
     const grad = getPlaceholderGradientLocal(bouquet.id);
     mainPhotoHtml = '<div style="width:100%;max-width:500px;aspect-ratio:1/1;';
@@ -193,42 +231,66 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
 
   let thumbsHtml = '';
   if (otherPhotoRefs && otherPhotoRefs.length > 0) {
-    const thumbStyle = 'width:70px;height:70px;object-fit:cover;border-radius:12px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.12);';
-    thumbsHtml = '<div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;">';
-    for (const r of otherPhotoRefs) thumbsHtml += renderImgTag(r, thumbStyle);
+    const thumbStyle = 'width:70px;height:70px;object-fit:cover;';
+    const thumbStyle2 = 'border-radius:12px;border:2px solid #fff;';
+    const thumbStyle3 = 'box-shadow:0 2px 8px rgba(0,0,0,0.12);';
+    const fullThumbStyle = thumbStyle + thumbStyle2 + thumbStyle3;
+    thumbsHtml = '<div style="display:flex;gap:8px;justify-content:center;';
+    thumbsHtml += 'margin-top:12px;flex-wrap:wrap;">';
+    for (const r of otherPhotoRefs) thumbsHtml += renderImgTag(r, fullThumbStyle);
     thumbsHtml += '</div>';
   }
 
-  const btnBase = 'display:block;margin-top:8px;color:#fff;padding:14px 20px;border-radius:30px;text-decoration:none;font-weight:700;text-align:center;font-size:16px;';
-  const btnTg = btnBase + 'background:#229ED9;';
-  const btnWa = btnBase + 'background:#25D366;';
-  const btnMax = btnBase + 'background:#7B68EE;';
-  const btnCall = btnBase + 'background:' + btnColors.color + ';';
+  const btnBase = 'display:block;margin-top:8px;color:#fff;padding:14px 20px;';
+  const btnBase2 = 'border-radius:30px;text-decoration:none;font-weight:700;';
+  const btnBase3 = 'text-align:center;font-size:16px;';
+  const btnCommon = btnBase + btnBase2 + btnBase3;
+  
+  const btnTg = btnCommon + 'background:#229ED9;';
+  const btnWa = btnCommon + 'background:#25D366;';
+  const btnMax = btnCommon + 'background:#7B68EE;';
+  const btnCall = btnCommon + 'background:' + btnColors.color + ';';
   const hrefBase = '/go/' + esc(shop.shopId) + '/' + bouquet.id + '/';
 
   let buttonsHTML = '';
-  if (shop.telegramUsername) buttonsHTML += '<a href="' + hrefBase + 'tg" style="' + btnTg + '">📩 Написать в Telegram</a>';
-  if (shop.whatsappPhone) buttonsHTML += '<a href="' + hrefBase + 'wa" style="' + btnWa + '">💬 Написать в WhatsApp</a>';
-  if (shop.maxLink) buttonsHTML += '<a href="' + hrefBase + 'max" style="' + btnMax + '">🅼 Написать в MAX</a>';
-  if (shop.phone) buttonsHTML += '<a href="' + hrefBase + 'call" style="' + btnCall + '">📞 Позвонить</a>';
+  if (shop.telegramUsername) {
+    buttonsHTML += '<a href="' + hrefBase + 'tg" style="' + btnTg + '">';
+    buttonsHTML += '📩 Написать в Telegram</a>';
+  }
+  if (shop.whatsappPhone) {
+    buttonsHTML += '<a href="' + hrefBase + 'wa" style="' + btnWa + '">';
+    buttonsHTML += '💬 Написать в WhatsApp</a>';
+  }
+  if (shop.maxLink) {
+    buttonsHTML += '<a href="' + hrefBase + 'max" style="' + btnMax + '">';
+    buttonsHTML += '🟼 Написать в MAX</a>';
+  }
+  if (shop.phone) {
+    buttonsHTML += '<a href="' + hrefBase + 'call" style="' + btnCall + '">';
+    buttonsHTML += '📞 Позвонить</a>';
+  }
 
   let priceHtml = '';
   if (oldPrice > bouquet.price) {
-    priceHtml += '<span style="text-decoration:line-through;color:#999;font-weight:400;font-size:20px;">';
+    priceHtml += '<span style="text-decoration:line-through;color:#999;';
+    priceHtml += 'font-weight:400;font-size:20px;">';
     priceHtml += oldPriceStr + '</span>&nbsp; ' + priceStr;
   } else {
     priceHtml = priceStr;
   }
 
-  // Плашка предзаказа
   let preorderBadge = '';
   if (bouquet.preorder_only) {
-    preorderBadge = '<div style="display:inline-block; background:#FFF0EC; color:#E1846D; font-size:13px; font-weight:800; padding:6px 16px; border-radius:20px; margin-bottom:16px;">Только предзаказ</div>';
+    preorderBadge = '<div style="display:inline-block; background:#FFF0EC; ';
+    preorderBadge += 'color:#E1846D; font-size:13px; font-weight:800; ';
+    preorderBadge += 'padding:6px 16px; border-radius:20px; margin-bottom:16px;">';
+    preorderBadge += 'Только предзаказ</div>';
   }
 
   const bouquetNameJs = JSON.stringify(bouquet.name);
   const bouquetUrlJs = JSON.stringify(bouquetUrl);
-  const noContacts = '<div style="color:#888;padding:10px;">Контакты временно недоступны</div>';
+  const noContacts = '<div style="color:#888;padding:10px;">';
+  const noContacts2 = 'Контакты временно недоступны</div>';
   const bodyBg = getBackgroundStyle(shop.settings.background);
 
   let html = '<!DOCTYPE html>\n<html lang="ru">\n<head>\n';
@@ -249,11 +311,16 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += bodyBg;
   html += 'text-align:center;color:#2c3e50;}\n';
   html += '.container{max-width:560px;margin:0 auto;padding:12px 0;}\n';
-  html += '.back{display:inline-block;margin-bottom:16px;color:#888;text-decoration:none;font-size:14px;}\n';
+  html += '.back{display:inline-block;margin-bottom:16px;color:#888;';
+  html += 'text-decoration:none;font-size:14px;}\n';
   html += 'h1{font-size:26px;margin:16px 0 8px;line-height:1.3;font-weight:800;}\n';
-  html += '.price{font-size:30px;font-weight:800;margin:8px 0 20px;color:' + btnColors.color + ';}\n';
-  html += '.card{background:#fff;border-radius:22px;padding:20px;box-shadow:0 6px 24px rgba(0,0,0,0.07);margin:20px 0;}\n';
-  html += '.share{display:inline-block;margin-top:20px;color:#888;text-decoration:none;font-size:14px;padding:10px 16px;border-radius:20px;background:#f0f0f0;}\n';
+  html += '.price{font-size:30px;font-weight:800;margin:8px 0 20px;';
+  html += 'color:' + btnColors.color + ';}\n';
+  html += '.card{background:#fff;border-radius:22px;padding:20px;';
+  html += 'box-shadow:0 6px 24px rgba(0,0,0,0.07);margin:20px 0;}\n';
+  html += '.share{display:inline-block;margin-top:20px;color:#888;';
+  html += 'text-decoration:none;font-size:14px;padding:10px 16px;';
+  html += 'border-radius:20px;background:#f0f0f0;}\n';
   html += '</style>\n</head>\n<body>\n';
   html += '<div class="container">\n';
   html += '<a class="back" href="/shop/' + shopIdEsc + '">← К витрине</a>\n';
@@ -263,9 +330,10 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += preorderBadge + '\n';
   html += '<div class="price">' + priceHtml + '</div>\n';
   html += '<div class="card">';
-  html += buttonsHTML || noContacts;
+  html += buttonsHTML || noContacts + noContacts2;
   html += '</div>\n';
-  html += '<a class="share" href="#" onclick="shareBouquet(); return false;">📤 Поделиться с близкими</a>\n';
+  html += '<a class="share" href="#" onclick="shareBouquet(); return false;">';
+  html += '📤 Поделиться с близкими</a>\n';
   html += '</div>\n<script>\n';
   html += 'function shareBouquet() {\n';
   html += '  var url = ' + bouquetUrlJs + ';\n';
@@ -275,19 +343,20 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += '  if (navigator.share) {\n';
   html += '    navigator.share({ title: name, text: text, url: url }).catch(function(){});\n';
   html += '  } else if (navigator.clipboard && navigator.clipboard.writeText) {\n';
-  html += '    navigator.clipboard.writeText(url).then(function(){ alert("Ссылка скопирована"); }).catch(function(){ prompt("Скопируйте ссылку:", url); });\n';
+  html += '    navigator.clipboard.writeText(url).then(function(){ ';
+  html += 'alert("Ссылка скопирована"); }).catch(function(){ ';
+  html += 'prompt("Скопируйте ссылку:", url); });\n';
   html += '  } else { prompt("Скопируйте ссылку:", url); }\n';
   html += '}\n';
   html += '</script>\n</body>\n</html>';
   return html;
 }
+
 // ========== HTML: СТРАНИЦА КОНТАКТОВ ==========
 function buildContactPage({ shop, bouquet, photoRefs }) {
   const bouquetNameEsc = esc(bouquet.name);
   const shopIdEsc = esc(shop.shopId);
-  const oldPrice = calculateOldPrice(
-    bouquet.price, shop.settings.markupPercent
-  );
+  const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
   const priceStr = formatPrice(bouquet.price, shop);
   const oldPriceStr = formatPrice(oldPrice, shop);
   
@@ -353,7 +422,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   }
   if (shop.maxLink) {
     contactsHTML += '<a href="' + hrefBase + 'max" style="';
-    contactsHTML += btnMax + '">🅼 MAX</a>';
+    contactsHTML += btnMax + '">🟼 MAX</a>';
   }
   if (shop.phone) {
     contactsHTML += '<a href="' + hrefBase + 'call" style="';
@@ -445,7 +514,7 @@ function buildMessengerOrderPage(
 ) {
   const isMax = messenger === 'max';
   const messengerName = isMax ? 'MAX' : 'Telegram';
-  const messengerEmoji = isMax ? '🅼' : '📩';
+  const messengerEmoji = isMax ? '🟼' : '📩';
   const buttonColor = isMax ? '#7B68EE' : '#229ED9';
   
   const externalLink = isMax
@@ -549,7 +618,6 @@ function sendClickNotification(shop, bouquet, type, bot) {
   const channelName = CLICK_TYPE_NAMES[type] || 'Мессенджер';
   const isCall = type === 'call';
   const priceStr = formatPrice(bouquet.price, shop);
-
   const onShiftAdmins = shop.admins.filter(a => a.onShift);
 
   if (onShiftAdmins.length > 0) {
@@ -615,7 +683,6 @@ function formatConfirmedAt(dateStr) {
   if (diffDays === 1) return 'вчера';
   return diffDays + ' дн. назад';
 }
-
 // ========== EXPRESS-РОУТЫ ==========
 function setupStorefront(app, bot, s3ctx) {
   const { s3, YC_BUCKET } = s3ctx;
@@ -673,6 +740,7 @@ function setupStorefront(app, bot, s3ctx) {
       return res.status(404).send('not found');
     }
   });
+
   app.get('/contact/:shopId/:bouquetId', async (req, res) => {
     try {
       const shop = await getShopFromDb(req.params.shopId);
@@ -856,7 +924,6 @@ function setupStorefront(app, bot, s3ctx) {
 
       const all = await getBouquetsFromDb(shop.shopId);
       
-      // Загружаем остатки и рецепты для проверки
       const shopItems = await pool.query(
         'SELECT id, current_stock FROM wh_shop_items WHERE shop_id = $1',
         [shop.shopId]
