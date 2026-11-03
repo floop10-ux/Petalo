@@ -52,7 +52,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<style>';
       html += 'body { padding: 0 16px 80px 16px; }';
       
-      // Исправленная анимация улетающего товара
+      // Анимация улетающего товара
       html += '.fly-anim { position: fixed; z-index: 9999; ';
       html += 'pointer-events: none; border-radius: 12px; ';
       html += 'background: #fff; display: flex; flex-direction: column; ';
@@ -459,7 +459,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var isPayAmountEdited = false; ';
       html += 'var isTotalPriceEdited = false;';
 
-      // Улучшенная анимация улетающего товара
+      // Надежная анимация полета карточки вниз
       html += 'function flyToBasket(el) {';
       html += '  var rect = el.getBoundingClientRect();';
       html += '  var clone = el.cloneNode(true);';
@@ -481,10 +481,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       
       html += '  requestAnimationFrame(function() {';
       html += '    requestAnimationFrame(function() {';
-      html += '      var fc = document.getElementById("floatingCart");';
-      html += '      var targetRect = fc.getBoundingClientRect();';
-      html += '      var tLeft = targetRect.left + (targetRect.width / 2) - 20;';
-      html += '      var tTop = targetRect.top + (targetRect.height / 2) - 20;';
+      html += '      var tLeft = (window.innerWidth / 2) - 20;';
+      html += '      var tTop = window.innerHeight - 60;';
       html += '      clone.style.left = tLeft + "px";';
       html += '      clone.style.top = tTop + "px";';
       html += '      clone.style.width = "40px";';
@@ -496,7 +494,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  setTimeout(function() { clone.remove(); }, 650);';
       html += '}';
 
-      // Тряска корзины при добавлении
       html += 'function shakeElement(el) {';
       html += '  if (!el) return;';
       html += '  el.classList.add("shake");';
@@ -2348,6 +2345,9 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'background: var(--f-accent); color: #fff; ';
       html += 'border: none; border-radius: var(--r-md); font-size: 16px; ';
       html += 'font-weight: 800; margin-top: 10px; }';
+      html += '.btn-back { width: 100%; padding: 12px; ';
+      html += 'background: transparent; color: var(--f-text-2); ';
+      html += 'border: none; font-weight: 600; margin-bottom: 12px; }';
 
       html += '.form-block { display: none; background: #fff; ';
       html += 'border-radius: var(--r-lg); padding: 16px; ';
@@ -2384,6 +2384,9 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<div id="itemsGrid" class="grid"></div>';
 
       html += '<div class="form-block" id="formBlock">';
+      html += '<button type="button" class="btn-back" ';
+      html += 'onclick="hideForm()">← Вернуться к выбору</button>';
+      
       html += '<label style="display:block; font-size:13px; font-weight:600; ';
       html += 'color:var(--f-text-2); margin-bottom:8px;">';
       html += 'Причина списания</label>';
@@ -2458,10 +2461,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       
       html += '  requestAnimationFrame(function() {';
       html += '    requestAnimationFrame(function() {';
-      html += '      var targetEl = document.getElementById("floatingWriteoff");';
-      html += '      var targetRect = targetEl.getBoundingClientRect();';
-      html += '      var tLeft = targetRect.left + (targetRect.width / 2) - 20;';
-      html += '      var tTop = targetRect.top + (targetRect.height / 2) - 20;';
+      html += '      var tLeft = (window.innerWidth / 2) - 20;';
+      html += '      var tTop = window.innerHeight - 60;';
       html += '      clone.style.left = tLeft + "px";';
       html += '      clone.style.top = tTop + "px";';
       html += '      clone.style.width = "40px";';
@@ -2585,8 +2586,12 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '    b.classList.remove("show"); ';
       html += '    document.getElementById("formBlock").style.display = "none";';
       html += '    return; }';
-      html += '  b.classList.add("show"); ';
-      html += '  shakeElement(b);';
+      html += '  if (document.getElementById("formBlock").style.display === "block") {';
+      html += '    b.classList.remove("show");';
+      html += '  } else {';
+      html += '    b.classList.add("show");';
+      html += '    shakeElement(b);';
+      html += '  }';
       html += '  while(list.firstChild) list.removeChild(list.firstChild);';
       html += '  var totQty = 0; var totSum = 0;';
       html += '  cart.forEach(function(item, idx) {';
@@ -2636,9 +2641,18 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '}';
 
       html += 'function showForm() {';
+      html += '  document.getElementById("floatingWriteoff")';
+      html += '  .classList.remove("show");';
       html += '  document.getElementById("formBlock").style.display = "block";';
       html += '  document.getElementById("formBlock").scrollIntoView({ ';
       html += '    behavior: "smooth" });';
+      html += '}';
+
+      html += 'function hideForm() {';
+      html += '  document.getElementById("formBlock").style.display = "none";';
+      html += '  document.getElementById("floatingWriteoff")';
+      html += '  .classList.add("show");';
+      html += '  window.scrollTo({ top: 0, behavior: "smooth" });';
       html += '}';
 
       html += 'function setR(el, r) {';
