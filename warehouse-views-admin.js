@@ -463,26 +463,32 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'border-radius: var(--r-md); font-size: 16px; ';
       html += 'font-weight: 800; margin-bottom: 20px; display: flex; ';
       html += 'align-items: center; justify-content: center; gap: 8px; }';
+      
       html += '.card { padding: 16px; border-radius: var(--r-lg); } ';
       html += '.name { font-size: 18px; font-weight: 800; ';
       html += 'margin-bottom: 4px; } ';
       html += '.sales { font-size: 15px; color: var(--f-success); ';
       html += 'font-weight: 600; }';
+      
       html += '.row { display: flex; justify-content: space-between; ';
       html += 'align-items: center; margin-top: 12px; ';
       html += 'border-top: 1px solid var(--f-border); padding-top: 12px; } ';
       html += '.row span { flex: 1; font-weight: 500; }';
       html += '.row input[type="checkbox"] { width: 24px; height: 24px; ';
       html += 'margin: 0; transform: none; accent-color: var(--f-brand); }';
-      html += '.btn-pin { margin-top: 16px; padding: 10px 16px; ';
+      
+      html += '.actions-wrap { display: flex; gap: 8px; margin-top: 16px; }';
+      
+      html += '.btn-pin { flex: 1; padding: 10px; ';
       html += 'border-radius: var(--r-md); border: 1px solid var(--f-border); ';
       html += 'background: #fff; color: var(--f-text); font-weight: 600; ';
       html += 'font-family: inherit; cursor: pointer; display: flex; ';
       html += 'align-items: center; justify-content: center; gap: 6px; } ';
-      html += '.btn-del { margin-top: 16px; padding: 10px 16px; ';
+      
+      html += '.btn-del { flex: 1; padding: 10px; ';
       html += 'border-radius: var(--r-md); border: 1px solid var(--f-danger); ';
       html += 'background: #fff; color: var(--f-danger); font-weight: 600; ';
-      html += 'font-family: inherit; margin-left: 8px; cursor: pointer; ';
+      html += 'font-family: inherit; cursor: pointer; ';
       html += 'display: flex; align-items: center; justify-content: center; ';
       html += 'gap: 6px; } ';
       html += '</style></head><body>';
@@ -504,8 +510,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += getUnifiedMenu('staff');
 
       html += '<script>';
-      html += 'var svgEdit = \'' + getIconSvg('edit').replace(/"/g, '&quot;') + '\';';
-      html += 'var svgTrash = \'' + getIconSvg('trash').replace(/"/g, '&quot;') + '\';';
+      html += 'var svgEdit = \'' + getIconSvg('edit').replace(/"/g, "'") + '\';';
+      html += 'var svgTrash = \'' + getIconSvg('trash').replace(/"/g, "'") + '\';';
       html += 'var globalInvite = "";';
 
       html += 'fetch("/api/warehouse/staff")';
@@ -549,7 +555,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    c.appendChild(pDiv);';
       
       html += '    var btnWrap = document.createElement("div");';
-      html += '    btnWrap.style = "display:flex;";';
+      html += '    btnWrap.className = "actions-wrap";';
       
       html += '    var btn = document.createElement("button"); ';
       html += '    btn.innerHTML = svgEdit + " Задать PIN"; ';
@@ -684,8 +690,9 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'align-items: center; padding: 12px 0; ';
       html += 'border-bottom: 1px solid var(--f-border); }';
       html += '.sup-item:last-child { border-bottom: none; }';
-      html += '.sup-name { font-weight: 600; font-size: 15px; }';
-      html += '.sup-actions { display: flex; gap: 8px; }';
+      html += '.sup-name { font-weight: 600; font-size: 15px; flex: 1; ';
+      html += 'word-break: break-word; }';
+      html += '.sup-actions { display: flex; gap: 8px; flex-shrink: 0; }';
       html += '.btn-icon { background: none; border: none; ';
       html += 'cursor: pointer; font-size: 18px; padding: 4px; ';
       html += 'display: flex; align-items: center; justify-content: center; }';
@@ -747,8 +754,8 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += getUnifiedMenu('settings');
 
       html += '<script>';
-      html += 'var svgEdit = \'' + getIconSvg('edit').replace(/"/g, '&quot;') + '\';';
-      html += 'var svgTrash = \'' + getIconSvg('trash').replace(/"/g, '&quot;') + '\';';
+      html += 'var svgEdit = \'' + getIconSvg('edit').replace(/"/g, "'") + '\';';
+      html += 'var svgTrash = \'' + getIconSvg('trash').replace(/"/g, "'") + '\';';
       html += 'var shopSettings = {}; ';
       
       html += 'fetch("/api/warehouse/settings")';
@@ -1595,6 +1602,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'justify-content: center; gap: 4px; cursor: pointer; }';
       
       html += '.help-icon { color: #999; display: flex; cursor: pointer; }';
+      html += '.help-icon svg { width: 14px; height: 14px; }';
       html += '.deleted-item { opacity: 0.6; }';
       html += '</style></head><body>';
       
@@ -1957,8 +1965,14 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '.alt-box { margin-top: 8px; padding: 10px; ';
       html += 'background: #FFF8E1; border-radius: 8px; ';
       html += 'border: 1px dashed #FFE082; }';
+      
+      // Исправленный заголовок альтернатив с иконкой
       html += '.alt-title { font-size: 11px; font-weight: 800; ';
-      html += 'color: #F57F17; margin-bottom: 6px; display: flex; align-items: center; }';
+      html += 'color: #F57F17; margin-bottom: 6px; ';
+      html += 'display: flex; align-items: center; gap: 6px; }';
+      html += '.help-icon { color: #999; display: flex; cursor: pointer; }';
+      html += '.help-icon svg { width: 14px; height: 14px; }';
+
       html += '.alt-item { display: flex; justify-content: space-between; ';
       html += 'font-size: 13px; margin-bottom: 4px; color: #555; }';
       html += '.btn-add-alt { background: none; border: none; ';
@@ -2010,11 +2024,11 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'style="width:24px; height:24px; margin:0; ';
       html += 'accent-color:var(--f-brand);"> ';
       html += 'Привязать к складу (Рецепт)';
-      html += '<span style="cursor:pointer; margin-left:4px;" ';
+      html += '<span class="help-icon" style="margin-left:4px;" ';
       html += 'onclick="event.preventDefault(); event.stopPropagation(); ';
       html += 'showAlert(&quot;Подсказка&quot;, &quot;Букет скроется с витрины, ';
       html += 'если нет ингредиентов.&quot;, true)">';
-      html += getIconSvg('help') + '</span></label>';
+      html += svgHelp + '</span></label>';
       
       html += '<label style="display:flex; align-items:center; gap:10px; ';
       html += 'margin-top:12px; font-weight:800; font-size:15px; ';
@@ -2023,11 +2037,11 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'style="width:24px; height:24px; margin:0; ';
       html += 'accent-color:#E1846D;"> ';
       html += 'Только предзаказ (держать на витрине)';
-      html += '<span style="cursor:pointer; margin-left:4px;" ';
+      html += '<span class="help-icon" style="margin-left:4px;" ';
       html += 'onclick="event.preventDefault(); event.stopPropagation(); ';
       html += 'showAlert(&quot;Подсказка&quot;, &quot;Букет всегда на витрине. ';
       html += 'Для больших/экзотических композиций.&quot;, true)">';
-      html += getIconSvg('help') + '</span></label>';
+      html += svgHelp + '</span></label>';
       
       html += '<div class="recipe-block" id="recipeSection">';
       html += '<h3 style="margin-top:0; font-size:16px; font-weight:800; ';
@@ -2300,7 +2314,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += '    var altTitle = document.createElement("div");';
       html += '    altTitle.className = "alt-title";';
       html += '    altTitle.innerHTML = "Альтернативы (замены): ';
-      html += '    <span style=&quot;cursor:pointer; margin-left:4px;&quot; ';
+      html += '    <span class=&quot;help-icon&quot; ';
       html += '    onclick=&quot;showAlert(&apos;Подсказка&apos;, &apos;Букет ';
       html += '    останется на витрине, если его можно собрать из основного и ';
       html += '    альтернативных цветов вместе.&apos;, true)&quot;>' + 
@@ -2513,6 +2527,7 @@ function setupWarehouseAdminViews(app, bot, s3ctx, getAuth) {
       html += 'align-items: center; margin-bottom: 8px; }';
       html += '.log-title { font-weight: 800; font-size: 15px; ';
       html += 'display: flex; align-items: center; gap: 8px; }';
+      html += '.log-title svg { width: 18px; height: 18px; }';
       html += '.log-date { font-size: 12px; color: var(--f-text-2); }';
       html += '.log-desc { font-size: 14px; color: #444; line-height: 1.4; }';
       html += '.log-link { font-size: 13px; color: #3C7A89; ';
