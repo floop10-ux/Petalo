@@ -5,11 +5,11 @@ const {
 } = require('./warehouse-views-core');
 
 function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
-  // ====== 5. ЭКРАН ПРОДАЖИ (КАССА) ======
+  // ====== 1. ЭКРАН ПРОДАЖИ (КАССА) ======
   app.get('/warehouse/sale', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      if (!auth) return res.redirect('/warehouse-login');
       
       const shopId = auth.shopId;
       const chatId = auth.chatId;
@@ -459,7 +459,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var isPayAmountEdited = false; ';
       html += 'var isTotalPriceEdited = false;';
 
-      // Анимация улетающего товара
       html += 'function flyToBasket(el) {';
       html += '  var rect = el.getBoundingClientRect();';
       html += '  var clone = el.cloneNode(true);';
@@ -494,7 +493,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  setTimeout(function() { clone.remove(); }, 650);';
       html += '}';
 
-      // Тряска корзины при добавлении
       html += 'function shakeElement(el) {';
       html += '  if (!el) return;';
       html += '  el.classList.add("shake");';
@@ -1265,6 +1263,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var els = document.querySelectorAll(".pay-btn"); ';
       html += 'els.forEach(function(el) { el.classList.remove("active"); });';
       html += 'document.getElementById("pcm-" + m).classList.add("active"); }';
+      
       html += 'function openPrecheck() {';
       html += '  var btn = document.getElementById("btnSubmit");';
       html += '  if (!btn.classList.contains("ready")) { ';
@@ -1414,7 +1413,9 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
   app.get('/warehouse/receipts', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      if (!auth) return res.redirect('/warehouse-login');
+      
+      const svgTrash = getIconSvg('trash').replace(/"/g, "'");
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
@@ -1455,7 +1456,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'text-align: right; }';
       
       html += '.del-btn { font-size: 20px; color: var(--f-danger); ';
-      html += 'margin-left: 12px; cursor: pointer; padding: 8px; }';
+      html += 'margin-left: 12px; cursor: pointer; padding: 8px; ';
+      html += 'display: flex; align-items: center; justify-content: center; }';
       
       html += '#docPreviewModal .custom-modal { ';
       html += 'text-align: left; padding: 24px; }';
@@ -1501,6 +1503,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += getUnifiedMenu('receipts');
 
       html += '<script>';
+      html += 'var svgTrash = "' + svgTrash + '";';
+      
       html += 'fetch("/api/warehouse/suppliers")';
       html += '.then(function(r){return r.json();}).then(function(d){';
       html += '  if (d.ok) {';
@@ -1589,7 +1593,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '      if (st === "draft") {';
       html += '        var del = document.createElement("span");';
       html += '        del.className = "del-btn";';
-      html += '        del.textContent = "🗑";';
+      html += '        del.innerHTML = svgTrash;';
       html += '        del.onclick = function(e) {';
       html += '          e.preventDefault(); e.stopPropagation();';
       html += '          deleteDraft(doc.id);';
@@ -1598,26 +1602,21 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '      }';
       
       html += '      var pressTimer;';
+      html += '      var longpressFired = false;';
       html += '      a.addEventListener("touchstart", function() {';
+      html += '        longpressFired = false;';
       html += '        pressTimer = setTimeout(function() { ';
-      html += '          a.dataset.longpress = "true";';
+      html += '          longpressFired = true;';
       html += '          showDocPreview(doc.id);';
       html += '          if (navigator.vibrate) navigator.vibrate(50);';
       html += '        }, 600);';
       html += '      });';
-      html += '      a.addEventListener("touchend", function() { ';
+      html += '      a.addEventListener("touchend", function(e) { ';
       html += '        clearTimeout(pressTimer);';
-      html += '        if (a.dataset.longpress === "true") {';
-      html += '          closeDocPreview();';
-      html += '        }';
+      html += '        if (longpressFired) { e.preventDefault(); }';
       html += '      });';
       html += '      a.addEventListener("touchmove", function() { ';
       html += '        clearTimeout(pressTimer); });';
-      html += '      a.addEventListener("click", function(e) {';
-      html += '        if (a.dataset.longpress === "true") {';
-      html += '          e.preventDefault(); a.dataset.longpress = "false";';
-      html += '        }';
-      html += '      });';
       
       html += '      a.appendChild(left); a.appendChild(right);';
       html += '      b.appendChild(a);';
@@ -1681,11 +1680,12 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка сервера');
     }
   });
+  
   // ====== 7. СОЗДАНИЕ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/new', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      if (!auth) return res.redirect('/warehouse-login');
       
       const r = await pool.query(
         "INSERT INTO wh_receipts (shop_id, chat_id, status) " +
@@ -1697,12 +1697,11 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       res.status(500).send('Ошибка создания'); 
     }
   });
-
   // ====== 8. ЭКРАН РЕДАКТИРОВАНИЯ ЧЕРНОВИКА ======
   app.get('/warehouse/receipt/edit', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      if (!auth) return res.redirect('/warehouse-login');
       
       const rawId = req.query.id;
       const receiptId = parseInt(rawId);
@@ -1863,6 +1862,7 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'var receiptId = ' + receiptId + ';';
       html += 'var currentLastCost = 0; var itemsCatalog = [];';
       html += 'var receiptItems = [];';
+      
       html += 'function addSupplier() {';
       html += '  showPrompt("Новый поставщик", "Название:", "", ';
       html += '  function(name) {';
@@ -2251,13 +2251,11 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
     } catch(e) {
       res.status(500).send('Ошибка сервера');
     }
-  });
-
-  // ====== 9. ЭКРАН СПИСАНИЯ ======
+  });// ====== 9. ЭКРАН СПИСАНИЯ ======
   app.get('/warehouse/writeoff', async (req, res) => {
     try {
       const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login?shop=kupidon');
+      if (!auth) return res.redirect('/warehouse-login');
       
       let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
       html += metaSafari;
@@ -2317,7 +2315,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '.card .stock.green { color: var(--f-success); }';
       html += '.card .stock.red { color: var(--f-danger); }';
       
-      // Плавающая корзина
       html += '.floating-writeoff { position: fixed; bottom: 20px; left: 16px; ';
       html += 'right: 16px; background: #fff; border-radius: 16px; ';
       html += 'box-shadow: 0 4px 20px rgba(0,0,0,0.15); z-index: 900; ';
@@ -2391,8 +2388,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '<h3 style="margin-top:0; font-size:16px; font-weight:800; ';
       html += 'margin-bottom:12px;">Вы списываете:</h3>';
       
-      // Сюда будем рендерить список товаров
-      html += '<div id="formItemsList" style="margin-bottom: 16px; padding: 0; border-bottom: 1px solid #eee;"></div>';
+      html += '<div id="formItemsList" style="margin-bottom: 16px; ';
+      html += 'padding: 0; border-bottom: 1px solid #eee;"></div>';
       
       html += '<label style="display:block; font-size:13px; font-weight:600; ';
       html += 'color:var(--f-text-2); margin-bottom:8px;">';
@@ -2425,7 +2422,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += 'onclick="saveWriteoff()">Списать всё</button>';
       html += '</div>';
 
-      // Плавающая корзина
       html += '<div class="floating-writeoff" id="floatingWriteoff">';
       html += '<div class="fw-header">';
       html += '<span>К списанию: <span id="fwCount">0</span> шт</span>';
@@ -2518,7 +2514,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '        st.className = "dd-stock"; ';
       html += '        var s = parseFloat(i.current_stock);';
       html += '        st.textContent = fmtNum(s) + " " + (i.unit || "шт");';
-      html += '        st.style.color = s > 0 ? "var(--f-success)" : "var(--f-danger)";';
+      html += '        st.style.color = s > 0 ? "var(--f-success)" : ';
+      html += '        "var(--f-danger)";';
       html += '        row.appendChild(nm); row.appendChild(st);';
       html += '        row.onclick = function() { ';
       html += '          document.getElementById("search").value = "";';
@@ -2584,7 +2581,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  }';
       html += '}';
 
-      // Отрисовка списка в плавающей корзине
       html += 'function renderBasket() {';
       html += '  var b = document.getElementById("floatingWriteoff");';
       html += '  var list = document.getElementById("fwList");';
@@ -2643,7 +2639,6 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '  document.getElementById("fwSum").textContent = Math.round(totSum).toLocaleString("ru-RU") + " ₽";';
       html += '}';
 
-      // Отрисовка списка внутри формы оформления
       html += 'function renderFormList() {';
       html += '  var list = document.getElementById("formItemsList");';
       html += '  if (!list) return;';
@@ -2739,6 +2734,8 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '}';
 
       html += 'function submit(url, c) {';
+      html += '  var btn = document.getElementById("btnSaveWriteoff");';
+      html += '  if (btn) { btn.disabled = true; btn.innerText = "Списание..."; }';
       html += '  var payload = { items: cart, reason: selReason, comment: c, photo: url };';
       html += '  fetch("/api/warehouse/writeoff", { method: "POST", ';
       html += '    headers: { "Content-Type": "application/json" }, ';
@@ -2754,11 +2751,11 @@ function setupWarehouseViewsSales(app, bot, s3ctx, getAuth) {
       html += '        setTimeout(function() { window.location.href = "/warehouse/history"; }, 1000);';
       html += '      }';
       html += '    } else {';
-      html += '      btn.disabled = false; btn.innerText = "Списать всё"; ';
+      html += '      if (btn) { btn.disabled = false; btn.innerText = "Списать всё"; }';
       html += '      showAlert("Ошибка", d.error, false);';
       html += '    }';
       html += '  }).catch(function() {';
-      html += '    btn.disabled = false; btn.innerText = "Списать всё"; ';
+      html += '    if (btn) { btn.disabled = false; btn.innerText = "Списать всё"; }';
       html += '    showAlert("Ошибка сети", "Проверьте интернет", false);';
       html += '  });';
       html += '}';
