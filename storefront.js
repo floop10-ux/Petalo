@@ -23,6 +23,8 @@ const MAX_CONCURRENT_PHOTOS = 10;
 const SHOP_NOTIFY_INTERVAL = 60 * 1000;
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const RATE_LIMIT_MAX = 60;
+const MAX_INFLIGHT_CLICKS = 1000;
+const MAX_IP_LIMITS = 5000;
 
 const notifiedClicks = new Map();
 const inFlightClicks = new Map();
@@ -65,6 +67,14 @@ function safeNumber(value, fallback) {
   return number;
 }
 
+// ИСПРАВЛЕНО: Безопасный парсинг остатка (NaN/Infinity → null)
+function parseStock(value) {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+// ИСПРАВЛЕНО: Строгая проверка S3-ключей
 function isValidS3Key(key) {
   if (typeof key !== 'string' || !key) return false;
   if (key.length > 500) return false;
@@ -73,11 +83,42 @@ function isValidS3Key(key) {
   if (/[\x00-\x1f\x7f]/.test(key)) return false;
   if (!/^[a-zA-Z0-9_\-./ ]+$/.test(key)) return false;
 
-  if (!key.includes('/') && !key.startsWith('wh_')) return false;
-
   const ext = key.split('.').pop().toLowerCase();
   const allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-  return allowed.indexOf(ext) !== -1;
+  if (allowed.indexOf(ext) === -1) return false;
+
+  // Паттерн 1: wh_1792541930064.jpg или wh_1792884001984_c9a0.jpg
+  if (/^wh_[0-9]{6,20}(_[a-z0-9]+)?\.[a-z]+$/i.test(key)) return true;
+
+  // Паттерн 2: shopId/любой_файл.jpg (папка магазина)
+  const parts = key.split('/');
+  if (parts.length === 2) {
+    const folder = parts[0];
+    const file = parts[1];
+    if (/^[a-z0-9_-]{2,50}$/i.test(folder) &&
+        /^[a-zA-Z0-9_\-.]+$/.test(file)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// ИСПРАВЛЕНО: Фильтр известных ботов и предпросмотрщиков
+function isLikelyBot(userAgent) {
+  if (typeof userAgent !== 'string' || !userAgent) return false;
+  const ua = userAgent.toLowerCase();
+  const signs = [
+    'bot', 'crawler', 'spider', 'preview',
+    'telegram', 'whatsapp', 'facebook', 'twitter', 
+    'slack', 'discord', 'skype', 'linkedin',
+    'google', 'yandex', 'bing', 'baidu', 'duckduck',
+    'curl/', 'wget/', 'python', 'java/', 'go-http'
+  ];
+  for (const s of signs) {
+    if (ua.indexOf(s) !== -1) return true;
+  }
+  return false;
 }
 
 function getSafeMaxLink(value) {
@@ -337,7 +378,6 @@ function formatConfirmedAt(dateValue) {
   return diffDays + ' дн. назад';
 }
 
-// ИСПРАВЛЕНО: buildPageHead принимает чистые данные и сам их экранирует
 function buildPageHead(title, description, imageUrl) {
   let html = '<!DOCTYPE html><html lang="ru"><head>';
   html += '<meta charset="UTF-8">';
@@ -375,7 +415,6 @@ function buildPhotoFallbackScript() {
   return html;
 }
 
-// ИСПРАВЛЕНО: Убрано двойное экранирование при вызове buildPageHead
 function buildBouquetPage(data) {
   const shop = data.shop;
   const bouquet = data.bouquet;
@@ -422,7 +461,7 @@ function buildBouquetPage(data) {
 
   html += '<h1>' + esc(bouquet.name) + '</h1>';
 
-  if (bouquet.preorderOnly) {
+  if (bouquet.preorderOnly === true) {
     html += '<div style="display:inline-block;background:#FFF0EC;color:#E1846D;font-size:13px;font-weight:800;padding:6px 16px;border-radius:20px;margin-bottom:16px;">Только предзаказ</div>';
   }
 
@@ -561,17 +600,21 @@ function buildContactPage(data) {
   html += 'function copyOrder() {';
   html += 'var text = ' + safeJson(orderText) + ';';
   html += 'var btn = document.getElementById("copyBtn");';
-  html += 'function done() { btn.textContent = "✅ Скопировано!"; setTimeout(function(){ btn.textContent = "📋 Скопировать текст"; }, 2500); }';
+  html += 'function done(success) {';
+  html += 'if(success){ btn.textContent = "✅ Скопировано!"; }';
+  html += 'else { btn.textContent = "❌ Не удалось"; }';
+  html += 'setTimeout(function(){ btn.textContent = "📋 Скопировать текст"; }, 2500);';
+  html += '}';
   html += 'if (navigator.clipboard && navigator.clipboard.writeText) {';
-  html += 'navigator.clipboard.writeText(text).then(done).catch(function(){ fallbackCopy(text, done); });';
+  html += 'navigator.clipboard.writeText(text).then(function(){ done(true); }).catch(function(){ fallbackCopy(text, done); });';
   html += '} else { fallbackCopy(text, done); }';
   html += '}';
   html += 'function fallbackCopy(text, cb) {';
   html += 'var ta = document.createElement("textarea"); ta.value = text;';
   html += 'ta.style.position = "fixed"; ta.style.left = "-9999px";';
   html += 'document.body.appendChild(ta); ta.focus(); ta.select();';
-  html += 'try { document.execCommand("copy"); cb(); } catch(e) {}';
-  html += 'document.body.removeChild(ta);';
+  html += 'var ok = false; try { ok = document.execCommand("copy"); } catch(e) {}';
+  html += 'document.body.removeChild(ta); cb(ok);';
   html += '}';
   html += '</script>';
 
@@ -581,6 +624,7 @@ function buildContactPage(data) {
   return html;
 }
 
+// ИСПРАВЛЕНО: Добавлен фолбэк на execCommand при отказе navigator.clipboard
 function buildMessengerOrderPage(data) {
   const shop = data.shop;
   const orderText = data.orderText;
@@ -627,16 +671,27 @@ function buildMessengerOrderPage(data) {
   html += '<script>';
   html += 'function copyOrder() {';
   html += 'var el = document.getElementById("orderText");';
+  html += 'var btn = document.querySelector(".btn-copy");';
+  html += 'function done(success) {';
+  html += 'if(success){ btn.textContent = "✅ Скопировано!"; }';
+  html += 'else { btn.textContent = "❌ Ошибка копирования"; }';
+  html += 'setTimeout(function(){ btn.textContent = "📋 Скопировать текст"; }, 2500);';
+  html += '}';
+  html += 'function fallbackCopy() {';
   html += 'el.select(); el.setSelectionRange(0, 99999);';
+  html += 'var ok = false; try { ok = document.execCommand("copy"); } catch(e) {}';
+  html += 'done(ok);';
+  html += '}';
   html += 'if (navigator.clipboard && navigator.clipboard.writeText) {';
-  html += 'navigator.clipboard.writeText(el.value).then(function(){ alert("Скопировано"); }).catch(function(){ document.execCommand("copy"); });';
-  html += '} else { document.execCommand("copy"); }';
+  html += 'navigator.clipboard.writeText(el.value).then(function(){ done(true); }).catch(function(){ fallbackCopy(); });';
+  html += '} else { fallbackCopy(); }';
   html += '}';
   html += '</script></body></html>';
 
   return html;
 }
 
+// ИСПРАВЛЕНО: Защита от race condition при отправке уведомлений
 async function sendClickNotification(shop, bouquet, type, bot) {
   if (!bot || !shop || !bouquet) return;
 
@@ -645,11 +700,11 @@ async function sendClickNotification(shop, bouquet, type, bot) {
     const lastNotify = shopNotifyLast.get(shop.shopId) || 0;
     
     if (now - lastNotify < SHOP_NOTIFY_INTERVAL) return;
-    shopNotifyLast.set(shop.shopId, now);
+    if (shopNotifyInFlight.has(shop.shopId)) return;
 
     let recipients = [];
     const onShift = (shop.admins || []).filter(function(a) { 
-      return a.onShift; 
+      return a && a.onShift === true; 
     });
     
     if (onShift.length > 0) {
@@ -658,7 +713,7 @@ async function sendClickNotification(shop, bouquet, type, bot) {
       });
     } else {
       const owner = (shop.admins || []).find(function(a) { 
-        return a.role === 'owner'; 
+        return a && a.role === 'owner'; 
       });
       if (owner) recipients.push(String(owner.chatId));
     }
@@ -666,23 +721,35 @@ async function sendClickNotification(shop, bouquet, type, bot) {
     const unique = Array.from(new Set(recipients));
     if (!unique.length) return;
 
-    const labels = { 
-      tg: 'Telegram', wa: 'WhatsApp', max: 'MAX', call: 'звонок' 
-    };
-    const label = labels[type] || 'контакт';
-    const priceStr = formatPrice(bouquet.price, shop);
+    shopNotifyInFlight.add(shop.shopId);
 
-    const message =
-      '🔔 <b>Переход с витрины</b>\n\n' +
-      'Букет: ' + esc(bouquet.name || '') + '\n' +
-      '№' + esc(bouquet.shopNumber || '') + '\n' +
-      'Цена: ' + priceStr + '\n' +
-      'Действие: ' + esc(label);
+    try {
+      const labels = { 
+        tg: 'Telegram', wa: 'WhatsApp', max: 'MAX', call: 'звонок' 
+      };
+      const label = labels[type] || 'контакт';
+      const priceStr = formatPrice(bouquet.price, shop);
 
-    for (const chatId of unique) {
-      try {
-        await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
-      } catch (e) {}
+      const message =
+        '🔔 <b>Переход с витрины</b>\n\n' +
+        'Букет: ' + esc(bouquet.name || '') + '\n' +
+        '№' + esc(bouquet.shopNumber || '') + '\n' +
+        'Цена: ' + priceStr + '\n' +
+        'Действие: ' + esc(label);
+
+      let sent = false;
+      for (const chatId of unique) {
+        try {
+          await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+          sent = true;
+        } catch (e) {}
+      }
+      
+      if (sent) {
+        shopNotifyLast.set(shop.shopId, Date.now());
+      }
+    } finally {
+      shopNotifyInFlight.delete(shop.shopId);
     }
   } catch (e) {}
 }
@@ -715,24 +782,30 @@ async function readLimitedStream(stream, maxSize) {
   return Buffer.concat(chunks, total);
 }
 
-async function readS3Photo(client, bucket, key, externalController) {
+// ИСПРАВЛЕНО: Правильное сохранение и удаление abortHandler
+async function readS3Photo(client, bucket, key, masterSignal) {
   if (!client || !bucket) throw new Error('S3_NOT_CONFIGURED');
 
-  const controller = externalController || new AbortController();
-  const timer = setTimeout(function() {
-    controller.abort();
-  }, PHOTO_TIMEOUT);
+  const controller = new AbortController();
+  const timer = setTimeout(function() { controller.abort(); }, PHOTO_TIMEOUT);
+
+  let abortHandler = null;
+  if (masterSignal) {
+    if (masterSignal.aborted) {
+      controller.abort();
+    } else {
+      abortHandler = function() { controller.abort(); };
+      masterSignal.addEventListener('abort', abortHandler);
+    }
+  }
 
   try {
     const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-    const result = await client.send(command, { 
-      abortSignal: controller.signal 
-    });
+    const result = await client.send(command, { abortSignal: controller.signal });
 
     if (!result || !result.Body) throw new Error('PHOTO_NOT_FOUND');
 
-    if (result.ContentLength !== undefined && 
-        result.ContentLength > MAX_PHOTO_SIZE) {
+    if (result.ContentLength !== undefined && result.ContentLength > MAX_PHOTO_SIZE) {
       if (result.Body.destroy) result.Body.destroy();
       throw new Error('PHOTO_TOO_LARGE');
     }
@@ -743,16 +816,15 @@ async function readS3Photo(client, bucket, key, externalController) {
     }
 
     const body = await readLimitedStream(result.Body, MAX_PHOTO_SIZE);
-
-    return {
-      body: body,
-      contentType: result.ContentType.split(';')[0].trim()
-    };
+    return { body: body, contentType: result.ContentType.split(';')[0].trim() };
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('S3_TIMEOUT');
     throw e;
   } finally {
     clearTimeout(timer);
+    if (masterSignal && abortHandler) {
+      masterSignal.removeEventListener('abort', abortHandler);
+    }
   }
 }
 
@@ -783,11 +855,18 @@ function makeClickKey(shopId, bouquetId, type, ip) {
   return [String(shopId), String(bouquetId), String(type), String(ip)].join(':');
 }
 
+// ИСПРАВЛЕНО: Не удаляем активные блокировки, а отказываем при переполнении
 function lockClick(key) {
   const now = Date.now();
+  
   const prev = notifiedClicks.get(key);
   if (prev && now - prev < CLICK_NOTIFY_TTL) return false;
+  
   if (inFlightClicks.has(key)) return false;
+  
+  if (inFlightClicks.size >= MAX_INFLIGHT_CLICKS) {
+    return false;
+  }
   
   inFlightClicks.set(key, now);
   return true;
@@ -808,7 +887,8 @@ function markClickCounted(key) {
 }
 
 function getShopBlocked(shop) {
-  return !!(shop && (shop.blocked || shop.isBlocked || shop.status === 'blocked'));
+  if (!shop) return false;
+  return !!(shop.blocked === true || shop.isBlocked === true || shop.status === 'blocked');
 }
 
 function getShopSubscriptionActive(shop) {
@@ -849,15 +929,16 @@ function setPageHeaders(res) {
   res.setHeader('Cache-Control', 'no-store');
 }
 
-// ИСПРАВЛЕНО: Fail-Closed для JSON и строгая проверка qty
+// ИСПРАВЛЕНО: Проверка Number.isFinite для остатков (NaN/Infinity → отказ)
 function isBouquetPubliclyAvailable(b, stockMap, recipeMap) {
   if (!b) return false;
-  if (b.deleted || b.hidden || b.archived) return false;
+  if (b.deleted === true || b.hidden === true || b.archived === true) return false;
   
-  if (b.preorderOnly) return true; 
-  if (!b.isPinned && !isConfirmedRecently(b)) return false;
+  if (b.preorderOnly === true) return true;
   
-  if (b.whLinked) {
+  if (b.isPinned !== true && !isConfirmedRecently(b)) return false;
+  
+  if (b.whLinked === true) {
     const rList = recipeMap[b.id] || [];
     if (rList.length === 0) return false;
     
@@ -870,36 +951,44 @@ function isBouquetPubliclyAvailable(b, stockMap, recipeMap) {
       const mainId = Number(it.shop_item_id);
       if (!Number.isInteger(mainId) || mainId <= 0) return false;
       
-      if (stockMap[mainId] === undefined) return false;
+      const mainStock = stockMap[mainId];
+      if (!Number.isFinite(mainStock)) return false;
       
-      let totalStock = stockMap[mainId];
+      let totalStock = mainStock;
       const checkedIds = [mainId];
       
-      if (it.alternatives) {
+      if (it.alternatives !== null && it.alternatives !== undefined) {
         let alts = it.alternatives;
+        
         if (typeof alts === 'string') {
-          try { 
-            alts = JSON.parse(alts); 
-          } catch (e) { 
-            return false; // Fail-closed при ошибке парсинга
+          if (alts.trim() === '') {
+            alts = [];
+          } else {
+            try { 
+              alts = JSON.parse(alts); 
+            } catch (e) { 
+              return false;
+            }
           }
         }
         
-        if (Array.isArray(alts)) {
+        if (alts !== null && alts !== undefined) {
+          if (!Array.isArray(alts)) return false;
+          
           for (const alt of alts) {
             const altId = Number(
               typeof alt === 'object' && alt !== null ? alt.shop_item_id : alt
             );
             if (!Number.isInteger(altId) || altId <= 0) return false;
-            if (stockMap[altId] === undefined) return false;
+            
+            const altStock = stockMap[altId];
+            if (!Number.isFinite(altStock)) return false;
             
             if (checkedIds.indexOf(altId) === -1) {
-              totalStock += stockMap[altId];
+              totalStock += altStock;
               checkedIds.push(altId);
             }
           }
-        } else {
-          return false; // Если альтернативы не массив, скрываем букет
         }
       }
       
@@ -909,6 +998,8 @@ function isBouquetPubliclyAvailable(b, stockMap, recipeMap) {
   
   return true;
 }
+var shopNotifyInFlight = new Set();
+
 function setupStorefront(app, bot, s3ctx) {
   s3ctx = s3ctx || {};
   const primaryS3 = s3ctx.s3 || null;
@@ -926,14 +1017,13 @@ function setupStorefront(app, bot, s3ctx) {
       notifiedClicks.forEach(function(value, key) {
         if (now - value > CLICK_NOTIFY_TTL) notifiedClicks.delete(key);
       });
-      inFlightClicks.forEach(function(value, key) {
-        if (now - value > 60000) inFlightClicks.delete(key);
-      });
       shopNotifyLast.forEach(function(value, key) {
         if (now - value > SHOP_NOTIFY_INTERVAL) shopNotifyLast.delete(key);
       });
       ipLimits.forEach(function(value, key) {
-        if (now - value.start > RATE_LIMIT_WINDOW) ipLimits.delete(key);
+        if (now - value.start > RATE_LIMIT_WINDOW * 2) {
+          ipLimits.delete(key);
+        }
       });
     }, 5 * 60 * 1000);
     if (timer.unref) timer.unref();
@@ -944,6 +1034,7 @@ function setupStorefront(app, bot, s3ctx) {
     activePhotoRequests++;
     return true;
   }
+
   function releasePhotoSlot() {
     activePhotoRequests = Math.max(0, activePhotoRequests - 1);
   }
@@ -952,6 +1043,9 @@ function setupStorefront(app, bot, s3ctx) {
     const now = Date.now();
     const record = ipLimits.get(ip);
     if (!record) {
+      if (ipLimits.size >= MAX_IP_LIMITS) {
+        return false;
+      }
       ipLimits.set(ip, { start: now, count: 1 });
       return true;
     }
@@ -974,42 +1068,72 @@ function setupStorefront(app, bot, s3ctx) {
       return sendPhotoError(res, 429);
     }
 
-    const controller = new AbortController();
+    const masterController = new AbortController();
     let finished = false;
-    
-    function done() {
-      if (!finished) {
-        finished = true;
-        releasePhotoSlot();
+    let clientClosed = false;
+    let allAttemptsFailedWithServerError = false;
+
+    function done(photoOrError, status) {
+      if (finished) return;
+      finished = true;
+      releasePhotoSlot();
+      
+      if (status) {
+        sendPhotoError(res, status);
+      } else if (photoOrError) {
+        sendPhotoBuffer(res, photoOrError);
+      } else {
+        sendPhotoError(res, 404);
       }
     }
-    
+
     res.on('close', function() {
-      controller.abort();
-      done();
+      clientClosed = true;
+      masterController.abort();
     });
 
     const attempts = [];
     if (backupOnly) {
-      if (backupEnabled) attempts.push({ client: backupS3, bucket: backupBucket });
+      if (backupEnabled) {
+        attempts.push({ client: backupS3, bucket: backupBucket });
+      }
     } else {
-      if (primaryEnabled) attempts.push({ client: primaryS3, bucket: primaryBucket });
-      if (backupEnabled) attempts.push({ client: backupS3, bucket: backupBucket });
-    }
-
-    if (!attempts.length) return done(sendPhotoError(res, 404));
-
-    for (const attempt of attempts) {
-      if (controller.signal.aborted) break;
-      try {
-        const photo = await readS3Photo(attempt.client, attempt.bucket, key, controller);
-        return done(sendPhotoBuffer(res, photo));
-      } catch (e) {
-        if (e.message === 'PHOTO_TOO_LARGE') return done(sendPhotoError(res, 413));
-        if (e.message === 'PHOTO_TYPE_NOT_ALLOWED') return done(sendPhotoError(res, 415));
+      if (primaryEnabled) {
+        attempts.push({ client: primaryS3, bucket: primaryBucket });
+      }
+      if (backupEnabled) {
+        attempts.push({ client: backupS3, bucket: backupBucket });
       }
     }
-    return done(sendPhotoError(res, 404));
+
+    if (!attempts.length) return done(null, 404);
+
+    for (const attempt of attempts) {
+      if (clientClosed || masterController.signal.aborted) break;
+      try {
+        const photo = await readS3Photo(
+          attempt.client, attempt.bucket, key,
+          masterController.signal
+        );
+        return done(photo, null);
+      } catch (e) {
+        if (e.message === 'PHOTO_TOO_LARGE') return done(null, 413);
+        if (e.message === 'PHOTO_TYPE_NOT_ALLOWED') return done(null, 415);
+        if (e.message === 'PHOTO_NOT_FOUND') continue;
+        allAttemptsFailedWithServerError = true;
+      }
+    }
+
+    if (clientClosed) {
+      if (!finished) { finished = true; releasePhotoSlot(); }
+      return;
+    }
+
+    if (allAttemptsFailedWithServerError) {
+      return done(null, 503);
+    }
+
+    return done(null, 404);
   }
 
   app.get('/photo/s3/*', async function(req, res) {
@@ -1044,31 +1168,57 @@ function setupStorefront(app, bot, s3ctx) {
     let finished = false;
     let request = null;
     let tgTimer = null;
+    let slotReleased = false;
+
+    function safeReleaseSlot() {
+      if (!slotReleased) {
+        slotReleased = true;
+        releasePhotoSlot();
+      }
+    }
 
     function finish(status, photo) {
       if (finished) return;
       finished = true;
       if (tgTimer) clearTimeout(tgTimer);
       if (request) request.destroy();
-      releasePhotoSlot();
+      safeReleaseSlot();
       if (status) sendPhotoError(res, status);
-      else sendPhotoBuffer(res, photo);
+      else if (photo) sendPhotoBuffer(res, photo);
     }
 
     res.on('close', function() {
-      finish(499); 
+      if (!finished) {
+        finished = true;
+        if (tgTimer) clearTimeout(tgTimer);
+        if (request) request.destroy();
+        safeReleaseSlot();
+      }
     });
 
     let fileInfo;
-    tgTimer = setTimeout(function() { finish(504); }, PHOTO_TIMEOUT);
+    tgTimer = setTimeout(function() { 
+      if (!finished) {
+        finished = true;
+        if (request) request.destroy();
+        sendPhotoError(res, 504);
+        // Слот НЕ освобождаем здесь, ждем завершения фонового запроса
+      }
+    }, PHOTO_TIMEOUT);
 
     try {
       fileInfo = await bot.getFile(fileId);
     } catch (e) {
-      return finish(404);
+      safeReleaseSlot();
+      if (!finished) finish(404);
+      return;
     }
 
-    if (finished) return;
+    if (finished) {
+      safeReleaseSlot();
+      return;
+    }
+    
     if (tgTimer) clearTimeout(tgTimer);
 
     const filePath = fileInfo && fileInfo.file_path;
@@ -1078,22 +1228,39 @@ function setupStorefront(app, bot, s3ctx) {
       filePath.startsWith('/') ||
       filePath.indexOf('..') !== -1
     ) {
+      safeReleaseSlot();
       return finish(404);
     }
 
     const telegramUrl = 'https://api.telegram.org/file/bot' + token + '/' + filePath;
 
-    tgTimer = setTimeout(function() { finish(504); }, PHOTO_TIMEOUT);
+    tgTimer = setTimeout(function() { 
+      if (!finished) {
+        finished = true;
+        if (request) request.destroy();
+        sendPhotoError(res, 504);
+        safeReleaseSlot();
+      }
+    }, PHOTO_TIMEOUT);
 
     request = https.get(telegramUrl, function(upstream) {
       if (finished) { upstream.destroy(); return; }
-      if (upstream.statusCode !== 200) { upstream.destroy(); return finish(404); }
+      if (upstream.statusCode !== 200) {
+        upstream.destroy();
+        return finish(404);
+      }
 
       const contentType = upstream.headers['content-type'];
-      if (!isAllowedImageType(contentType)) { upstream.destroy(); return finish(415); }
+      if (!isAllowedImageType(contentType)) {
+        upstream.destroy();
+        return finish(415);
+      }
 
       const contentLength = Number(upstream.headers['content-length'] || 0);
-      if (contentLength > MAX_PHOTO_SIZE) { upstream.destroy(); return finish(413); }
+      if (contentLength > MAX_PHOTO_SIZE) {
+        upstream.destroy();
+        return finish(413);
+      }
 
       const chunks = [];
       let total = 0;
@@ -1124,10 +1291,12 @@ function setupStorefront(app, bot, s3ctx) {
 
   async function checkSingleBouquetAvailability(shopId, b) {
     if (!b) return false;
-    if (b.deleted || b.hidden || b.archived) return false;
-    if (b.preorderOnly) return true;
-    if (!b.isPinned && !isConfirmedRecently(b)) return false;
-    if (!b.whLinked) return true;
+    if (b.deleted === true || b.hidden === true || b.archived === true) {
+      return false;
+    }
+    if (b.preorderOnly === true) return true;
+    if (b.isPinned !== true && !isConfirmedRecently(b)) return false;
+    if (b.whLinked !== true) return true;
 
     const shopItems = await pool.query(
       'SELECT id, current_stock FROM wh_shop_items WHERE shop_id = $1',
@@ -1135,13 +1304,15 @@ function setupStorefront(app, bot, s3ctx) {
     );
     const stockMap = Object.create(null);
     shopItems.rows.forEach(function(r) { 
-      stockMap[r.id] = parseFloat(r.current_stock) || 0; 
+      const parsed = parseStock(r.current_stock);
+      if (parsed !== null) {
+        stockMap[r.id] = parsed;
+      }
     });
 
     const recipesQ = await pool.query(
       'SELECT r.bouquet_id, r.qty, r.alternatives, r.shop_item_id ' +
-      'FROM wh_bouquet_recipes r ' +
-      'WHERE r.bouquet_id = $1', 
+      'FROM wh_bouquet_recipes r WHERE r.bouquet_id = $1', 
       [b.id]
     );
     
@@ -1169,7 +1340,9 @@ function setupStorefront(app, bot, s3ctx) {
       const bouquet = await getBouquetById(shop.shopId, bouquetId);
       if (!bouquet) return sendNotFound(res);
 
-      const isAvailable = await checkSingleBouquetAvailability(shop.shopId, bouquet);
+      const isAvailable = await checkSingleBouquetAvailability(
+        shop.shopId, bouquet
+      );
       if (!isAvailable) return sendNotFound(res);
 
       const firstPhoto = Array.isArray(bouquet.photos) && bouquet.photos.length
@@ -1200,11 +1373,14 @@ function setupStorefront(app, bot, s3ctx) {
       const bouquet = await getBouquetById(shop.shopId, bouquetId);
       if (!bouquet) return sendNotFound(res);
 
-      const isAvailable = await checkSingleBouquetAvailability(shop.shopId, bouquet);
+      const isAvailable = await checkSingleBouquetAvailability(
+        shop.shopId, bouquet
+      );
       if (!isAvailable) return sendNotFound(res);
 
       const photos = Array.isArray(bouquet.photos) ? bouquet.photos : [];
-      const photoRefs = photos.length ? getPhotoRefsLocal(photos[0], s3ctx) : null;
+      const photoRefs = photos.length 
+        ? getPhotoRefsLocal(photos[0], s3ctx) : null;
       const otherPhotoRefs = [];
 
       for (let i = 1; i < photos.length; i++) {
@@ -1240,7 +1416,9 @@ function setupStorefront(app, bot, s3ctx) {
       const bouquet = await getBouquetById(shop.shopId, bouquetId);
       if (!bouquet) return sendNotFound(res);
 
-      const isAvailable = await checkSingleBouquetAvailability(shop.shopId, bouquet);
+      const isAvailable = await checkSingleBouquetAvailability(
+        shop.shopId, bouquet
+      );
       if (!isAvailable) return sendNotFound(res);
 
       let target = '';
@@ -1271,9 +1449,12 @@ function setupStorefront(app, bot, s3ctx) {
         ' «' + bouquet.name + '» — ' + priceStr + '.';
 
       const ip = getRequestIp(req);
+      const ua = req.headers['user-agent'] || '';
+      const isBot = isLikelyBot(ua);
+      
       const clickKey = makeClickKey(shop.shopId, bouquet.id, type, ip);
 
-      if (lockClick(clickKey)) {
+      if (lockClick(clickKey) && !isBot) {
         let success = false;
         let client = null;
         
@@ -1282,18 +1463,23 @@ function setupStorefront(app, bot, s3ctx) {
           await client.query('BEGIN');
           
           const field = type === 'call' ? 'calls' : 'orders';
-          const statQuery = 
-            'UPDATE shops SET stats = stats || ' +
-            'jsonb_build_object($1, ' +
-            'COALESCE((stats->>$1)::int, 0) + 1) ' +
-            'WHERE shop_id = $2';
-          await client.query(statQuery, [field, shop.shopId]);
+          const statQuery1 = 'UPDATE shops SET stats = jsonb_set(stats, ';
+          const statQuery2 = 'ARRAY[$1], to_jsonb(CASE WHEN stats->>$1 ~ ';
+          const statQuery3 = '\'^[0-9]+$\' THEN (stats->>$1)::int ELSE 0 END ';
+          const statQuery4 = '+ 1)) WHERE shop_id = $2';
           
-          await client.query(
+          await client.query(statQuery1 + statQuery2 + statQuery3 + statQuery4, 
+            [field, shop.shopId]);
+          
+          const bUpdate = await client.query(
             'UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 ' +
             'WHERE id = $1 AND shop_id = $2', 
             [bouquet.id, shop.shopId]
           );
+          
+          if (bUpdate.rowCount !== 1) {
+            throw new Error('Bouquet not found during transaction');
+          }
           
           await client.query('COMMIT');
           success = true;
@@ -1306,11 +1492,14 @@ function setupStorefront(app, bot, s3ctx) {
           
           if (success) {
             markClickCounted(clickKey);
-            sendClickNotification(shop, bouquet, type, bot).catch(function(){});
+            sendClickNotification(shop, bouquet, type, bot)
+              .catch(function(){});
           } else {
             unlockClick(clickKey);
           }
         }
+      } else if (isBot) {
+        unlockClick(clickKey);
       }
 
       if (isMessengerPage) {
@@ -1365,7 +1554,10 @@ function setupStorefront(app, bot, s3ctx) {
       );
       const stockMap = Object.create(null);
       shopItems.rows.forEach(function(r) { 
-        stockMap[r.id] = parseFloat(r.current_stock) || 0; 
+        const parsed = parseStock(r.current_stock);
+        if (parsed !== null) {
+          stockMap[r.id] = parsed;
+        }
       });
 
       const recipesQ = await pool.query(
@@ -1438,18 +1630,21 @@ function setupStorefront(app, bot, s3ctx) {
         });
       } else {
         active.sort(function(a, b) {
-          if (a.isPinned && !b.isPinned) return -1;
-          if (!a.isPinned && b.isPinned) return 1;
-          const da = new Date(b.confirmedAt || b.createdAt);
-          const db = new Date(a.confirmedAt || a.createdAt);
-          return da - db;
+          if (a.isPinned === true && b.isPinned !== true) return -1;
+          if (a.isPinned !== true && b.isPinned === true) return 1;
+          const dateA = new Date(a.confirmedAt || a.createdAt);
+          const dateB = new Date(b.confirmedAt || b.createdAt);
+          return dateB - dateA;
         });
       }
 
       const buildUrl = function(newPrice, newSort, newTag) {
-        const p = (newPrice !== undefined && newPrice !== null) ? newPrice : priceFilter;
-        const s = (newSort !== undefined && newSort !== null) ? newSort : sortParam;
-        const t = (newTag !== undefined && newTag !== null) ? newTag : tagFilter;
+        const p = (newPrice !== undefined && newPrice !== null) 
+          ? newPrice : priceFilter;
+        const s = (newSort !== undefined && newSort !== null) 
+          ? newSort : sortParam;
+        const t = (newTag !== undefined && newTag !== null) 
+          ? newTag : tagFilter;
         const parts = [];
         if (p && p !== 'all') parts.push('price=' + p);
         if (s && s !== 'default') parts.push('sort=' + s);
@@ -1490,7 +1685,13 @@ function setupStorefront(app, bot, s3ctx) {
       html += '@media (prefers-reduced-motion: reduce){';
       html += '.card{opacity:1;transform:none;transition:none !important;}';
       html += '.card:active,.card:hover{transform:none;}}';
-      html += '</style></head><body>';
+      html += '</style>';
+      
+      html += '<noscript><style>';
+      html += '.card{opacity:1 !important;transform:none !important;}';
+      html += '</style></noscript>';
+      
+      html += '</head><body>';
 
       html += '<div class="container">';
       
@@ -1579,7 +1780,9 @@ function setupStorefront(app, bot, s3ctx) {
       filtersHTML += (priceFilter === 'all' ? pillActive : pillIdle) + '">';
       filtersHTML += 'Все</a>';
       
-      const pricesAll = activeBeforePrice.map(function(b) { return b.price; });
+      const pricesAll = activeBeforePrice.map(function(b) { 
+        return b.price; 
+      });
       const hasLow = pricesAll.some(function(p) { return p < ranges[0]; });
       const hasMid = pricesAll.some(function(p) { 
         return p >= ranges[0] && p <= ranges[1]; 
@@ -1706,9 +1909,8 @@ function setupStorefront(app, bot, s3ctx) {
               b.name
             );
           } else {
-            // ИСПРАВЛЕНО: Каждое фото на 100% ширины контейнера
             const fullSlide = 'width:100%;height:100%;object-fit:cover;' +
-              'flex-shrink:0;display:block;';
+              'flex-shrink:0;display:block;scroll-snap-align:start;';
             let slides = '';
             for (const r of photoRefsList) {
               slides += renderImgTag(r, fullSlide, b.name);
@@ -1759,7 +1961,7 @@ function setupStorefront(app, bot, s3ctx) {
           const oldFS = useTwoColumns ? '13px' : '16px';
 
           let preorderBadge = '';
-          if (b.preorderOnly) {
+          if (b.preorderOnly === true) {
             preorderBadge = '<div style="display:inline-block;';
             preorderBadge += 'background:#FFF0EC;color:#E1846D;';
             preorderBadge += 'font-size:11px;font-weight:800;';
@@ -1848,7 +2050,7 @@ function setupStorefront(app, bot, s3ctx) {
       html += '<script>';
       html += 'var lbImages = []; var lbIndex = 0; ';
       html += 'var touchStartX = 0; var touchStartY = 0;';
-      html += 'var isSwiping = false;'; // ИСПРАВЛЕНО: Защита от закрытия после свайпа
+      html += 'var isSwiping = false;';
       
       html += 'function shareBouquet(url, name, price) {';
       html += 'var text = name + " — " + price;';
@@ -1886,7 +2088,7 @@ function setupStorefront(app, bot, s3ctx) {
       html += 'document.body.style.overflow = "";';
       html += '}';
       html += 'function handleLbClick(e) {';
-      html += 'if (isSwiping) return;'; // Не закрываем, если был свайп
+      html += 'if (isSwiping) return;';
       html += 'if (e.target === document.getElementById("lightbox")) {';
       html += 'closeLightbox();';
       html += '}';
