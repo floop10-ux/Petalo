@@ -12,7 +12,7 @@ const {
 
 const {
   getShopFromDb, getBouquetById,
-  getBouquetsFromDb, incrementShopStat
+  getBouquetsFromDb
 } = require('./db-actions');
 
 const TWO_COLUMNS_THRESHOLD = 12;
@@ -23,7 +23,6 @@ const PHOTO_TIMEOUT = 12000;
 const notifiedClicks = new Map();
 let cleanupStarted = false;
 
-// Безопасная вставка данных в <script>
 function safeJson(value) {
   try {
     return JSON.stringify(value)
@@ -58,7 +57,6 @@ function safeNumber(value, fallback) {
   return number;
 }
 
-// Разрешаем файлы в папках магазинов И корневые wh_* файлы
 function isValidS3Key(key) {
   if (typeof key !== 'string' || !key) return false;
   if (key.length > 500) return false;
@@ -100,14 +98,14 @@ function getSafePhone(value) {
   return String(value).replace(/\D/g, '').slice(0, 20);
 }
 
-// Безопасный CSS URL (разрешаем https и локальные пути)
+// ИСПРАВЛЕНО: Запрет протокол-относительных URL (//site.com)
 function getSafeCssUrl(value) {
   if (typeof value !== 'string') return '';
   const url = value.trim();
   if (!url || url.length > 2000) return '';
   if (/[\r\n"'()\\]/.test(url)) return '';
 
-  if (url.startsWith('/')) {
+  if (url.startsWith('/') && !url.startsWith('//')) {
     return 'url("' + url + '")';
   }
 
@@ -430,6 +428,7 @@ function buildPhotoFallbackScript() {
   return html;
 }
 
+// ИСПРАВЛЕНО: экранирование shopNumber через esc()
 function buildBouquetPage(data) {
   const shop = data.shop;
   const bouquet = data.bouquet;
@@ -667,7 +666,7 @@ function buildMessengerOrderPage(data) {
 
   html += '<main class="panel">';
   html += '<h1 style="font-size:22px;">Перейти в ' + (messenger === 'tg' ? 'Telegram' : 'MAX') + '</h1>';
-  html += '<p style="color:#666;font-size:14px;">Букет №' + bouquet.shopNumber + '</p>';
+  html += '<p style="color:#666;font-size:14px;">Букет №' + esc(bouquet.shopNumber) + '</p>';
   
   html += '<textarea id="orderText" readonly>' + esc(orderText) + '</textarea>';
   html += '<button class="btn-copy" onclick="copyOrder()">📋 Скопировать текст</button>';
@@ -692,17 +691,32 @@ function buildMessengerOrderPage(data) {
   return html;
 }
 
+// ИСПРАВЛЕНО: Уведомления только для тех, кто на смене, или для владельца
 async function sendClickNotification(shop, bouquet, type, bot) {
   if (!bot || !shop || !bouquet) return;
 
   try {
     const recipients = [];
+    
+    // 1. Ищем тех, кто на смене
     if (Array.isArray(shop.admins)) {
       for (const admin of shop.admins) {
-        const chatId = admin && (admin.chatId || admin.chat_id);
-        if (chatId) recipients.push(String(chatId));
+        if (admin.onShift && admin.chatId) {
+          recipients.push(String(admin.chatId));
+        }
       }
     }
+    
+    // 2. Если никого нет на смене — шлем владельцу
+    if (recipients.length === 0 && Array.isArray(shop.admins)) {
+      for (const admin of shop.admins) {
+        if (admin.role === 'owner' && admin.chatId) {
+          recipients.push(String(admin.chatId));
+          break;
+        }
+      }
+    }
+
     if (shop.ownerChatId) recipients.push(String(shop.ownerChatId));
 
     const unique = Array.from(new Set(recipients));
@@ -739,7 +753,6 @@ function isAllowedImageType(value) {
   return ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].indexOf(type) !== -1;
 }
 
-// ЗАЩИТА ОТ ПЕРЕПОЛНЕНИЯ ПАМЯТИ (взято у аудитора)
 async function readLimitedStream(stream, maxSize) {
   const chunks = [];
   let total = 0;
@@ -756,13 +769,32 @@ async function readLimitedStream(stream, maxSize) {
   return Buffer.concat(chunks, total);
 }
 
+// ИСПРАВЛЕНО: Тайм-аут для запроса к S3
+function withTimeout(promise, ms, errorMsg) {
+  let timer;
+  const timeoutPromise = new Promise(function(resolve, reject) {
+    timer = setTimeout(function() {
+      reject(new Error(errorMsg));
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(function() {
+    clearTimeout(timer);
+  });
+}
+
 async function readS3Photo(client, bucket, key) {
   if (!client || !bucket) {
     throw new Error('S3_NOT_CONFIGURED');
   }
 
   const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-  const result = await client.send(command);
+  
+  // Обертка в тайм-аут 10 секунд
+  const result = await withTimeout(
+    client.send(command), 
+    PHOTO_TIMEOUT, 
+    'S3_TIMEOUT'
+  );
 
   if (!result || !result.Body) {
     throw new Error('PHOTO_NOT_FOUND');
@@ -813,8 +845,15 @@ function makeClickKey(shopId, bouquetId, type, ip) {
   return [String(shopId), String(bouquetId), String(type), String(ip)].join(':');
 }
 
+// ИСПРАВЛЕНО: Защита Map от переполнения
 function shouldCountClick(key) {
   const now = Date.now();
+  
+  if (notifiedClicks.size > 2000) {
+    const firstKey = notifiedClicks.keys().next().value;
+    notifiedClicks.delete(firstKey);
+  }
+
   const previous = notifiedClicks.get(key);
   if (previous && now - previous < CLICK_NOTIFY_TTL) {
     return false;
@@ -863,6 +902,42 @@ function setPageHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Cache-Control', 'no-store');
+}
+
+// ИСПРАВЛЕНО: Единая функция проверки доступности букета
+function isBouquetPubliclyAvailable(b, stockMap, recipeMap) {
+  if (!b) return false;
+  if (b.deleted || b.hidden || b.archived) return false;
+  
+  // Предзаказные и закрепленные показываем всегда (пока не скрыты)
+  if (b.preorderOnly || b.isPinned) return true;
+  
+  // Обычные требуют свежего подтверждения
+  if (!isConfirmedRecently(b)) return false;
+  
+  // Проверка склада
+  if (b.whLinked) {
+    const rList = recipeMap[b.id] || [];
+    for (let i = 0; i < rList.length; i++) {
+      const it = rList[i];
+      let totalStock = stockMap[it.shop_item_id] || 0;
+      
+      if (it.alternatives && it.alternatives.length > 0) {
+        const altIds = it.alternatives.map(function(a) {
+          return typeof a === 'object' ? a.shop_item_id : a;
+        });
+        altIds.forEach(function(id) {
+          totalStock += stockMap[id] || 0;
+        });
+      }
+      
+      if (totalStock < parseFloat(it.qty)) {
+        return false;
+      }
+    }
+  }
+  
+  return true;
 }
 function setupStorefront(app, bot, s3ctx) {
   s3ctx = s3ctx || {};
@@ -954,7 +1029,12 @@ function setupStorefront(app, bot, s3ctx) {
 
     let fileInfo;
     try {
-      fileInfo = await bot.getFile(fileId);
+      // Тайм-аут для запроса к Telegram API
+      fileInfo = await withTimeout(
+        bot.getFile(fileId), 
+        PHOTO_TIMEOUT, 
+        'TG_TIMEOUT'
+      );
     } catch (e) {
       return sendPhotoError(res, 404);
     }
@@ -1054,6 +1134,41 @@ function setupStorefront(app, bot, s3ctx) {
     });
   });
 
+  // Вспомогательная функция для проверки одного букета
+  async function checkSingleBouquetAvailability(shopId, b) {
+    if (!b) return false;
+    if (b.deleted || b.hidden || b.archived) return false;
+    if (b.preorderOnly || b.isPinned) return true;
+    if (!isConfirmedRecently(b)) return false;
+    
+    if (!b.whLinked) return true;
+
+    const shopItems = await pool.query(
+      'SELECT id, current_stock FROM wh_shop_items WHERE shop_id = $1',
+      [shopId]
+    );
+    const stockMap = Object.create(null);
+    shopItems.rows.forEach(function(r) { 
+      stockMap[r.id] = parseFloat(r.current_stock) || 0; 
+    });
+
+    const recipesQ = await pool.query(
+      'SELECT r.bouquet_id, r.qty, r.alternatives, r.shop_item_id ' +
+      'FROM wh_bouquet_recipes r ' +
+      'JOIN wh_shop_items i ON i.id = r.shop_item_id ' +
+      'WHERE i.shop_id = $1 AND r.bouquet_id = $2', 
+      [shopId, b.id]
+    );
+    
+    const recipeMap = Object.create(null);
+    recipesQ.rows.forEach(function(r) {
+      if (!recipeMap[r.bouquet_id]) recipeMap[r.bouquet_id] = [];
+      recipeMap[r.bouquet_id].push(r);
+    });
+
+    return isBouquetPubliclyAvailable(b, stockMap, recipeMap);
+  }
+
   app.get('/contact/:shopId/:bouquetId', async function(req, res) {
     setPageHeaders(res);
     try {
@@ -1065,18 +1180,14 @@ function setupStorefront(app, bot, s3ctx) {
       }
 
       const shop = await getShopFromDb(shopId);
-      if (!shop || getShopBlocked(shop)) {
-        return sendNotFound(res);
-      }
-
-      if (!getShopSubscriptionActive(shop)) {
-        return sendStorefrontPaused(res);
-      }
+      if (!shop || getShopBlocked(shop)) return sendNotFound(res);
+      if (!getShopSubscriptionActive(shop)) return sendStorefrontPaused(res);
 
       const bouquet = await getBouquetById(shop.shopId, bouquetId);
-      if (!bouquet || bouquet.hidden || bouquet.archived) {
-        return sendNotFound(res);
-      }
+      if (!bouquet) return sendNotFound(res);
+
+      const isAvailable = await checkSingleBouquetAvailability(shop.shopId, bouquet);
+      if (!isAvailable) return sendNotFound(res);
 
       const firstPhoto = Array.isArray(bouquet.photos) && bouquet.photos.length
         ? bouquet.photos[0] : null;
@@ -1105,18 +1216,14 @@ function setupStorefront(app, bot, s3ctx) {
       }
 
       const shop = await getShopFromDb(shopId);
-      if (!shop || getShopBlocked(shop)) {
-        return sendNotFound(res);
-      }
-
-      if (!getShopSubscriptionActive(shop)) {
-        return sendStorefrontPaused(res);
-      }
+      if (!shop || getShopBlocked(shop)) return sendNotFound(res);
+      if (!getShopSubscriptionActive(shop)) return sendStorefrontPaused(res);
 
       const bouquet = await getBouquetById(shop.shopId, bouquetId);
-      if (!bouquet || bouquet.hidden || bouquet.archived) {
-        return sendNotFound(res);
-      }
+      if (!bouquet) return sendNotFound(res);
+
+      const isAvailable = await checkSingleBouquetAvailability(shop.shopId, bouquet);
+      if (!isAvailable) return sendNotFound(res);
 
       const photos = Array.isArray(bouquet.photos) ? bouquet.photos : [];
       const photoRefs = photos.length ? getPhotoRefsLocal(photos[0], s3ctx) : null;
@@ -1139,7 +1246,8 @@ function setupStorefront(app, bot, s3ctx) {
     } catch (e) {
       return res.status(500).send('Ошибка сервера');
     }
-  });app.get('/go/:shopId/:bouquetId/:type', async function(req, res) {
+  });
+  app.get('/go/:shopId/:bouquetId/:type', async function(req, res) {
     setPageHeaders(res);
     try {
       const shopId = req.params.shopId;
@@ -1157,9 +1265,10 @@ function setupStorefront(app, bot, s3ctx) {
       if (!getShopSubscriptionActive(shop)) return sendStorefrontPaused(res);
 
       const bouquet = await getBouquetById(shop.shopId, bouquetId);
-      if (!bouquet || bouquet.hidden || bouquet.archived) {
-        return sendNotFound(res);
-      }
+      if (!bouquet) return sendNotFound(res);
+
+      const isAvailable = await checkSingleBouquetAvailability(shop.shopId, bouquet);
+      if (!isAvailable) return sendNotFound(res);
 
       let target = '';
       let isMessengerPage = false;
@@ -1196,19 +1305,32 @@ function setupStorefront(app, bot, s3ctx) {
       const clickKey = makeClickKey(shop.shopId, bouquet.id, type, ip);
 
       if (shouldCountClick(clickKey)) {
+        const client = await pool.connect();
         try {
-          if (type === 'call') {
-            await incrementShopStat(shop.shopId, 'calls');
-          } else {
-            await incrementShopStat(shop.shopId, 'orders');
-          }
-          await pool.query(
+          await client.query('BEGIN');
+          
+          const field = type === 'call' ? 'calls' : 'orders';
+          const statQuery = 
+            'UPDATE shops SET stats = stats || ' +
+            'jsonb_build_object($1, ' +
+            'COALESCE((stats->>$1)::int, 0) + 1) ' +
+            'WHERE shop_id = $2';
+          await client.query(statQuery, [field, shop.shopId]);
+          
+          await client.query(
             'UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 ' +
-            'WHERE id = $1 AND shop_id = $2', [bouquet.id, shop.shopId]
+            'WHERE id = $1 AND shop_id = $2', 
+            [bouquet.id, shop.shopId]
           );
-          sendClickNotification(shop, bouquet, type, bot)
-            .catch(function(){});
-        } catch (e) {}
+          
+          await client.query('COMMIT');
+          
+          sendClickNotification(shop, bouquet, type, bot).catch(function(){});
+        } catch (e) {
+          await client.query('ROLLBACK');
+        } finally {
+          client.release();
+        }
       }
 
       if (isMessengerPage) {
@@ -1278,27 +1400,9 @@ function setupStorefront(app, bot, s3ctx) {
         recipeMap[r.bouquet_id].push(r);
       });
 
+      // Единая проверка доступности (остатки + предзаказ + закрепление)
       let active = all.filter(function(b) {
-        if (!isConfirmedRecently(b)) return false;
-        if (b.hidden || b.archived) return false;
-        
-        if (b.whLinked && !b.preorderOnly) {
-          const rList = recipeMap[b.id] || [];
-          for (let i = 0; i < rList.length; i++) {
-            const it = rList[i];
-            let totalStock = stockMap[it.shop_item_id] || 0;
-            if (it.alternatives && it.alternatives.length > 0) {
-              const altIds = it.alternatives.map(function(a) {
-                return typeof a === 'object' ? a.shop_item_id : a;
-              });
-              altIds.forEach(function(id) {
-                totalStock += stockMap[id] || 0;
-              });
-            }
-            if (totalStock < parseFloat(it.qty)) return false;
-          }
-        }
-        return true;
+        return isBouquetPubliclyAvailable(b, stockMap, recipeMap);
       });
 
       const totalActiveCount = active.length;
@@ -1311,6 +1415,7 @@ function setupStorefront(app, bot, s3ctx) {
       }
 
       const ranges = getPriceRanges(shop);
+      const activeBeforePrice = [...active]; // Сохраняем для фильтров
       
       if (priceFilter === 'low') {
         active = active.filter(function(b) { return b.price < ranges[0]; });
@@ -1363,18 +1468,14 @@ function setupStorefront(app, bot, s3ctx) {
       }
 
       const buildUrl = function(newPrice, newSort, newTag) {
-        const p = (newPrice !== undefined && newPrice !== null) 
-          ? newPrice : priceFilter;
-        const s = (newSort !== undefined && newSort !== null) 
-          ? newSort : sortParam;
-        const t = (newTag !== undefined && newTag !== null) 
-          ? newTag : tagFilter;
+        const p = (newPrice !== undefined && newPrice !== null) ? newPrice : priceFilter;
+        const s = (newSort !== undefined && newSort !== null) ? newSort : sortParam;
+        const t = (newTag !== undefined && newTag !== null) ? newTag : tagFilter;
         const parts = [];
         if (p && p !== 'all') parts.push('price=' + p);
         if (s && s !== 'default') parts.push('sort=' + s);
-        if (t && t !== 'all') {
-          parts.push('tag=' + encodeURIComponent(t));
-        }
+        if (t && t !== 'all') parts.push('tag=' + encodeURIComponent(t));
+        
         return escAttr('/shop/' + shop.shopId + 
           (parts.length ? '?' + parts.join('&') : ''));
       };
@@ -1392,7 +1493,6 @@ function setupStorefront(app, bot, s3ctx) {
       const pillBase3 = 'text-decoration:none;font-size:14px;';
       const pillBase4 = 'font-weight:700;';
       const pillCommon = pillBase + pillBase2 + pillBase3 + pillBase4;
-      
       const pillActive = 'background:' + btnColors.color + ';color:#fff;';
       const pillIdle = 'background:#f0f0f0;color:#555;';
 
@@ -1489,20 +1589,31 @@ function setupStorefront(app, bot, s3ctx) {
         if (totalActiveCount > 0) {
           html += '<div style="font-size:13px;color:#27ae60;';
           html += 'margin-top:6px;font-weight:700;">🌸 ';
-          html += totalActiveCount + ' ' + cntWord + ' в наличии</div>';
+          html += totalActiveCount + ' ' + cntWord + ' на витрине</div>';
         }
         html += '</div>';
       }
 
+      // ВОССТАНОВЛЕННЫЕ ФИЛЬТРЫ ЦЕН
       let filtersHTML = '<div style="margin:10px 0 6px;">';
       filtersHTML += '<a href="' + buildUrl('all', null, null) + '" ';
       filtersHTML += 'style="' + pillCommon;
       filtersHTML += (priceFilter === 'all' ? pillActive : pillIdle) + '">';
       filtersHTML += 'Все</a>';
       
-      const hasLow = all.some(function(b) { return b.price < ranges[0]; });
-      const hasMid = all.some(function(b) { 
-        return b.price >= ranges[0] && b.price <= ranges[1]; 
+      const pricesAll = activeBeforePrice.map(function(b) { return b.price; });
+      const hasLow = pricesAll.some(function(p) { return p < ranges[0]; });
+      const hasMid = pricesAll.some(function(p) { 
+        return p >= ranges[0] && p <= ranges[1]; 
+      });
+      const hasMid2 = pricesAll.some(function(p) { 
+        return p > ranges[1] && p <= ranges[2]; 
+      });
+      const hasHigh1 = pricesAll.some(function(p) { 
+        return p > ranges[2] && p <= ranges[3]; 
+      });
+      const hasHigh2 = pricesAll.some(function(p) { 
+        return p > ranges[3]; 
       });
       
       if (hasLow) {
@@ -1517,6 +1628,26 @@ function setupStorefront(app, bot, s3ctx) {
         filtersHTML += (priceFilter === 'mid' ? pillActive : pillIdle) + '">';
         filtersHTML += formatPricePill(ranges[0], shop) + '–';
         filtersHTML += formatPricePill(ranges[1], shop) + '</a>';
+      }
+      if (hasMid2) {
+        filtersHTML += '<a href="' + buildUrl('mid2', null, null) + '" ';
+        filtersHTML += 'style="' + pillCommon;
+        filtersHTML += (priceFilter === 'mid2' ? pillActive : pillIdle) + '">';
+        filtersHTML += formatPricePill(ranges[1], shop) + '–';
+        filtersHTML += formatPricePill(ranges[2], shop) + '</a>';
+      }
+      if (hasHigh1) {
+        filtersHTML += '<a href="' + buildUrl('high1', null, null) + '" ';
+        filtersHTML += 'style="' + pillCommon;
+        filtersHTML += (priceFilter === 'high1' ? pillActive : pillIdle) + '">';
+        filtersHTML += formatPricePill(ranges[2], shop) + '–';
+        filtersHTML += formatPricePill(ranges[3], shop) + '</a>';
+      }
+      if (hasHigh2) {
+        filtersHTML += '<a href="' + buildUrl('high2', null, null) + '" ';
+        filtersHTML += 'style="' + pillCommon;
+        filtersHTML += (priceFilter === 'high2' ? pillActive : pillIdle) + '">';
+        filtersHTML += 'От ' + formatPricePill(ranges[3], shop) + '</a>';
       }
       filtersHTML += '</div>';
 
@@ -1673,7 +1804,7 @@ function setupStorefront(app, bot, s3ctx) {
           card += 'background:rgba(44,62,80,0.85);color:#fff;';
           card += 'padding:3px 10px;border-radius:12px;font-size:11px;';
           card += 'font-weight:700;z-index:10;backdrop-filter:blur(4px);">';
-          card += '№' + b.shopNumber + '</div>';
+          card += '№' + esc(b.shopNumber) + '</div>';
           card += gallery;
           card += '<div style="padding:10px 12px 12px;">';
           card += '<h3 class="card-title" style="margin:0 0 4px;';
