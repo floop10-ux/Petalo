@@ -9,7 +9,7 @@ const {
   esc, getNowMoscow, isWithinWorkingHours,
   normalizePhone, generateInviteCode,
   isSubscriptionActive, getRemainingDays,
-  shortName, isConfirmedRecently
+  shortName, isConfirmedRecently, parseShopHours
 } = require('./config');
 
 const { 
@@ -150,7 +150,6 @@ function getAuth(req) {
 }
 
 // ========== ФОНОВЫЕ ЗАДАЧИ ==========
-const morningReminderSent = {};
 const weeklyReportSent = {};
 const { checkSessions } = require('./bot-handlers');
 
@@ -189,17 +188,35 @@ async function checkAndNotify() {
 async function morningReminder() {
   try {
     const now = getNowMoscow();
-    const currentHour = now.getHours();
-    
-    // Отправляем только с 8:00 до 11:59 по МСК
-    if (currentHour < 8 || currentHour > 11) return;
-
     const todayKey = now.toISOString().slice(0, 10);
-    const shops = await pool.query('SELECT shop_id, hours FROM shops WHERE blocked = FALSE');
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const shops = await pool.query(
+      'SELECT shop_id, hours, settings FROM shops WHERE blocked = FALSE'
+    );
     
     for (const s of shops.rows) {
-      const sentKey = s.shop_id + ':' + todayKey;
-      if (morningReminderSent[sentKey]) continue;
+      const settings = s.settings || {};
+      
+      // Если сегодня уже отправляли — пропускаем
+      if (settings.last_reminder_date === todayKey) continue;
+
+      const parsed = parseShopHours(s.hours);
+      
+      // По умолчанию, если часы не указаны — считаем открытием 10:00
+      let targetMinutes = 10 * 60; 
+      
+      if (parsed) {
+        // Время открытия + 30 минут
+        targetMinutes = (parsed.openH * 60 + parsed.openM) + 30;
+      }
+      
+      // Если сейчас еще слишком рано (магазин не открылся) — пропускаем
+      if (currentMinutes < targetMinutes) continue;
+      
+      // Если с момента открытия прошло больше 2 часов (сервер лежал), 
+      // лучше не присылать "Доброе утро" в обед. Пропускаем.
+      if (currentMinutes > targetMinutes + 120) continue;
 
       const shop = await getShopFromDb(s.shop_id);
       if (!shop || !isSubscriptionActive(shop)) continue;
@@ -227,7 +244,13 @@ async function morningReminder() {
         unique.add(admin.chatId);
         bot.sendMessage(admin.chatId, text, kb).catch(function(){});
       }
-      morningReminderSent[sentKey] = Date.now();
+      
+      // Записываем в БД, чтобы после перезагрузки не спамить
+      settings.last_reminder_date = todayKey;
+      await pool.query(
+        "UPDATE shops SET settings = $1 WHERE shop_id = $2",
+        [JSON.stringify(settings), s.shop_id]
+      );
     }
   } catch (e) {
     console.error('Morning error:', e?.message || e);
