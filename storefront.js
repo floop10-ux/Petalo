@@ -4,7 +4,7 @@ const {
   formatPricePill, getPriceRanges, 
   calculateOldPrice, findPresetById,
   isConfirmedRecently, isValidFileId,
-  shortName
+  isSubscriptionActive
 } = require('./config');
 
 const {
@@ -15,7 +15,64 @@ const {
 // ========== КОНСТАНТЫ ВИЗУАЛА ==========
 const TWO_COLUMNS_THRESHOLD = 12;
 const CLICK_NOTIFY_TTL = 10 * 60 * 1000;
-const notifiedClicks = {};
+const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10 MB
+const notifiedClicks = new Map();
+let cleanupStarted = false;
+
+// Безопасная вставка данных в <script>
+function safeJson(data) {
+  if (data === undefined) return 'undefined';
+  return JSON.stringify(data).replace(/</g, '\\u003c');
+}
+
+// Строгая проверка ключа S3 (папки магазинов или wh_ файлы)
+function isValidS3Key(key) {
+  if (!key || typeof key !== 'string') return false;
+  if (key.includes('..') || key.includes('\\')) return false;
+  if (!/^[a-zA-Z0-9_\-. \/]+$/.test(key)) return false;
+  
+  const ext = key.split('.').pop().toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].indexOf(ext) === -1) return false;
+  
+  if (!key.includes('/') && !key.startsWith('wh_')) return false;
+  return true;
+}
+
+// Строгая проверка MAX-ссылки
+function getSafeMaxLink(link) {
+  if (!link || typeof link !== 'string') return null;
+  const regex = /^https:\/\/(max\.ru|max\.me)\/[a-zA-Z0-9_-]+$/i;
+  if (regex.test(link)) return link;
+  return null;
+}
+
+// Проверка Telegram username (строго 5-32 символа, @ только в начале)
+function getSafeTgUsername(username) {
+  if (!username || typeof username !== 'string') return null;
+  let clean = username;
+  if (clean.startsWith('@')) clean = clean.substring(1);
+  if (/^[a-zA-Z0-9_]{5,32}$/.test(clean)) return clean;
+  return null;
+}
+
+// Безопасный парсинг URL для CSS (защита от XSS)
+function getSafeCssUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const clean = url.replace(/['"()\\]/g, '');
+  
+  if (clean.startsWith('/')) {
+    return escAttr(clean);
+  }
+  
+  try {
+    const parsed = new URL(clean);
+    if (parsed.protocol === 'https:') {
+      return escAttr(parsed.href);
+    }
+  } catch (e) {}
+  
+  return '';
+}
 
 const CLICK_TYPE_NAMES = {
   tg: '📩 Telegram', wa: '💬 WhatsApp',
@@ -87,11 +144,13 @@ const MANROPE_LINK =
 // ========== УТИЛИТЫ ВИЗУАЛА ==========
 function findColorById(id) {
   if (!id) return null;
-  return BUTTON_COLORS.find(c => c.id === id) || null;
+  return BUTTON_COLORS.find(function(c) { return c.id === id; }) || null;
 }
 
 function getButtonColorsLocal(shop) {
-  if (!shop || !shop.settings) return { color: '#e74c3c', dark: '#c0392b' };
+  if (!shop || !shop.settings) {
+    return { color: '#e74c3c', dark: '#c0392b' };
+  }
   const id = shop.settings.buttonColor;
   if (!id) return { color: '#e74c3c', dark: '#c0392b' };
   const found = findColorById(id);
@@ -112,39 +171,37 @@ function getPlaceholderGradientLocal(seed) {
 function getPhotoRefsLocal(photo) {
   if (!photo) return { primary: null, fallback: null };
   if (typeof photo === 'string') {
-    if (photo.startsWith('http')) return { primary: photo, fallback: null };
+    if (photo.startsWith('https://')) {
+      return { primary: photo, fallback: null };
+    }
     if (isValidFileId(photo)) {
       return { primary: '/photo/tg/' + photo, fallback: null };
     }
     return { primary: null, fallback: null };
   }
   if (typeof photo === 'object') {
-    if (photo.s3 && photo.s3b && photo.tg) {
+    const s3 = isValidS3Key(photo.s3) ? photo.s3 : null;
+    const s3b = isValidS3Key(photo.s3b) ? photo.s3b : null;
+    const tg = isValidFileId(photo.tg) ? photo.tg : null;
+
+    if (s3 && s3b && tg) {
       return { 
-        primary: photo.s3, 
-        fallback: photo.s3b, 
-        fallback2: '/photo/tg/' + photo.tg 
+        primary: s3, 
+        fallback: s3b, 
+        fallback2: '/photo/tg/' + tg 
       };
     }
-    if (photo.s3 && photo.s3b) {
-      return { primary: photo.s3, fallback: photo.s3b };
-    }
-    if (photo.s3b && photo.tg) {
-      return { primary: photo.s3b, fallback: '/photo/tg/' + photo.tg };
-    }
-    if (photo.s3b) return { primary: photo.s3b, fallback: null };
-    if (photo.s3 && photo.tg) {
-      return { primary: photo.s3, fallback: '/photo/tg/' + photo.tg };
-    }
-    if (photo.s3) return { primary: photo.s3, fallback: null };
-    if (photo.tg) {
-      return { primary: '/photo/tg/' + photo.tg, fallback: null };
-    }
+    if (s3 && s3b) return { primary: s3, fallback: s3b };
+    if (s3b && tg) return { primary: s3b, fallback: '/photo/tg/' + tg };
+    if (s3b) return { primary: s3b, fallback: null };
+    if (s3 && tg) return { primary: s3, fallback: '/photo/tg/' + tg };
+    if (s3) return { primary: s3, fallback: null };
+    if (tg) return { primary: '/photo/tg/' + tg, fallback: null };
   }
   return { primary: null, fallback: null };
 }
 
-// Безопасный рендер тега img без кавычек \'
+// Безопасный рендер тега img с защитой от зацикливания
 function renderImgTag(refs, style) {
   if (!refs || !refs.primary) return null;
   const p = escAttr(refs.primary);
@@ -156,14 +213,11 @@ function renderImgTag(refs, style) {
     const f1 = escAttr(refs.fallback);
     const f2 = escAttr(refs.fallback2);
     html += ' data-f1="' + f1 + '" data-f2="' + f2 + '"';
-    let h = "this.onerror=null;this.onerror=function(){";
-    h += "this.onerror=null;this.src=this.dataset.f2;};";
-    h += "this.src=this.dataset.f1;";
-    html += ' onerror="' + h + '"';
+    html += ' onerror="if(this.src!==this.dataset.f1&&this.dataset.f1){this.src=this.dataset.f1;}else if(this.src!==this.dataset.f2&&this.dataset.f2){this.src=this.dataset.f2;}else{this.onerror=null;this.src=\'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\';}"';
   } else if (refs.fallback) {
     const f = escAttr(refs.fallback);
     html += ' data-f1="' + f + '"';
-    html += ' onerror="this.onerror=null;this.src=this.dataset.f1;"';
+    html += ' onerror="if(this.src!==this.dataset.f1&&this.dataset.f1){this.src=this.dataset.f1;}else{this.onerror=null;this.src=\'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\';}"';
   }
   html += '>';
   return html;
@@ -171,8 +225,9 @@ function renderImgTag(refs, style) {
 
 function absoluteUrl(url) {
   if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return SITE_URL + url;
+  if (url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return SITE_URL + url;
+  return null;
 }
 
 function getBackgroundStyle(bgSetting) {
@@ -180,6 +235,7 @@ function getBackgroundStyle(bgSetting) {
   const def2 = '#f7f5f1 100%);background-attachment:fixed;';
   const fullDef = def + def2;
   if (!bgSetting) return fullDef;
+  
   if (isPresetBackground(bgSetting)) {
     const preset = findPresetById(bgSetting.id);
     if (preset) {
@@ -187,34 +243,44 @@ function getBackgroundStyle(bgSetting) {
     }
     return fullDef;
   }
+  
   const refs = getPhotoRefsLocal(bgSetting);
   if (refs && refs.primary) {
-    let st = "background-image:url('" + refs.primary + "');";
-    st += "background-size:cover;background-attachment:fixed;";
-    return st;
+    const safeUrl = getSafeCssUrl(refs.primary);
+    if (safeUrl) {
+      let st = "background-image:url('" + safeUrl + "');";
+      st += "background-size:cover;background-attachment:fixed;";
+      return st;
+    }
   }
   return fullDef;
 }
+
 // ========== HTML: КАРТОЧКА БУКЕТА ==========
 function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const bouquetNameEsc = esc(bouquet.name);
-  const shopIdEsc = esc(shop.shopId);
-  const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
-  const bouquetUrl = SITE_URL + '/shop/' + esc(shop.shopId) + '/b/' + bouquet.id;
+  const shopIdEsc = escAttr(shop.shopId);
+  
+  const settings = shop.settings || {};
+  const oldPrice = calculateOldPrice(bouquet.price, settings.markupPercent);
+  const bouquetUrl = SITE_URL + '/shop/' + shopIdEsc + '/b/' + bouquet.id;
   const title = bouquetNameEsc + ' — ' + esc(shop.displayName);
   const priceStr = formatPrice(bouquet.price, shop);
   const oldPriceStr = formatPrice(oldPrice, shop);
   const description = priceStr + ' · ' + esc(shop.displayName);
   
-  const primaryPhotoUrl = (photoRefs && photoRefs.primary) ? absoluteUrl(photoRefs.primary) : null;
+  const primaryPhotoUrl = (photoRefs && photoRefs.primary) ? 
+    absoluteUrl(photoRefs.primary) : null;
   const btnColors = getButtonColorsLocal(shop);
 
   let ogTags = '';
   if (primaryPhotoUrl) {
-    ogTags += '\n<meta property="og:image" content="' + escAttr(primaryPhotoUrl) + '">\n';
+    ogTags += '\n<meta property="og:image" content="' + 
+      escAttr(primaryPhotoUrl) + '">\n';
     ogTags += '<meta property="og:image:width" content="800">\n';
     ogTags += '<meta property="og:image:height" content="800">\n';
-    ogTags += '<meta name="twitter:image" content="' + escAttr(primaryPhotoUrl) + '">';
+    ogTags += '<meta name="twitter:image" content="' + 
+      escAttr(primaryPhotoUrl) + '">';
   }
 
   const imgStyle = 'width:100%;max-width:500px;border-radius:20px;';
@@ -240,7 +306,9 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
     const fullThumbStyle = thumbStyle + thumbStyle2 + thumbStyle3;
     thumbsHtml = '<div style="display:flex;gap:8px;justify-content:center;';
     thumbsHtml += 'margin-top:12px;flex-wrap:wrap;">';
-    for (const r of otherPhotoRefs) thumbsHtml += renderImgTag(r, fullThumbStyle);
+    for (const r of otherPhotoRefs) {
+      thumbsHtml += renderImgTag(r, fullThumbStyle);
+    }
     thumbsHtml += '</div>';
   }
 
@@ -253,22 +321,30 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   const btnWa = btnCommon + 'background:#25D366;';
   const btnMax = btnCommon + 'background:#7B68EE;';
   const btnCall = btnCommon + 'background:' + btnColors.color + ';';
-  const hrefBase = '/go/' + esc(shop.shopId) + '/' + bouquet.id + '/';
+  const hrefBase = '/go/' + shopIdEsc + '/' + bouquet.id + '/';
 
   let buttonsHTML = '';
-  if (shop.telegramUsername) {
-    buttonsHTML += '<a href="' + hrefBase + 'tg" style="' + btnTg + '">';
-    buttonsHTML += '📩 Написать в Telegram</a>';
-  }
-  if (shop.whatsappPhone) {
+  
+  const waPhone = shop.whatsappPhone ? 
+    shop.whatsappPhone.replace(/\D/g, '') : '';
+  if (waPhone.length >= 10) {
     buttonsHTML += '<a href="' + hrefBase + 'wa" style="' + btnWa + '">';
     buttonsHTML += '💬 Написать в WhatsApp</a>';
   }
-  if (shop.maxLink) {
+  
+  if (getSafeTgUsername(shop.telegramUsername)) {
+    buttonsHTML += '<a href="' + hrefBase + 'tg" style="' + btnTg + '">';
+    buttonsHTML += '📩 Написать в Telegram</a>';
+  }
+  
+  if (getSafeMaxLink(shop.maxLink)) {
     buttonsHTML += '<a href="' + hrefBase + 'max" style="' + btnMax + '">';
     buttonsHTML += '🟼 Написать в MAX</a>';
   }
-  if (shop.phone) {
+  
+  const cleanPhone = shop.phone ? 
+    shop.phone.replace(/\D/g, '') : '';
+  if (cleanPhone.length >= 10) {
     buttonsHTML += '<a href="' + hrefBase + 'call" style="' + btnCall + '">';
     buttonsHTML += '📞 Позвонить</a>';
   }
@@ -283,18 +359,18 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   }
 
   let preorderBadge = '';
-  if (bouquet.preorder_only) {
+  if (bouquet.preorderOnly) {
     preorderBadge = '<div style="display:inline-block; background:#FFF0EC; ';
     preorderBadge += 'color:#E1846D; font-size:13px; font-weight:800; ';
     preorderBadge += 'padding:6px 16px; border-radius:20px; margin-bottom:16px;">';
     preorderBadge += 'Только предзаказ</div>';
   }
 
-  const bouquetNameJs = JSON.stringify(bouquet.name);
-  const bouquetUrlJs = JSON.stringify(bouquetUrl);
+  const bouquetNameJs = safeJson(bouquet.name);
+  const bouquetUrlJs = safeJson(bouquetUrl);
   const noContacts = '<div style="color:#888;padding:10px;">';
   const noContacts2 = 'Контакты временно недоступны</div>';
-  const bodyBg = getBackgroundStyle(shop.settings.background);
+  const bodyBg = getBackgroundStyle(settings.background);
 
   let html = '<!DOCTYPE html>\n<html lang="ru">\n<head>\n';
   html += '<meta charset="UTF-8">\n';
@@ -333,7 +409,7 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += preorderBadge + '\n';
   html += '<div class="price">' + priceHtml + '</div>\n';
   html += '<div class="card">';
-  html += buttonsHTML || noContacts + noContacts2;
+  html += buttonsHTML || (noContacts + noContacts2);
   html += '</div>\n';
   html += '<a class="share" href="#" onclick="shareBouquet(); return false;">';
   html += '📤 Поделиться с близкими</a>\n';
@@ -341,10 +417,11 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += 'function shareBouquet() {\n';
   html += '  var url = ' + bouquetUrlJs + ';\n';
   html += '  var name = ' + bouquetNameJs + ';\n';
-  html += '  var price = ' + JSON.stringify(priceStr) + ';\n';
+  html += '  var price = ' + safeJson(priceStr) + ';\n';
   html += '  var text = name + " — " + price;\n';
   html += '  if (navigator.share) {\n';
-  html += '    navigator.share({ title: name, text: text, url: url }).catch(function(){});\n';
+  html += '    navigator.share({ title: name, text: text, url: url })';
+  html += '.catch(function(){});\n';
   html += '  } else if (navigator.clipboard && navigator.clipboard.writeText) {\n';
   html += '    navigator.clipboard.writeText(url).then(function(){ ';
   html += 'alert("Ссылка скопирована"); }).catch(function(){ ';
@@ -354,12 +431,15 @@ function buildBouquetPage({ shop, bouquet, photoRefs, otherPhotoRefs }) {
   html += '</script>\n</body>\n</html>';
   return html;
 }
-
 // ========== HTML: СТРАНИЦА КОНТАКТОВ ==========
 function buildContactPage({ shop, bouquet, photoRefs }) {
   const bouquetNameEsc = esc(bouquet.name);
-  const shopIdEsc = esc(shop.shopId);
-  const oldPrice = calculateOldPrice(bouquet.price, shop.settings.markupPercent);
+  const shopIdEsc = escAttr(shop.shopId);
+  
+  const settings = shop.settings || {};
+  const oldPrice = calculateOldPrice(
+    bouquet.price, settings.markupPercent
+  );
   const priceStr = formatPrice(bouquet.price, shop);
   const oldPriceStr = formatPrice(oldPrice, shop);
   
@@ -368,7 +448,7 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   const fullOrderText = orderText + orderText2 + bouquet.shopNumber + 
     ' «' + bouquet.name + '» — ' + priceStr + '.';
     
-  const orderTextJs = JSON.stringify(fullOrderText);
+  const orderTextJs = safeJson(fullOrderText);
   const orderTextEsc = esc(fullOrderText);
   const btnColors = getButtonColorsLocal(shop);
 
@@ -412,29 +492,37 @@ function buildContactPage({ shop, bouquet, photoRefs }) {
   const btnTg = btnCommon + 'background:#229ED9;';
   const btnMax = btnCommon + 'background:#7B68EE;';
   const btnCall = btnCommon + 'background:' + btnColors.color + ';';
-  const hrefBase = '/go/' + esc(shop.shopId) + '/' + bouquet.id + '/';
+  const hrefBase = '/go/' + shopIdEsc + '/' + bouquet.id + '/';
 
   let contactsHTML = '';
-  if (shop.whatsappPhone) {
+  
+  const waPhone = shop.whatsappPhone ? 
+    shop.whatsappPhone.replace(/\D/g, '') : '';
+  if (waPhone.length >= 10) {
     contactsHTML += '<a href="' + hrefBase + 'wa" style="';
     contactsHTML += btnWa + '">💬 WhatsApp</a>';
   }
-  if (shop.telegramUsername) {
+  
+  if (getSafeTgUsername(shop.telegramUsername)) {
     contactsHTML += '<a href="' + hrefBase + 'tg" style="';
     contactsHTML += btnTg + '">📩 Telegram</a>';
   }
-  if (shop.maxLink) {
+  
+  if (getSafeMaxLink(shop.maxLink)) {
     contactsHTML += '<a href="' + hrefBase + 'max" style="';
     contactsHTML += btnMax + '">🟼 MAX</a>';
   }
-  if (shop.phone) {
+  
+  const cleanPhone = shop.phone ? 
+    shop.phone.replace(/\D/g, '') : '';
+  if (cleanPhone.length >= 10) {
     contactsHTML += '<a href="' + hrefBase + 'call" style="';
     contactsHTML += btnCall + '">📞 Позвонить</a>';
   }
 
   const noContacts = '<div style="color:#888;padding:10px;">';
   const noContacts2 = 'Контакты временно недоступны</div>';
-  const bodyBg = getBackgroundStyle(shop.settings.background);
+  const bodyBg = getBackgroundStyle(settings.background);
 
   let html = '<!DOCTYPE html>\n<html lang="ru">\n<head>\n';
   html += '<meta charset="UTF-8">\n';
@@ -520,14 +608,19 @@ function buildMessengerOrderPage(
   const messengerEmoji = isMax ? '🟼' : '📩';
   const buttonColor = isMax ? '#7B68EE' : '#229ED9';
   
-  const externalLink = isMax
-    ? esc(shop.maxLink)
-    : 'https://t.me/' + esc(shop.telegramUsername);
+  let externalLink = '#';
+  if (isMax) {
+    const safeMax = getSafeMaxLink(shop.maxLink);
+    if (safeMax) externalLink = escAttr(safeMax);
+  } else {
+    const safeTg = getSafeTgUsername(shop.telegramUsername);
+    if (safeTg) externalLink = 'https://t.me/' + escAttr(safeTg);
+  }
     
-  const orderTextJs = JSON.stringify(orderText);
+  const orderTextJs = safeJson(orderText);
   const orderTextEsc = esc(orderText);
   const shopNameEsc = esc(shop.displayName);
-  const shopIdEsc = esc(shop.shopId);
+  const shopIdEsc = escAttr(shop.shopId);
   const bouquetNameEsc = esc(bouquet.name);
   const priceStr = formatPrice(bouquet.price, shop);
 
@@ -621,7 +714,10 @@ function sendClickNotification(shop, bouquet, type, bot) {
   const channelName = CLICK_TYPE_NAMES[type] || 'Мессенджер';
   const isCall = type === 'call';
   const priceStr = formatPrice(bouquet.price, shop);
-  const onShiftAdmins = shop.admins.filter(a => a.onShift);
+  
+  const onShiftAdmins = shop.admins.filter(function(a) {
+    return a.onShift;
+  });
 
   if (onShiftAdmins.length > 0) {
     const action = isCall ? 'Позвонить' : 'Связаться';
@@ -642,7 +738,9 @@ function sendClickNotification(shop, bouquet, type, bot) {
     return;
   }
 
-  const owner = shop.admins.find(a => a.role === 'owner');
+  const owner = shop.admins.find(function(a) {
+    return a.role === 'owner';
+  });
   if (!owner) return;
 
   const action = isCall ? 'Позвонить' : 'Связаться';
@@ -690,13 +788,29 @@ function formatConfirmedAt(dateStr) {
 function setupStorefront(app, bot, s3ctx) {
   const { s3, YC_BUCKET } = s3ctx;
   const token = process.env.BOT_TOKEN;
+  const https = require('https');
+
+  function parseStrictInt(str) {
+    if (typeof str !== 'string') str = String(str);
+    if (!/^[0-9]+$/.test(str)) return null;
+    const n = parseInt(str, 10);
+    return (n > 0) ? n : null;
+  }
+
+  if (!cleanupStarted) {
+    cleanupStarted = true;
+    setInterval(function() {
+      const now = Date.now();
+      notifiedClicks.forEach(function(val, key) {
+        if (now - val > CLICK_NOTIFY_TTL) notifiedClicks.delete(key);
+      });
+    }, 15 * 60 * 1000);
+  }
 
   app.get('/photo/s3/*', async (req, res) => {
     try {
       const key = req.params[0];
-      if (!key || key.includes('..')) {
-        return res.status(400).send('bad');
-      }
+      if (!isValidS3Key(key)) return res.status(400).send('bad key');
       if (!s3) return res.status(503).send('s3 disabled');
 
       const { GetObjectCommand } = require('@aws-sdk/client-s3');
@@ -705,15 +819,46 @@ function setupStorefront(app, bot, s3ctx) {
       });
       const data = await s3.send(cmd);
 
-      res.setHeader('Content-Type', data.ContentType || 'image/jpeg');
+      if (data.ContentLength && data.ContentLength > MAX_PHOTO_SIZE) {
+        return res.status(413).send('too large');
+      }
+
+      const mime = data.ContentType;
+      const allowedMime = [
+        'image/jpeg', 'image/png', 'image/webp', 'image/gif'
+      ];
+      if (!mime || allowedMime.indexOf(mime) === -1) {
+        return res.status(403).send('bad mime');
+      }
+
+      res.setHeader('Content-Type', mime);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cache-Control', 'public, max-age=86400');
 
       const stream = data.Body;
+      let bytesSent = 0;
+      
       if (stream.pipe) {
+        stream.on('data', function(chunk) {
+          bytesSent += chunk.length;
+          if (bytesSent > MAX_PHOTO_SIZE) {
+            stream.destroy();
+            if (!res.headersSent) res.status(413).send('too large');
+          }
+        });
+        stream.on('error', function(e) {
+          console.error('S3 stream error:', e.message);
+          if (!res.headersSent) res.status(500).send('stream error');
+        });
         stream.pipe(res);
       } else {
         const chunks = [];
+        let totalSize = 0;
         for await (const chunk of stream) {
+          totalSize += chunk.length;
+          if (totalSize > MAX_PHOTO_SIZE) {
+            return res.status(413).send('too large');
+          }
           chunks.push(chunk);
         }
         res.send(Buffer.concat(chunks));
@@ -727,17 +872,60 @@ function setupStorefront(app, bot, s3ctx) {
   app.get('/photo/tg/:fileId', async (req, res) => {
     try {
       const fileId = req.params.fileId;
-      if (!isValidFileId(fileId)) {
-        return res.status(400).send('bad');
-      }
+      if (!isValidFileId(fileId)) return res.status(400).send('bad');
+      
       const fileInfo = await bot.getFile(fileId);
       if (!fileInfo || !fileInfo.file_path) {
         return res.status(404).send('not found');
       }
-      const url = 'https://api.telegram.org/file/bot' +
+      
+      const url = 'https://api.telegram.org/file/bot' + 
         token + '/' + fileInfo.file_path;
-      res.setHeader('Cache-Control', 'public, max-age=2400');
-      return res.redirect(302, url);
+        
+      const request = https.get(url, function(tgRes) {
+        if (tgRes.statusCode !== 200) {
+          return res.status(tgRes.statusCode).send('tg error');
+        }
+
+        const mime = tgRes.headers['content-type'] || '';
+        const allowedMime = [
+          'image/jpeg', 'image/png', 'image/webp', 'image/gif'
+        ];
+        if (allowedMime.indexOf(mime) === -1) {
+          tgRes.destroy();
+          return res.status(403).send('bad mime');
+        }
+
+        const len = parseInt(tgRes.headers['content-length'], 10);
+        if (len && len > MAX_PHOTO_SIZE) {
+          tgRes.destroy();
+          return res.status(413).send('too large');
+        }
+
+        res.setHeader('Content-Type', mime);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        
+        let tgBytes = 0;
+        tgRes.on('data', function(chunk) {
+          tgBytes += chunk.length;
+          if (tgBytes > MAX_PHOTO_SIZE) {
+            tgRes.destroy();
+            if (!res.headersSent) res.status(413).send('too large');
+          }
+        });
+        
+        tgRes.pipe(res);
+      }).on('error', function(e) {
+        console.error('Ошибка потока tg:', e.message);
+        if (!res.headersSent) res.status(500).send('stream error');
+      });
+      
+      request.setTimeout(10000, function() {
+        request.abort();
+        if (!res.headersSent) res.status(504).send('tg timeout');
+      });
+      
     } catch (e) {
       console.error('Ошибка /photo/tg:', e?.message || e);
       return res.status(404).send('not found');
@@ -747,18 +935,22 @@ function setupStorefront(app, bot, s3ctx) {
   app.get('/contact/:shopId/:bouquetId', async (req, res) => {
     try {
       const shop = await getShopFromDb(req.params.shopId);
-      if (!shop) {
-        return res.status(404).send('Магазин не найден');
+      if (!shop) return res.status(404).send('Магазин не найден');
+      if (shop.blocked) return res.status(403).send('Магазин заблокирован');
+      if (!isSubscriptionActive(shop)) {
+        return res.status(403).send('Подписка истекла');
       }
-      const bouquetId = parseInt(req.params.bouquetId);
-      if (!bouquetId || isNaN(bouquetId)) {
-        return res.status(404).send('Букет не найден');
-      }
+      
+      const bouquetId = parseStrictInt(req.params.bouquetId);
+      if (!bouquetId) return res.status(404).send('Букет не найден');
+      
       const b = await getBouquetById(req.params.shopId, bouquetId);
-      if (!b) {
-        return res.status(404).send('Букет не найден');
+      if (!b) return res.status(404).send('Букет не найден');
+      
+      let firstPhoto = null;
+      if (Array.isArray(b.photos) && b.photos.length > 0) {
+        firstPhoto = b.photos[0];
       }
-      const firstPhoto = (b.photos && b.photos.length > 0) ? b.photos[0] : null;
       const photoRefs = getPhotoRefsLocal(firstPhoto);
       
       res.send(buildContactPage({ shop, bouquet: b, photoRefs }));
@@ -771,23 +963,26 @@ function setupStorefront(app, bot, s3ctx) {
   app.get('/shop/:shopId/b/:bouquetId', async (req, res) => {
     try {
       const shop = await getShopFromDb(req.params.shopId);
-      if (!shop) {
-        return res.status(404).send('Магазин не найден');
-      }
-      const bouquetId = parseInt(req.params.bouquetId);
-      if (!bouquetId || isNaN(bouquetId)) {
-        return res.status(404).send('Букет не найден');
-      }
-      const b = await getBouquetById(req.params.shopId, bouquetId);
-      if (!b) {
-        return res.status(404).send('Букет не найден');
+      if (!shop) return res.status(404).send('Магазин не найден');
+      if (shop.blocked) return res.status(403).send('Магазин заблокирован');
+      if (!isSubscriptionActive(shop)) {
+        return res.status(403).send('Подписка истекла');
       }
       
+      const bouquetId = parseStrictInt(req.params.bouquetId);
+      if (!bouquetId) return res.status(404).send('Букет не найден');
+      
+      const b = await getBouquetById(req.params.shopId, bouquetId);
+      if (!b) return res.status(404).send('Букет не найден');
+      
       const photoRefsList = [];
-      for (const p of b.photos) {
-        const r = getPhotoRefsLocal(p);
-        if (r.primary) photoRefsList.push(r);
+      if (Array.isArray(b.photos)) {
+        for (let i = 0; i < b.photos.length; i++) {
+          const r = getPhotoRefsLocal(b.photos[i]);
+          if (r.primary) photoRefsList.push(r);
+        }
       }
+      
       const mainRef = photoRefsList[0] || null;
       const otherRefs = photoRefsList.slice(1);
       
@@ -804,19 +999,54 @@ function setupStorefront(app, bot, s3ctx) {
 
   app.get('/go/:shopId/:bouquetId/:type', async (req, res) => {
     try {
-      const { shopId, type } = req.params;
-      const bouquetId = parseInt(req.params.bouquetId);
-      if (!bouquetId || isNaN(bouquetId)) {
+      const shopId = req.params.shopId;
+      const type = req.params.type;
+      
+      const validTypes = ['tg', 'wa', 'max', 'call'];
+      if (validTypes.indexOf(type) === -1) {
         return res.status(404).send('Не найдено');
       }
       
+      const bouquetId = parseStrictInt(req.params.bouquetId);
+      if (!bouquetId) return res.status(404).send('Букет не найден');
+      
       const shop = await getShopFromDb(shopId);
-      if (!shop) {
-        return res.status(404).send('Не найдено');
+      if (!shop) return res.status(404).send('Не найдено');
+      if (shop.blocked) return res.status(403).send('Магазин заблокирован');
+      if (!isSubscriptionActive(shop)) {
+        return res.status(403).send('Подписка истекла');
       }
+      
       const b = await getBouquetById(shopId, bouquetId);
-      if (!b) {
-        return res.status(404).send('Букет не найден');
+      if (!b) return res.status(404).send('Букет не найден');
+
+      let redirectUrl = null;
+      let isMessengerPage = false;
+      
+      if (type === 'max') {
+        if (!getSafeMaxLink(shop.maxLink)) {
+          return res.status(404).send('Контакт не настроен');
+        }
+        isMessengerPage = true;
+      } else if (type === 'tg') {
+        if (!getSafeTgUsername(shop.telegramUsername)) {
+          return res.status(404).send('Контакт не настроен');
+        }
+        isMessengerPage = true;
+      } else if (type === 'wa') {
+        const waPhone = shop.whatsappPhone ? 
+          shop.whatsappPhone.replace(/\D/g, '') : '';
+        if (waPhone.length < 10) {
+          return res.status(404).send('Контакт не настроен');
+        }
+        redirectUrl = 'https://wa.me/' + waPhone;
+      } else if (type === 'call') {
+        const cleanPhone = shop.phone ? 
+          shop.phone.replace(/\D/g, '') : '';
+        if (cleanPhone.length < 10) {
+          return res.status(404).send('Контакт не настроен');
+        }
+        redirectUrl = 'tel:' + cleanPhone;
       }
 
       const priceStr = formatPrice(b.price, shop);
@@ -825,86 +1055,76 @@ function setupStorefront(app, bot, s3ctx) {
       const fullOrderText = orderText + orderText2 + b.shopNumber + 
         ' «' + b.name + '» — ' + priceStr + '.';
 
-      const xff = req.headers['x-forwarded-for'] || '';
-      const clientIp = xff.split(',')[0].trim() || req.ip || 'unknown';
-      const clickKey = shopId + ':' + bouquetId + ':' + type + ':' + clientIp;
+      const clientIp = req.ip || 'unknown';
+      const clickKey = shopId + ':' + b.id + ':' + type + ':' + clientIp;
       const now = Date.now();
-      const lastNotified = notifiedClicks[clickKey];
       
-      if (!lastNotified || now - lastNotified > CLICK_NOTIFY_TTL) {
-        notifiedClicks[clickKey] = now;
-        sendClickNotification(shop, b, type, bot);
+      if (notifiedClicks.size >= 1000) {
+        const firstKey = notifiedClicks.keys().next().value;
+        notifiedClicks.delete(firstKey);
       }
 
-      if (type === 'max' && shop.maxLink) {
-        await incrementShopStat(shopId, 'orders');
-        await pool.query(
-          'UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 ' +
-          'WHERE id = $1', [b.id]
-        );
+      const lastNotified = notifiedClicks.get(clickKey);
+      
+      // Защита от потери статистики при ошибке БД
+      if (!lastNotified || now - lastNotified > CLICK_NOTIFY_TTL) {
+        try {
+          if (type === 'max' || type === 'tg' || type === 'wa') {
+            await incrementShopStat(shopId, 'orders');
+          } else if (type === 'call') {
+            await incrementShopStat(shopId, 'calls');
+          }
+          
+          await pool.query(
+            'UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 ' +
+            'WHERE id = $1 AND shop_id = $2', [b.id, shopId]
+          );
+          
+          notifiedClicks.set(clickKey, now);
+          sendClickNotification(shop, b, type, bot);
+        } catch (dbErr) {
+          console.error('Ошибка статистики /go:', dbErr);
+          // Не сохраняем в notifiedClicks, чтобы клиент мог повторить
+        }
+      }
+
+      if (isMessengerPage) {
         return res.send(buildMessengerOrderPage({
-          shop, bouquet: b, orderText: fullOrderText, messenger: 'max'
+          shop, bouquet: b, orderText: fullOrderText, messenger: type
         }));
       }
       
-      if (type === 'tg' && shop.telegramUsername) {
-        await incrementShopStat(shopId, 'orders');
-        await pool.query(
-          'UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 ' +
-          'WHERE id = $1', [b.id]
-        );
-        return res.send(buildMessengerOrderPage({
-          shop, bouquet: b, orderText: fullOrderText, messenger: 'tg'
-        }));
+      if (redirectUrl) {
+        if (type === 'wa') {
+          redirectUrl += '?text=' + encodeURIComponent(fullOrderText);
+        }
+        
+        let redirectHtml = '<!DOCTYPE html><html><head>';
+        redirectHtml += '<meta charset="UTF-8">';
+        redirectHtml += '<meta http-equiv="refresh" content="0; url=';
+        redirectHtml += escAttr(redirectUrl) + '">';
+        redirectHtml += '<title>Переход…</title></head>';
+        redirectHtml += '<body style="font-family:-apple-system,sans-serif;';
+        redirectHtml += 'text-align:center;padding:50px;color:#555;">';
+        redirectHtml += '<p>Переходим к продавцу…</p>';
+        redirectHtml += '<p><a href="' + escAttr(redirectUrl) + '">';
+        redirectHtml += 'Нажмите, если не переходит автоматически</a></p>';
+        redirectHtml += '</body></html>';
+        return res.send(redirectHtml);
       }
       
-      let redirectUrl = null;
-      if (type === 'wa' && shop.whatsappPhone) {
-        const waPhone = shop.whatsappPhone.replace(/\D/g, '');
-        redirectUrl = 'https://wa.me/' + waPhone + 
-          '?text=' + encodeURIComponent(fullOrderText);
-        await incrementShopStat(shopId, 'orders');
-      } else if (type === 'call' && shop.phone) {
-        redirectUrl = 'tel:' + shop.phone.replace(/\D/g, '');
-        await incrementShopStat(shopId, 'calls');
-      }
-      
-      if (!redirectUrl) {
-        return res.status(404).send('Контакт не настроен');
-      }
-      
-      await pool.query(
-        'UPDATE bouquets SET clicks = COALESCE(clicks, 0) + 1 ' +
-        'WHERE id = $1', [b.id]
-      );
-      
-      let redirectHtml = '<!DOCTYPE html>';
-      redirectHtml += '<html><head>';
-      redirectHtml += '<meta charset="UTF-8">';
-      redirectHtml += '<meta http-equiv="refresh" content="0; url=';
-      redirectHtml += redirectUrl + '">';
-      redirectHtml += '<title>Переход…</title></head>';
-      redirectHtml += '<body style="font-family:-apple-system,sans-serif;';
-      redirectHtml += 'text-align:center;padding:50px;color:#555;">';
-      redirectHtml += '<p>Переходим к продавцу…</p>';
-      redirectHtml += '<p><a href="' + redirectUrl + '">';
-      redirectHtml += 'Нажмите, если не переходит автоматически</a></p>';
-      redirectHtml += '</body></html>';
-      res.send(redirectHtml);
+      return res.status(404).send('Ошибка перехода');
     } catch (e) {
       console.error('Ошибка /go:', e?.message || e);
       res.status(500).send('Ошибка');
     }
   });
 
-  // Главная витрина магазина
   app.get('/shop/:shopId', async (req, res) => {
     try {
-      const { isSubscriptionActive } = require('./config');
       const shop = await getShopFromDb(req.params.shopId);
-      if (!shop) {
-        return res.status(404).send('Магазин не найден');
-      }
+      if (!shop) return res.status(404).send('Магазин не найден');
+      
       if (shop.blocked) {
         let h = '<html><body style="font-family:-apple-system,';
         h += 'sans-serif;text-align:center;padding:50px;">';
@@ -913,6 +1133,7 @@ function setupStorefront(app, bot, s3ctx) {
         h += '</body></html>';
         return res.send(h);
       }
+      
       if (!isSubscriptionActive(shop)) {
         let h = '<html><body style="font-family:-apple-system,';
         h += 'sans-serif;text-align:center;padding:50px;">';
@@ -931,7 +1152,7 @@ function setupStorefront(app, bot, s3ctx) {
         'SELECT id, current_stock FROM wh_shop_items WHERE shop_id = $1',
         [shop.shopId]
       );
-      const stockMap = {};
+      const stockMap = Object.create(null);
       shopItems.rows.forEach(function(r) { 
         stockMap[r.id] = parseFloat(r.current_stock) || 0; 
       });
@@ -942,7 +1163,7 @@ function setupStorefront(app, bot, s3ctx) {
         'JOIN wh_shop_items i ON i.id = r.shop_item_id ' +
         'WHERE i.shop_id = $1', [shop.shopId]
       );
-      const recipeMap = {};
+      const recipeMap = Object.create(null);
       recipesQ.rows.forEach(function(r) {
         if (!recipeMap[r.bouquet_id]) recipeMap[r.bouquet_id] = [];
         recipeMap[r.bouquet_id].push(r);
@@ -971,7 +1192,10 @@ function setupStorefront(app, bot, s3ctx) {
         return true;
       });
 
-      const tagCounts = {};
+      // ТОЧНЫЙ ПОДСЧЕТ: берем количество ДО фильтрации по цене/тегам
+      const totalActiveCount = active.length;
+      
+      const tagCounts = Object.create(null);
       for (const b of active) {
         for (const t of (b.tags || [])) {
           tagCounts[t] = (tagCounts[t] || 0) + 1;
@@ -982,41 +1206,45 @@ function setupStorefront(app, bot, s3ctx) {
       const ranges = getPriceRanges(shop);
       
       if (priceFilter === 'low') {
-        active = active.filter(b => b.price < ranges[0]);
+        active = active.filter(function(b) { return b.price < ranges[0]; });
       } else if (priceFilter === 'mid') {
-        active = active.filter(
-          b => b.price >= ranges[0] && b.price <= ranges[1]
-        );
+        active = active.filter(function(b) {
+          return b.price >= ranges[0] && b.price <= ranges[1];
+        });
       } else if (priceFilter === 'mid2') {
-        active = active.filter(
-          b => b.price > ranges[1] && b.price <= ranges[2]
-        );
+        active = active.filter(function(b) {
+          return b.price > ranges[1] && b.price <= ranges[2];
+        });
       } else if (priceFilter === 'high1') {
-        active = active.filter(
-          b => b.price > ranges[2] && b.price <= ranges[3]
-        );
+        active = active.filter(function(b) {
+          return b.price > ranges[2] && b.price <= ranges[3];
+        });
       } else if (priceFilter === 'high2') {
-        active = active.filter(b => b.price > ranges[3]);
+        active = active.filter(function(b) { return b.price > ranges[3]; });
       }
       
       if (tagFilter !== 'all') {
-        active = active.filter(b => (b.tags || []).includes(tagFilter));
+        active = active.filter(function(b) {
+          return (b.tags || []).includes(tagFilter);
+        });
       }
 
       if (sortParam === 'asc') {
-        active.sort((a, b) => a.price - b.price);
+        active.sort(function(a, b) { return a.price - b.price; });
       } else if (sortParam === 'desc') {
-        active.sort((a, b) => b.price - a.price);
+        active.sort(function(a, b) { return b.price - a.price; });
       } else if (sortParam === 'fresh') {
-        active.sort((a, b) => {
+        active.sort(function(a, b) {
           const da = new Date(a.confirmedAt || a.createdAt);
           const db = new Date(b.confirmedAt || b.createdAt);
           return db - da;
         });
       } else if (sortParam === 'popular') {
-        active.sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
+        active.sort(function(a, b) {
+          return (b.clicks || 0) - (a.clicks || 0);
+        });
       } else {
-        active.sort((a, b) => {
+        active.sort(function(a, b) {
           if (a.isPinned && !b.isPinned) return -1;
           if (!a.isPinned && b.isPinned) return 1;
           const da = new Date(b.confirmedAt || b.createdAt);
@@ -1025,7 +1253,7 @@ function setupStorefront(app, bot, s3ctx) {
         });
       }
 
-      const buildUrl = (newPrice, newSort, newTag) => {
+      const buildUrl = function(newPrice, newSort, newTag) {
         const p = (newPrice !== undefined && newPrice !== null) 
           ? newPrice : priceFilter;
         const s = (newSort !== undefined && newSort !== null) 
@@ -1038,8 +1266,8 @@ function setupStorefront(app, bot, s3ctx) {
         if (t && t !== 'all') {
           parts.push('tag=' + encodeURIComponent(t));
         }
-        return '/shop/' + shop.shopId + 
-          (parts.length ? '?' + parts.join('&') : '');
+        return escAttr('/shop/' + shop.shopId + 
+          (parts.length ? '?' + parts.join('&') : ''));
       };
 
       const pillBase = 'display:inline-block;padding:8px 16px;';
@@ -1057,7 +1285,7 @@ function setupStorefront(app, bot, s3ctx) {
       const pillActive = 'background:' + btnColors.color + ';color:#fff;';
       const pillIdle = 'background:#f0f0f0;color:#555;';
 
-      const pill = (label, filterValue) => {
+      const pill = function(label, filterValue) {
         const isActive = priceFilter === filterValue;
         const style = pillCommon + (isActive ? pillActive : pillIdle);
         const href = buildUrl(filterValue, null, null);
@@ -1066,7 +1294,7 @@ function setupStorefront(app, bot, s3ctx) {
       };
 
       const sortActive = 'background:' + btnColors.color + ';color:#fff;';
-      const sortPill = (label, sortValue) => {
+      const sortPill = function(label, sortValue) {
         const isActive = sortParam === sortValue;
         const style = sortCommon + (isActive ? sortActive : pillIdle);
         const href = buildUrl(null, sortValue, null);
@@ -1076,7 +1304,7 @@ function setupStorefront(app, bot, s3ctx) {
 
       let tagPillsHTML = '';
       const sortedTags = Object.entries(tagCounts)
-        .sort((a, b) => b[1] - a[1]);
+        .sort(function(a, b) { return b[1] - a[1]; });
       
       if (sortedTags.length > 0) {
         const tagBase = 'display:inline-block;padding:6px 12px;';
@@ -1101,18 +1329,18 @@ function setupStorefront(app, bot, s3ctx) {
           tagsHTML + '</div>';
       }
 
-      const pricesAll = activeBeforePrice.map(b => b.price);
-      const hasLow = pricesAll.some(p => p < ranges[0]);
-      const hasMid = pricesAll.some(
-        p => p >= ranges[0] && p <= ranges[1]
-      );
-      const hasMid2 = pricesAll.some(
-        p => p > ranges[1] && p <= ranges[2]
-      );
-      const hasHigh1 = pricesAll.some(
-        p => p > ranges[2] && p <= ranges[3]
-      );
-      const hasHigh2 = pricesAll.some(p => p > ranges[3]);
+      const pricesAll = activeBeforePrice.map(function(b) { return b.price; });
+      const hasLow = pricesAll.some(function(p) { return p < ranges[0]; });
+      const hasMid = pricesAll.some(function(p) {
+        return p >= ranges[0] && p <= ranges[1];
+      });
+      const hasMid2 = pricesAll.some(function(p) {
+        return p > ranges[1] && p <= ranges[2];
+      });
+      const hasHigh1 = pricesAll.some(function(p) {
+        return p > ranges[2] && p <= ranges[3];
+      });
+      const hasHigh2 = pricesAll.some(function(p) { return p > ranges[3]; });
       
       let filtersHTML = tagPillsHTML;
       filtersHTML += '<div style="margin:10px 0 6px;">';
@@ -1153,7 +1381,8 @@ function setupStorefront(app, bot, s3ctx) {
       const cardExtra = useTwoColumns
         ? 'width:100%;box-sizing:border-box;min-width:0;'
         : 'max-width:320px;';
-        let cards = '';
+        
+      let cards = '';
       if (active.length === 0) {
         cards = '<div style="text-align:center;padding:50px;';
         cards += 'font-size:20px;color:#888;grid-column:1/-1;">';
@@ -1161,9 +1390,11 @@ function setupStorefront(app, bot, s3ctx) {
       } else {
         for (const b of active) {
           const photoRefsList = [];
-          for (const p of b.photos) {
-            const r = getPhotoRefsLocal(p);
-            if (r.primary) photoRefsList.push(r);
+          if (Array.isArray(b.photos)) {
+            for (const p of b.photos) {
+              const r = getPhotoRefsLocal(p);
+              if (r.primary) photoRefsList.push(r);
+            }
           }
           
           let gallery = '';
@@ -1218,7 +1449,7 @@ function setupStorefront(app, bot, s3ctx) {
           }
 
           const oldPrice = calculateOldPrice(
-            b.price, shop.settings.markupPercent
+            b.price, shop.settings ? shop.settings.markupPercent : 0
           );
           const bouquetUrl = SITE_URL + '/shop/' + 
             shop.shopId + '/b/' + b.id;
@@ -1226,6 +1457,7 @@ function setupStorefront(app, bot, s3ctx) {
           
           const urlEsc = escAttr(bouquetUrl);
           const nameEsc = escAttr(b.name);
+          const contactUrlEsc = escAttr(contactUrl);
           
           const titleFS = useTwoColumns ? '14px' : '17px';
           const priceFS = useTwoColumns ? '20px' : '26px';
@@ -1286,39 +1518,46 @@ function setupStorefront(app, bot, s3ctx) {
           card += confirmedHTML;
           card += preorderBadge;
           card += '<div style="margin-top:auto;padding-top:8px;">';
-          card += '<a href="' + contactUrl + '" style="display:block;';
+          card += '<a href="' + contactUrlEsc + '" style="display:block;';
           card += 'margin:8px auto 0;background:' + btnGrad + ';';
           card += 'color:#fff;padding:12px 16px;border-radius:24px;';
           card += 'text-decoration:none;font-weight:700;';
           card += 'text-align:center;font-size:14px;';
           card += 'box-shadow:' + btnShadow + ';">📞 Связаться</a>';
           card += '<div style="margin-top:6px;">';
-          card += '<a href="#" onclick="shareBouquet(event, &quot;' + 
-            urlEsc + '&quot;, &quot;' + nameEsc + '&quot;, ' + 
-            b.price + '); return false;" style="';
-          card += 'display:inline-block;color:#999;font-size:11px;';
+          
+          // Защита от NaN и Infinity
+          const safePrice = Number(b.price) || 0;
+          
+          card += '<a href="#" class="share-btn" ';
+          card += 'data-url="' + urlEsc + '" ';
+          card += 'data-name="' + nameEsc + '" ';
+          card += 'data-price="' + safePrice + '" ';
+          card += 'style="display:inline-block;color:#999;font-size:11px;';
           card += 'text-decoration:none;padding:5px 10px;';
           card += 'border-radius:14px;background:#f7f3ee;">';
           card += '📤 Поделиться</a>';
+          
           card += '</div></div></div></div>';
           cards += card;
         }
       }
       
-      // ИСПРАВЛЕНИЕ: Используем локальную логику
+      const settings = shop.settings || {};
+      
       let coverUrl = null;
-      if (shop.settings.cover) {
-        const coverRefs = getPhotoRefsLocal(shop.settings.cover);
+      if (settings.cover) {
+        const coverRefs = getPhotoRefsLocal(settings.cover);
         coverUrl = absoluteUrl(coverRefs.primary);
       }
       
       let logoUrl = null;
-      if (shop.settings.logo) {
-        const logoRefs = getPhotoRefsLocal(shop.settings.logo);
+      if (settings.logo) {
+        const logoRefs = getPhotoRefsLocal(settings.logo);
         logoUrl = absoluteUrl(logoRefs.primary);
       }
       
-      const bodyBg = getBackgroundStyle(shop.settings.background);
+      const bodyBg = getBackgroundStyle(settings.background);
 
       let coverHTML = '';
       if (coverUrl) {
@@ -1358,7 +1597,6 @@ function setupStorefront(app, bot, s3ctx) {
           'style="max-height:80px;display:block;margin:0 auto 12px;">'
         : '';
         
-      const totalActiveCount = all.filter(isConfirmedRecently).length;
       const cntWord = plural(
         totalActiveCount, 'букет', 'букета', 'букетов'
       );
@@ -1437,9 +1675,8 @@ function setupStorefront(app, bot, s3ctx) {
       html += '<script>\n';
       html += 'var lbImages = []; var lbIndex = 0; ';
       html += 'var touchStartX = 0; var touchStartY = 0;\n';
-      html += 'function shareBouquet(e, url, name, price) {\n';
-      html += '  if (e) { e.preventDefault(); }\n';
-      html += '  var text = name + " — " + price + " ₽";\n';
+      html += 'function shareBouquet(url, name, price) {\n';
+      html += '  var text = name + " — " + price;\n';
       html += '  if (navigator.share) {\n';
       html += '    navigator.share({ title: name, text: text, url: url })';
       html += '.catch(function(){});\n';
@@ -1450,6 +1687,17 @@ function setupStorefront(app, bot, s3ctx) {
       html += 'prompt("Скопируйте ссылку:", url); });\n';
       html += '  } else { prompt("Скопируйте ссылку:", url); }\n';
       html += '}\n';
+      
+      html += 'document.addEventListener("click", function(e) {\n';
+      html += '  var btn = e.target.closest(".share-btn");\n';
+      html += '  if (!btn) return;\n';
+      html += '  e.preventDefault();\n';
+      html += '  var url = btn.getAttribute("data-url");\n';
+      html += '  var name = btn.getAttribute("data-name");\n';
+      html += '  var price = btn.getAttribute("data-price");\n';
+      html += '  shareBouquet(url, name, price);\n';
+      html += '});\n';
+
       html += 'function openLightbox(images, index) {\n';
       html += '  lbImages = images; lbIndex = index;\n';
       html += '  var lb = document.getElementById("lightbox");\n';
@@ -1509,20 +1757,23 @@ function setupStorefront(app, bot, s3ctx) {
       html += '  if (Math.abs(dx) < Math.abs(dy)) return;\n';
       html += '  if (dx < 0) lbNext(); else lbPrev();\n';
       html += '}, { passive: true });\n';
-      html += 'document.querySelectorAll(".card-gallery-wrap")';
-      html += '.forEach(function(wrap) {\n';
-      html += '  var gal = wrap.querySelector(".card-gallery");\n';
-      html += '  var dots = wrap.querySelectorAll(".card-dots span");\n';
-      html += '  if (!gal || !dots || !dots.length) return;\n';
-      html += '  gal.addEventListener("scroll", function() {\n';
-      html += '    var w = gal.clientWidth; if (!w) return;\n';
-      html += '    var i = Math.round(gal.scrollLeft / w);\n';
-      html += '    dots.forEach(function(d, j) {\n';
-      html += '      d.style.background = j === i ? ';
+      html += 'var galWraps = document.querySelectorAll(".card-gallery-wrap");\n';
+      html += 'for (var gw = 0; gw < galWraps.length; gw++) {\n';
+      html += '  (function(wrap) {\n';
+      html += '    var gal = wrap.querySelector(".card-gallery");\n';
+      html += '    var dots = wrap.querySelectorAll(".card-dots span");\n';
+      html += '    if (!gal || !dots || !dots.length) return;\n';
+      html += '    gal.addEventListener("scroll", function() {\n';
+      html += '      var w = gal.clientWidth; if (!w) return;\n';
+      html += '      var i = Math.round(gal.scrollLeft / w);\n';
+      html += '      for (var j = 0; j < dots.length; j++) {\n';
+      html += '        dots[j].style.background = j === i ? ';
       html += '"rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)";\n';
-      html += '    });\n';
-      html += '  }, { passive: true });\n';
-      html += '});\n';
+      html += '      }\n';
+      html += '    }, { passive: true });\n';
+      html += '  })(galWraps[gw]);\n';
+      html += '}\n';
+      
       html += 'if ("IntersectionObserver" in window) {\n';
       html += '  var obs = new IntersectionObserver(function(entries){\n';
       html += '    entries.forEach(function(en){\n';
@@ -1532,11 +1783,15 @@ function setupStorefront(app, bot, s3ctx) {
       html += '      }\n';
       html += '    });\n';
       html += '  }, { threshold: 0.1 });\n';
-      html += '  document.querySelectorAll(".card")';
-      html += '.forEach(function(c){ obs.observe(c); });\n';
+      html += '  var allCards = document.querySelectorAll(".card");\n';
+      html += '  for (var c = 0; c < allCards.length; c++) {\n';
+      html += '    obs.observe(allCards[c]);\n';
+      html += '  }\n';
       html += '} else {\n';
-      html += '  document.querySelectorAll(".card")';
-      html += '.forEach(function(c){ c.classList.add("visible"); });\n';
+      html += '  var allCards2 = document.querySelectorAll(".card");\n';
+      html += '  for (var c2 = 0; c2 < allCards2.length; c2++) {\n';
+      html += '    allCards2[c2].classList.add("visible");\n';
+      html += '  }\n';
       html += '}\n';
       html += '</script></body></html>';
       
