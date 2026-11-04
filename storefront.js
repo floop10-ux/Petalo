@@ -18,7 +18,7 @@ const {
 const TWO_COLUMNS_THRESHOLD = 12;
 const CLICK_NOTIFY_TTL = 10 * 60 * 1000;
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024;
-const PHOTO_TIMEOUT = 12000;
+const PHOTO_TIMEOUT = 10000;
 
 const notifiedClicks = new Map();
 let cleanupStarted = false;
@@ -98,7 +98,11 @@ function getSafePhone(value) {
   return String(value).replace(/\D/g, '').slice(0, 20);
 }
 
-// ИСПРАВЛЕНО: Запрет протокол-относительных URL (//site.com)
+// ИСПРАВЛЕНО аудитором: Единая проверка длины телефона
+function isValidPhoneLength(phoneStr) {
+  return phoneStr.length >= 10 && phoneStr.length <= 15;
+}
+
 function getSafeCssUrl(value) {
   if (typeof value !== 'string') return '';
   const url = value.trim();
@@ -428,7 +432,6 @@ function buildPhotoFallbackScript() {
   return html;
 }
 
-// ИСПРАВЛЕНО: экранирование shopNumber через esc()
 function buildBouquetPage(data) {
   const shop = data.shop;
   const bouquet = data.bouquet;
@@ -494,7 +497,7 @@ function buildBouquetPage(data) {
   const btnBase = 'display:block;margin-top:8px;color:#fff;padding:14px 20px;border-radius:30px;text-decoration:none;font-weight:700;text-align:center;font-size:16px;';
   
   let buttonsHtml = '';
-  if (waPhone.length >= 10) {
+  if (isValidPhoneLength(waPhone)) {
     buttonsHtml += '<a href="/go/' + escAttr(shop.shopId) + '/' + bouquet.id + '/wa" style="' + btnBase + 'background:#25D366;">💬 Написать в WhatsApp</a>';
   }
   if (getSafeTgUsername(shop.telegramUsername)) {
@@ -503,7 +506,7 @@ function buildBouquetPage(data) {
   if (getSafeMaxLink(shop.maxLink)) {
     buttonsHtml += '<a href="/go/' + escAttr(shop.shopId) + '/' + bouquet.id + '/max" style="' + btnBase + 'background:#7B68EE;">🟼 Написать в MAX</a>';
   }
-  if (cleanPhone.length >= 10) {
+  if (isValidPhoneLength(cleanPhone)) {
     buttonsHtml += '<a href="/go/' + escAttr(shop.shopId) + '/' + bouquet.id + '/call" style="' + btnBase + 'background:' + btnColors.color + ';">📞 Позвонить</a>';
   }
 
@@ -518,7 +521,7 @@ function buildBouquetPage(data) {
 
   html += '<script>';
   html += 'function shareBouquet() {';
-  html += 'var url = ' + safeJson(SITE_URL + '/shop/' + escAttr(shop.shopId) + '/b/' + bouquet.id) + ';';
+  html += 'var url = ' + safeJson(SITE_URL + '/shop/' + shop.shopId + '/b/' + bouquet.id) + ';';
   html += 'var name = ' + safeJson(bouquet.name) + ';';
   html += 'var price = ' + safeJson(formatPrice(bouquet.price, shop)) + ';';
   html += 'var text = name + " — " + price;';
@@ -585,7 +588,7 @@ function buildContactPage(data) {
   const cleanPhone = getSafePhone(shop.phone);
   let contactsHtml = '';
 
-  if (waPhone.length >= 10) {
+  if (isValidPhoneLength(waPhone)) {
     contactsHtml += '<a href="/go/' + escAttr(shop.shopId) + '/' + bouquet.id + '/wa" style="' + btnBase + 'background:#25D366;">💬 WhatsApp</a>';
   }
   if (getSafeTgUsername(shop.telegramUsername)) {
@@ -594,7 +597,7 @@ function buildContactPage(data) {
   if (getSafeMaxLink(shop.maxLink)) {
     contactsHtml += '<a href="/go/' + escAttr(shop.shopId) + '/' + bouquet.id + '/max" style="' + btnBase + 'background:#7B68EE;">🟼 MAX</a>';
   }
-  if (cleanPhone.length >= 10) {
+  if (isValidPhoneLength(cleanPhone)) {
     contactsHtml += '<a href="/go/' + escAttr(shop.shopId) + '/' + bouquet.id + '/call" style="' + btnBase + 'background:' + btnColors.color + ';">📞 Позвонить</a>';
   }
 
@@ -691,38 +694,33 @@ function buildMessengerOrderPage(data) {
   return html;
 }
 
-// ИСПРАВЛЕНО: Уведомления только для тех, кто на смене, или для владельца
+// ИСПРАВЛЕНО: Уведомления только на смене, либо владельцу (без дублей)
 async function sendClickNotification(shop, bouquet, type, bot) {
   if (!bot || !shop || !bouquet) return;
 
   try {
-    const recipients = [];
+    let recipients = [];
+    const onShift = (shop.admins || []).filter(function(a) { 
+      return a.onShift; 
+    });
     
-    // 1. Ищем тех, кто на смене
-    if (Array.isArray(shop.admins)) {
-      for (const admin of shop.admins) {
-        if (admin.onShift && admin.chatId) {
-          recipients.push(String(admin.chatId));
-        }
-      }
+    if (onShift.length > 0) {
+      recipients = onShift.map(function(a) { 
+        return String(a.chatId); 
+      });
+    } else {
+      const owner = (shop.admins || []).find(function(a) { 
+        return a.role === 'owner'; 
+      });
+      if (owner) recipients.push(String(owner.chatId));
     }
-    
-    // 2. Если никого нет на смене — шлем владельцу
-    if (recipients.length === 0 && Array.isArray(shop.admins)) {
-      for (const admin of shop.admins) {
-        if (admin.role === 'owner' && admin.chatId) {
-          recipients.push(String(admin.chatId));
-          break;
-        }
-      }
-    }
-
-    if (shop.ownerChatId) recipients.push(String(shop.ownerChatId));
 
     const unique = Array.from(new Set(recipients));
     if (!unique.length) return;
 
-    const labels = { tg: 'Telegram', wa: 'WhatsApp', max: 'MAX', call: 'звонок' };
+    const labels = { 
+      tg: 'Telegram', wa: 'WhatsApp', max: 'MAX', call: 'звонок' 
+    };
     const label = labels[type] || 'контакт';
     const priceStr = formatPrice(bouquet.price, shop);
 
@@ -769,53 +767,46 @@ async function readLimitedStream(stream, maxSize) {
   return Buffer.concat(chunks, total);
 }
 
-// ИСПРАВЛЕНО: Тайм-аут для запроса к S3
-function withTimeout(promise, ms, errorMsg) {
-  let timer;
-  const timeoutPromise = new Promise(function(resolve, reject) {
-    timer = setTimeout(function() {
-      reject(new Error(errorMsg));
-    }, ms);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(function() {
-    clearTimeout(timer);
-  });
-}
-
+// ИСПРАВЛЕНО: Используем AbortController для реального обрыва зависших запросов
 async function readS3Photo(client, bucket, key) {
-  if (!client || !bucket) {
-    throw new Error('S3_NOT_CONFIGURED');
+  if (!client || !bucket) throw new Error('S3_NOT_CONFIGURED');
+
+  const controller = new AbortController();
+  const timer = setTimeout(function() {
+    controller.abort();
+  }, PHOTO_TIMEOUT);
+
+  try {
+    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+    const result = await client.send(command, { 
+      abortSignal: controller.signal 
+    });
+
+    if (!result || !result.Body) throw new Error('PHOTO_NOT_FOUND');
+
+    if (result.ContentLength !== undefined && 
+        result.ContentLength > MAX_PHOTO_SIZE) {
+      if (result.Body.destroy) result.Body.destroy();
+      throw new Error('PHOTO_TOO_LARGE');
+    }
+
+    if (!isAllowedImageType(result.ContentType)) {
+      if (result.Body.destroy) result.Body.destroy();
+      throw new Error('PHOTO_TYPE_NOT_ALLOWED');
+    }
+
+    const body = await readLimitedStream(result.Body, MAX_PHOTO_SIZE);
+
+    return {
+      body: body,
+      contentType: result.ContentType.split(';')[0].trim()
+    };
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('S3_TIMEOUT');
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-
-  const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-  
-  // Обертка в тайм-аут 10 секунд
-  const result = await withTimeout(
-    client.send(command), 
-    PHOTO_TIMEOUT, 
-    'S3_TIMEOUT'
-  );
-
-  if (!result || !result.Body) {
-    throw new Error('PHOTO_NOT_FOUND');
-  }
-
-  if (result.ContentLength !== undefined && result.ContentLength > MAX_PHOTO_SIZE) {
-    if (result.Body.destroy) result.Body.destroy();
-    throw new Error('PHOTO_TOO_LARGE');
-  }
-
-  if (!isAllowedImageType(result.ContentType)) {
-    if (result.Body.destroy) result.Body.destroy();
-    throw new Error('PHOTO_TYPE_NOT_ALLOWED');
-  }
-
-  const body = await readLimitedStream(result.Body, MAX_PHOTO_SIZE);
-
-  return {
-    body: body,
-    contentType: result.ContentType.split(';')[0].trim()
-  };
 }
 
 function sendPhotoBuffer(res, photo) {
@@ -845,21 +836,23 @@ function makeClickKey(shopId, bouquetId, type, ip) {
   return [String(shopId), String(bouquetId), String(type), String(ip)].join(':');
 }
 
-// ИСПРАВЛЕНО: Защита Map от переполнения
-function shouldCountClick(key) {
+// ИСПРАВЛЕНО: Разделили проверку и запись в память
+function canCountClick(key) {
   const now = Date.now();
-  
-  if (notifiedClicks.size > 2000) {
-    const firstKey = notifiedClicks.keys().next().value;
-    notifiedClicks.delete(firstKey);
-  }
-
   const previous = notifiedClicks.get(key);
   if (previous && now - previous < CLICK_NOTIFY_TTL) {
     return false;
   }
-  notifiedClicks.set(key, now);
   return true;
+}
+
+function markClickCounted(key) {
+  const now = Date.now();
+  if (notifiedClicks.size > 2000) {
+    const firstKey = notifiedClicks.keys().next().value;
+    notifiedClicks.delete(firstKey);
+  }
+  notifiedClicks.set(key, now);
 }
 
 function getShopBlocked(shop) {
@@ -904,22 +897,24 @@ function setPageHeaders(res) {
   res.setHeader('Cache-Control', 'no-store');
 }
 
-// ИСПРАВЛЕНО: Единая функция проверки доступности букета
+// ИСПРАВЛЕНО: Запрет отображения закрепленного букета без остатков. Проверка пустого рецепта.
 function isBouquetPubliclyAvailable(b, stockMap, recipeMap) {
   if (!b) return false;
   if (b.deleted || b.hidden || b.archived) return false;
   
-  // Предзаказные и закрепленные показываем всегда (пока не скрыты)
-  if (b.preorderOnly || b.isPinned) return true;
+  if (b.preorderOnly) return true; 
   
-  // Обычные требуют свежего подтверждения
-  if (!isConfirmedRecently(b)) return false;
+  if (!b.isPinned && !isConfirmedRecently(b)) return false;
   
-  // Проверка склада
   if (b.whLinked) {
     const rList = recipeMap[b.id] || [];
+    
+    if (rList.length === 0) return false;
+    
     for (let i = 0; i < rList.length; i++) {
       const it = rList[i];
+      if (it.qty === undefined || it.qty === null) return false;
+      
       let totalStock = stockMap[it.shop_item_id] || 0;
       
       if (it.alternatives && it.alternatives.length > 0) {
@@ -927,7 +922,9 @@ function isBouquetPubliclyAvailable(b, stockMap, recipeMap) {
           return typeof a === 'object' ? a.shop_item_id : a;
         });
         altIds.forEach(function(id) {
-          totalStock += stockMap[id] || 0;
+          if (stockMap[id] !== undefined) {
+            totalStock += stockMap[id];
+          }
         });
       }
       
@@ -1028,16 +1025,18 @@ function setupStorefront(app, bot, s3ctx) {
     }
 
     let fileInfo;
+    let tgTimer = setTimeout(function() {
+      if (!res.headersSent) sendPhotoError(res, 504);
+    }, PHOTO_TIMEOUT);
+
     try {
-      // Тайм-аут для запроса к Telegram API
-      fileInfo = await withTimeout(
-        bot.getFile(fileId), 
-        PHOTO_TIMEOUT, 
-        'TG_TIMEOUT'
-      );
+      fileInfo = await bot.getFile(fileId);
     } catch (e) {
+      clearTimeout(tgTimer);
       return sendPhotoError(res, 404);
     }
+    
+    clearTimeout(tgTimer);
 
     const filePath = fileInfo && fileInfo.file_path;
 
@@ -1134,13 +1133,11 @@ function setupStorefront(app, bot, s3ctx) {
     });
   });
 
-  // Вспомогательная функция для проверки одного букета
   async function checkSingleBouquetAvailability(shopId, b) {
     if (!b) return false;
     if (b.deleted || b.hidden || b.archived) return false;
-    if (b.preorderOnly || b.isPinned) return true;
-    if (!isConfirmedRecently(b)) return false;
-    
+    if (b.preorderOnly) return true;
+    if (!b.isPinned && !isConfirmedRecently(b)) return false;
     if (!b.whLinked) return true;
 
     const shopItems = await pool.query(
@@ -1267,7 +1264,9 @@ function setupStorefront(app, bot, s3ctx) {
       const bouquet = await getBouquetById(shop.shopId, bouquetId);
       if (!bouquet) return sendNotFound(res);
 
-      const isAvailable = await checkSingleBouquetAvailability(shop.shopId, bouquet);
+      const isAvailable = await checkSingleBouquetAvailability(
+        shop.shopId, bouquet
+      );
       if (!isAvailable) return sendNotFound(res);
 
       let target = '';
@@ -1284,13 +1283,13 @@ function setupStorefront(app, bot, s3ctx) {
         isMessengerPage = true;
       } else if (type === 'wa') {
         const phone = getSafePhone(shop.whatsappPhone);
-        if (phone.length < 10 || phone.length > 15) {
+        if (!isValidPhoneLength(phone)) {
           return sendNotFound(res);
         }
         target = 'https://wa.me/' + phone;
       } else if (type === 'call') {
         const phone = getSafePhone(shop.phone);
-        if (phone.length < 10 || phone.length > 15) {
+        if (!isValidPhoneLength(phone)) {
           return sendNotFound(res);
         }
         target = 'tel:+' + phone;
@@ -1304,8 +1303,10 @@ function setupStorefront(app, bot, s3ctx) {
       const ip = getRequestIp(req);
       const clickKey = makeClickKey(shop.shopId, bouquet.id, type, ip);
 
-      if (shouldCountClick(clickKey)) {
+      // ИСПРАВЛЕНО: Сначала транзакция, потом запись в Map
+      if (canCountClick(clickKey)) {
         const client = await pool.connect();
+        let success = false;
         try {
           await client.query('BEGIN');
           
@@ -1324,12 +1325,17 @@ function setupStorefront(app, bot, s3ctx) {
           );
           
           await client.query('COMMIT');
-          
-          sendClickNotification(shop, bouquet, type, bot).catch(function(){});
+          success = true;
         } catch (e) {
           await client.query('ROLLBACK');
         } finally {
           client.release();
+        }
+
+        if (success) {
+          markClickCounted(clickKey);
+          sendClickNotification(shop, bouquet, type, bot)
+            .catch(function(){});
         }
       }
 
@@ -1379,6 +1385,7 @@ function setupStorefront(app, bot, s3ctx) {
 
       const all = await getBouquetsFromDb(shop.shopId);
       
+      // Без N+1: один запрос на все остатки и один на все рецепты
       const shopItems = await pool.query(
         'SELECT id, current_stock FROM wh_shop_items WHERE shop_id = $1',
         [shop.shopId]
@@ -1400,7 +1407,6 @@ function setupStorefront(app, bot, s3ctx) {
         recipeMap[r.bouquet_id].push(r);
       });
 
-      // Единая проверка доступности (остатки + предзаказ + закрепление)
       let active = all.filter(function(b) {
         return isBouquetPubliclyAvailable(b, stockMap, recipeMap);
       });
@@ -1415,7 +1421,7 @@ function setupStorefront(app, bot, s3ctx) {
       }
 
       const ranges = getPriceRanges(shop);
-      const activeBeforePrice = [...active]; // Сохраняем для фильтров
+      const activeBeforePrice = [...active]; 
       
       if (priceFilter === 'low') {
         active = active.filter(function(b) { return b.price < ranges[0]; });
@@ -1594,7 +1600,7 @@ function setupStorefront(app, bot, s3ctx) {
         html += '</div>';
       }
 
-      // ВОССТАНОВЛЕННЫЕ ФИЛЬТРЫ ЦЕН
+      // Восстановленные фильтры цен
       let filtersHTML = '<div style="margin:10px 0 6px;">';
       filtersHTML += '<a href="' + buildUrl('all', null, null) + '" ';
       filtersHTML += 'style="' + pillCommon;
