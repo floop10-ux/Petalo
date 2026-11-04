@@ -18,7 +18,7 @@ async function getOwnerOnboardingState(shopId) {
 }
 
 async function setOwnerOnboardingStep(shopId, step) {
-  var stepObj = { onboardingStep: step };
+  const stepObj = { onboardingStep: step };
   await pool.query(
     'UPDATE shops SET settings = ' +
     'COALESCE(settings, \'{}\'::jsonb) || $1::jsonb ' +
@@ -28,7 +28,7 @@ async function setOwnerOnboardingStep(shopId, step) {
 }
 
 async function setOwnerOnboardingPassed(shopId) {
-  var passedObj = { onboardingPassed: true };
+  const passedObj = { onboardingPassed: true };
   await pool.query(
     'UPDATE shops SET settings = ' +
     'COALESCE(settings, \'{}\'::jsonb) || $1::jsonb ' +
@@ -467,9 +467,9 @@ async function addBouquetToDb(shopId, bouquet) {
       photos, confirmed_at, is_pinned, chat_id, clicks,
       tags, wh_linked, lifetime_type, preorder_only
     )
-    SELECT $1, COALESCE(MAX(shop_number), 0) + 1, $3, $4, $5,
-      $6, $7, $8, $9, $10, $11, $12, $13, $14
-    FROM bouquets WHERE shop_id = $1
+    SELECT $1::varchar, COALESCE(MAX(shop_number), 0) + 1, $3, $4, $5,
+      $6::jsonb, $7, $8, $9, $10, $11::jsonb, $12, $13, $14
+    FROM bouquets WHERE shop_id = $1::varchar
     RETURNING id, shop_number
   `, [
     shopId, null, bouquet.name, bouquet.price,
