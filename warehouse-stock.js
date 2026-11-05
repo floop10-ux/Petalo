@@ -51,6 +51,56 @@ function parseStrictInt(val) {
   return Number.isSafeInteger(num) ? num : null;
 }
 
+// P2-2: Backtracking для проверки, можно ли собрать букет.
+// Перебираем сколько единиц взять из каждого товара (основной +
+// альтернативы). Защита от взрыва комбинаций счетчиком.
+function canAssembleBouquet(ingredients, initialStock) {
+  var stock = Object.assign({}, initialStock);
+  var iterCount = 0;
+  var MAX_ITER = 100000;
+  
+  function distribute(pool, pIdx, need, idx) {
+    iterCount++;
+    if (iterCount > MAX_ITER) return false;
+    
+    if (need <= 0) {
+      return assign(idx + 1);
+    }
+    if (pIdx >= pool.length) return false;
+    
+    var cid = pool[pIdx];
+    var have = Math.max(0, stock[cid] || 0);
+    var maxTake = Math.min(need, have);
+    
+    for (var take = maxTake; take >= 0; take--) {
+      if (take > 0) stock[cid] = stock[cid] - take;
+      if (distribute(pool, pIdx + 1, need - take, idx)) {
+        if (take > 0) stock[cid] = stock[cid] + take;
+        return true;
+      }
+      if (take > 0) stock[cid] = stock[cid] + take;
+    }
+    return false;
+  }
+  
+  function assign(idx) {
+    iterCount++;
+    if (iterCount > MAX_ITER) return false;
+    if (idx >= ingredients.length) return true;
+    
+    var ing = ingredients[idx];
+    var pool = [ing.shop_item_id];
+    for (var a = 0; a < ing.alternatives.length; a++) {
+      var altId = ing.alternatives[a];
+      if (pool.indexOf(altId) === -1) pool.push(altId);
+    }
+    
+    return distribute(pool, 0, ing.qty, idx);
+  }
+  
+  return assign(0);
+}
+
 function setupWarehouseStock(app, bot, s3ctx, getAuth) {
   pool.query(
     'ALTER TABLE wh_shop_items ADD COLUMN ' +
@@ -82,12 +132,20 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
     'idx_wh_shop_items_shop_item ON wh_shop_items(shop_id, item_id)'
   ).catch(function(e) { console.error('Migration idx_shop_item:', e); });
 
-  // P2.7: Индекс для защиты от гонки shop_number
   pool.query(
     'CREATE UNIQUE INDEX IF NOT EXISTS ' +
     'idx_bouquets_shop_number ON bouquets(shop_id, shop_number)'
   ).catch(function(e) { 
     console.error('Migration idx_shop_number:', e.message); 
+  });
+
+  // P2-1: Уникальность каталога товаров (name, unit, COALESCE(cat,0))
+  pool.query(
+    'CREATE UNIQUE INDEX IF NOT EXISTS ' +
+    'idx_wh_items_name_unit_cat ON wh_items(' +
+    'name, unit, COALESCE(category_id, 0))'
+  ).catch(function(e) { 
+    console.error('Migration idx_items_name_unit:', e.message); 
   });
 
   app.get('/api/warehouse/categories', async function(req, res) {
@@ -804,23 +862,38 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
         return res.json({ ok: false, error: 'Неверный URL фото' });
       }
 
-      // P2.2: Поиск по (name, unit, category_id)
-      const itemRes = await client.query(
-        'SELECT id FROM wh_items WHERE name = $1 AND unit = $2 ' +
-        'AND category_id IS NOT DISTINCT FROM $3',
-        [name, unit, catId]
-      );
-      
-      let itemId;
-      if (itemRes.rows.length === 0) {
-        const ni = await client.query(
+      // P2-1: Атомарный INSERT ON CONFLICT по UNIQUE индексу
+      let itemId = null;
+      try {
+        const ins = await client.query(
           'INSERT INTO wh_items (name, unit, category_id) ' +
-          'VALUES ($1, $2, $3) RETURNING id',
+          'VALUES ($1, $2, $3) ' +
+          'ON CONFLICT (name, unit, ' +
+          'COALESCE(category_id, 0)) DO NOTHING ' +
+          'RETURNING id',
           [name, unit, catId]
         );
-        itemId = ni.rows[0].id;
-      } else {
-        itemId = itemRes.rows[0].id;
+        
+        if (ins.rows.length > 0) {
+          itemId = ins.rows[0].id;
+        }
+      } catch (err) {
+        // 42P10: индекса нет (не создался из-за старых дублей)
+        if (err.code !== '42P10') throw err;
+      }
+      
+      if (!itemId) {
+        const sel = await client.query(
+          'SELECT id FROM wh_items WHERE name = $1 AND unit = $2 ' +
+          'AND category_id IS NOT DISTINCT FROM $3 ' +
+          'ORDER BY id ASC LIMIT 1',
+          [name, unit, catId]
+        );
+        if (sel.rows.length === 0) {
+          await client.query('ROLLBACK'); inTx = false;
+          return res.json({ ok: false, error: 'Ошибка каталога' });
+        }
+        itemId = sel.rows[0].id;
       }
 
       const nsi = await client.query(
@@ -917,7 +990,7 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
           req.body.supplier_id !== null && 
           req.body.supplier_id !== '') {
         supplierId = parseStrictInt(req.body.supplier_id);
-        if (supplierId === null) {
+        if (supplierId === null || supplierId <= 0) {
           return res.json({ ok: false, error: 'Ошибка supplier_id' });
         }
       }
@@ -1246,9 +1319,12 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
           if (row.alternatives && row.alternatives.length > 0) {
             for (let k = 0; k < row.alternatives.length; k++) {
               const a = row.alternatives[k];
+              if (!a) continue;
               const altId = typeof a === 'object' ? a.shop_item_id : a;
-              alts.push(altId);
-              allItemIds.add(altId);
+              if (altId) {
+                alts.push(altId);
+                allItemIds.add(altId);
+              }
             }
           }
           
@@ -1282,34 +1358,9 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
           continue;
         }
         let b = bouquetsMap[key];
-        let allInStock = true;
-        let tempStock = Object.assign({}, stockMap);
         
-        for (let j = 0; j < b.ingredients.length; j++) {
-          let ing = b.ingredients[j];
-          let need = ing.qty;
-          
-          let hasMain = tempStock[ing.shop_item_id] || 0;
-          let takeMain = Math.min(need, Math.max(0, hasMain));
-          tempStock[ing.shop_item_id] -= takeMain;
-          need -= takeMain;
-          
-          if (need > 0) {
-            for (let k = 0; k < ing.alternatives.length; k++) {
-              let altId = ing.alternatives[k];
-              let hasAlt = tempStock[altId] || 0;
-              let takeAlt = Math.min(need, Math.max(0, hasAlt));
-              tempStock[altId] -= takeAlt;
-              need -= takeAlt;
-              if (need <= 0) break;
-            }
-          }
-          
-          if (need > 0) {
-            allInStock = false;
-            break;
-          }
-        }
+        // P2-2: Корректный backtracking через canAssembleBouquet
+        let allInStock = canAssembleBouquet(b.ingredients, stockMap);
         
         let photoUrl = null;
         if (b.photos && b.photos.length > 0) {
@@ -1377,17 +1428,21 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
            const altIds = [];
            for (let k = 0; k < it.alternatives.length; k++) {
              const a = it.alternatives[k];
-             altIds.push(typeof a === 'object' ? a.shop_item_id : a);
+             if (!a) continue;
+             const altId = typeof a === 'object' ? a.shop_item_id : a;
+             if (altId) altIds.push(altId);
            }
-           const altQuery = await pool.query(
-             'SELECT i.id, i.current_stock, i.retail_price, ' +
-             'COALESCE(i.custom_name, w.name) AS name ' +
-             'FROM wh_shop_items i ' +
-             'JOIN wh_items w ON w.id = i.item_id ' +
-             'WHERE i.id = ANY($1) AND i.shop_id = $2', 
-             [altIds, shopId]
-           );
-           altsData = altQuery.rows;
+           if (altIds.length > 0) {
+             const altQuery = await pool.query(
+               'SELECT i.id, i.current_stock, i.retail_price, ' +
+               'COALESCE(i.custom_name, w.name) AS name ' +
+               'FROM wh_shop_items i ' +
+               'JOIN wh_items w ON w.id = i.item_id ' +
+               'WHERE i.id = ANY($1) AND i.shop_id = $2', 
+               [altIds, shopId]
+             );
+             altsData = altQuery.rows;
+           }
         }
         
         ingredients.push({
@@ -1541,7 +1596,6 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       const auth = getAuth(req);
       if (!auth) return res.status(401).json({ ok: false });
       
-      // P2.6: Строгая валидация ID
       let bId = 0;
       if (req.body.id !== undefined && req.body.id !== null && 
           req.body.id !== '' && String(req.body.id) !== '0') {
@@ -1697,10 +1751,13 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
           return res.json({ ok: false, error: 'Много альтернатив' });
         }
         
-        // P2.3, P2.4: Валидация альтернатив и объединение
         const validAlts = [];
         for (let k = 0; k < alts.length; k++) {
           const a = alts[k];
+          if (!a) {
+            await client.query('ROLLBACK'); inTx = false;
+            return res.json({ ok: false, error: 'null в альтернативах' });
+          }
           const rawId = typeof a === 'object' ? a.shop_item_id : a;
           const altId = parseStrictInt(rawId);
           
@@ -1717,15 +1774,27 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
           }
         }
         
-        if (!agg[shopItemId]) {
-          agg[shopItemId] = { qty: 0, alternatives: [] };
-        }
-        agg[shopItemId].qty += qty;
-        
-        for (let k = 0; k < validAlts.length; k++) {
-          if (agg[shopItemId].alternatives.indexOf(validAlts[k]) === -1) {
-            agg[shopItemId].alternatives.push(validAlts[k]);
+        if (agg[shopItemId]) {
+          const prevAlts = agg[shopItemId].alternatives;
+          let same = prevAlts.length === validAlts.length;
+          if (same) {
+            for (let k = 0; k < prevAlts.length; k++) {
+              if (validAlts.indexOf(prevAlts[k]) === -1) {
+                same = false;
+                break;
+              }
+            }
           }
+          if (!same) {
+            await client.query('ROLLBACK'); inTx = false;
+            return res.json({ 
+              ok: false, 
+              error: 'Разные альтернативы для одного товара' 
+            });
+          }
+          agg[shopItemId].qty += qty;
+        } else {
+          agg[shopItemId] = { qty: qty, alternatives: validAlts };
         }
       }
       
