@@ -224,7 +224,6 @@ function getShopAdmins(shop) {
   });
 }
 
-// P2-1: Единый фильтр для подсчета активных букетов
 function isActiveForCounting(b) {
   if (!b) return false;
   if (b.deleted === true || b.hidden === true || 
@@ -290,7 +289,6 @@ async function checkAndNotify() {
               }
             }
             
-            // P1-1: ставим флаг только если ВСЕ получили
             if (sentCount > 0 && failCount === 0) {
               await pool.query(
                 'UPDATE bouquets SET reminded = TRUE ' +
@@ -380,7 +378,6 @@ async function morningReminder() {
         }
         
         if (sentCount > 0 && failCount === 0) {
-          // P2-2: COALESCE на случай NULL в settings
           await pool.query(
             "UPDATE shops SET settings = jsonb_set(" +
             "COALESCE(settings, '{}'::jsonb), " +
@@ -459,7 +456,6 @@ async function weeklyReport() {
         
         if (sentCount > 0 && failCount === 0) {
           const nowMs = Date.now();
-          // P2-2: COALESCE на случай NULL в settings
           await pool.query(
             "UPDATE shops SET settings = jsonb_set(" +
             "COALESCE(settings, '{}'::jsonb), " +
@@ -504,12 +500,15 @@ async function start() {
   try {
     await initDb();
     await initWarehouseDb();
+    if (isShuttingDown) return; // P1 Fix
 
     setupWarehouse(app, bot, s3ctx);
     setupStorefront(app, bot, s3ctx);
     setupBotHandlers(bot, s3ctx);
 
     const existing = await getShopFromDb(PRESET_SHOP.shopId);
+    if (isShuttingDown) return; // P1 Fix
+    
     if (!existing) {
       const now = new Date();
       const trialEnd = new Date(now);
@@ -547,6 +546,7 @@ async function start() {
       if (!existing.maxLink) {
         await updateShopField(PRESET_SHOP.shopId, 'max_username', 
           PRESET_SHOP.maxLink);
+        if (isShuttingDown) return; // P1 Fix
       }
     }
 
@@ -568,18 +568,19 @@ async function start() {
         { command: 'help', description: 'Помощь' },
         { command: 'cancel', description: 'Отменить действие' }
       ]);
+      if (isShuttingDown) return; // P1 Fix
     } catch (e) {
       console.error('⚠️ Ошибка команд:', 
         e && e.message ? e.message : e);
     }
 
     try {
-      // P2-6: используем нормализованный URL
       const WEBHOOK_URL = SITE_URL_CLEAN + '/wh';
       await bot.setWebHook(WEBHOOK_URL, { 
         secret_token: WEBHOOK_SECRET 
       });
       console.log('✅ Webhook установлен');
+      if (isShuttingDown) return; // P1 Fix
     } catch (e) {
       console.error('❌ КРИТИЧЕСКАЯ Webhook:', 
         e && e.message ? e.message : e);
@@ -587,7 +588,6 @@ async function start() {
       return;
     }
 
-    // Немедленный запуск задач (для пробуждения Render)
     runSafeTask('checkAndNotify', checkAndNotify);
     runSafeTask('morningReminder', morningReminder);
     runSafeTask('weeklyReport', weeklyReport);
@@ -651,7 +651,6 @@ async function shutdown(signal, exitCode) {
       Promise.all(Array.from(runningTasks)),
       new Promise(function(r) { setTimeout(r, 5000); })
     ]);
-    // P2-4: явное предупреждение при таймауте
     if (runningTasks.size > 0) {
       console.warn(
         '⚠️ Таймаут ожидания задач, осталось: ' + 
