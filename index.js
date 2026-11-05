@@ -500,14 +500,14 @@ async function start() {
   try {
     await initDb();
     await initWarehouseDb();
-    if (isShuttingDown) return; // P1 Fix
+    if (isShuttingDown) return;
 
     setupWarehouse(app, bot, s3ctx);
     setupStorefront(app, bot, s3ctx);
     setupBotHandlers(bot, s3ctx);
 
     const existing = await getShopFromDb(PRESET_SHOP.shopId);
-    if (isShuttingDown) return; // P1 Fix
+    if (isShuttingDown) return;
     
     if (!existing) {
       const now = new Date();
@@ -540,13 +540,15 @@ async function start() {
         stats: { views: 0, orders: 0, calls: 0, 
           startedAt: now.toISOString() }
       });
+      // АУДИТ P1: проверка после создания магазина
+      if (isShuttingDown) return; 
       console.log('✅ Preset-магазин ' + PRESET_SHOP.shopId + ' создан');
     } else {
       console.log('✅ Preset-магазин найден');
       if (!existing.maxLink) {
         await updateShopField(PRESET_SHOP.shopId, 'max_username', 
           PRESET_SHOP.maxLink);
-        if (isShuttingDown) return; // P1 Fix
+        if (isShuttingDown) return;
       }
     }
 
@@ -568,11 +570,12 @@ async function start() {
         { command: 'help', description: 'Помощь' },
         { command: 'cancel', description: 'Отменить действие' }
       ]);
-      if (isShuttingDown) return; // P1 Fix
     } catch (e) {
       console.error('⚠️ Ошибка команд:', 
         e && e.message ? e.message : e);
     }
+    // АУДИТ P1: проверка после блока try/catch setMyCommands
+    if (isShuttingDown) return; 
 
     try {
       const WEBHOOK_URL = SITE_URL_CLEAN + '/wh';
