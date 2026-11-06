@@ -404,7 +404,11 @@ const uiJs = [
   '  inp.style.marginBottom = \'0\';',
   '  inp.style.marginTop = \'10px\';',
   '  inp.placeholder = String(placeholder || \'\');',
-  '  inp.value = String(defaultVal || \'\');',
+  '  if (defaultVal === null || defaultVal === undefined) {',
+  '    inp.value = \'\';',
+  '  } else {',
+  '    inp.value = String(defaultVal);',
+  '  }',
   '  p.appendChild(inp);',
   '  var btns = document.getElementById(\'uiModalBtns\');',
   '  btns.innerHTML = \'<button class="btn-cancel" \' +',
@@ -573,12 +577,20 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
     html += '}';
 
     html += 'function showShopSelect(shops) {';
+    html += '  if (!Array.isArray(shops) || shops.length === 0) {';
+    html += '    showAlert("Ошибка", "Сбой списка точек", false);';
+    html += '    var pBtn = document.getElementById("btnLoginPin");';
+    html += '    if (pBtn) { pBtn.disabled = false; ';
+    html += '    pBtn.innerText = "Войти"; }';
+    html += '    return;';
+    html += '  }';
     html += '  document.getElementById("pinBlock").style.display = "none";';
     html += '  var block = document.getElementById("shopSelectBlock");';
     html += '  block.style.display = "block";';
     html += '  var list = document.getElementById("shopList");';
     html += '  while(list.firstChild) list.removeChild(list.firstChild);';
     html += '  shops.forEach(function(s) {';
+    html += '    if (!s || !s.shop_id) return;';
     html += '    var btn = document.createElement("button");';
     html += '    btn.className = "shop-item";';
     html += '    btn.textContent = s.display_name || s.shop_id;';
@@ -586,6 +598,15 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
     html += '      switchToShop(s.shop_id, btn); });';
     html += '    list.appendChild(btn);';
     html += '  });';
+    html += '  if (!list.firstChild) {';
+    html += '    block.style.display = "none";';
+    html += '    var p = document.getElementById("pinBlock");';
+    html += '    if (p) p.style.display = "block";';
+    html += '    var pBtn2 = document.getElementById("btnLoginPin");';
+    html += '    if (pBtn2) { pBtn2.disabled = false; ';
+    html += '    pBtn2.innerText = "Войти"; }';
+    html += '    showAlert("Ошибка", "Нет доступных точек", false);';
+    html += '  }';
     html += '}';
 
     html += 'function switchToShop(sid, btn) {';
@@ -647,7 +668,9 @@ function setupWarehouseViewsCore(app, bot, s3ctx, getAuth) {
   app.get('/warehouse-app', async function(req, res) {
     try {
       const auth = getAuth(req);
-      if (!auth) return res.redirect('/warehouse-login');
+      if (!auth) {
+        return res.redirect('/warehouse-login');
+      }
 
       const shopId = auth.shopId;
       const chatId = auth.chatId;
