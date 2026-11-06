@@ -51,54 +51,118 @@ function parseStrictInt(val) {
   return Number.isSafeInteger(num) ? num : null;
 }
 
-// P2-2: Backtracking для проверки, можно ли собрать букет.
-// Перебираем сколько единиц взять из каждого товара (основной +
-// альтернативы). Защита от взрыва комбинаций счетчиком.
-function canAssembleBouquet(ingredients, initialStock) {
-  var stock = Object.assign({}, initialStock);
-  var iterCount = 0;
-  var MAX_ITER = 100000;
+function maxFlow(capacity, source, sink) {
+  var n = capacity.length;
+  var flow = 0;
+  var parent = new Array(n);
   
-  function distribute(pool, pIdx, need, idx) {
-    iterCount++;
-    if (iterCount > MAX_ITER) return false;
+  while (true) {
+    for (var i = 0; i < n; i++) parent[i] = -1;
+    parent[source] = source;
+    var queue = [source];
+    var head = 0;
     
-    if (need <= 0) {
-      return assign(idx + 1);
-    }
-    if (pIdx >= pool.length) return false;
-    
-    var cid = pool[pIdx];
-    var have = Math.max(0, stock[cid] || 0);
-    var maxTake = Math.min(need, have);
-    
-    for (var take = maxTake; take >= 0; take--) {
-      if (take > 0) stock[cid] = stock[cid] - take;
-      if (distribute(pool, pIdx + 1, need - take, idx)) {
-        if (take > 0) stock[cid] = stock[cid] + take;
-        return true;
+    while (head < queue.length) {
+      var u = queue[head++];
+      for (var v = 0; v < n; v++) {
+        if (parent[v] === -1 && capacity[u][v] > 1e-9) {
+          parent[v] = u;
+          queue.push(v);
+          if (v === sink) break;
+        }
       }
-      if (take > 0) stock[cid] = stock[cid] + take;
-    }
-    return false;
-  }
-  
-  function assign(idx) {
-    iterCount++;
-    if (iterCount > MAX_ITER) return false;
-    if (idx >= ingredients.length) return true;
-    
-    var ing = ingredients[idx];
-    var pool = [ing.shop_item_id];
-    for (var a = 0; a < ing.alternatives.length; a++) {
-      var altId = ing.alternatives[a];
-      if (pool.indexOf(altId) === -1) pool.push(altId);
+      if (parent[sink] !== -1) break;
     }
     
-    return distribute(pool, 0, ing.qty, idx);
+    if (parent[sink] === -1) break;
+    
+    var pathFlow = Infinity;
+    var v2 = sink;
+    while (v2 !== source) {
+      var u2 = parent[v2];
+      pathFlow = Math.min(pathFlow, capacity[u2][v2]);
+      v2 = u2;
+    }
+    
+    v2 = sink;
+    while (v2 !== source) {
+      var u3 = parent[v2];
+      capacity[u3][v2] -= pathFlow;
+      capacity[v2][u3] += pathFlow;
+      v2 = u3;
+    }
+    
+    flow += pathFlow;
   }
   
-  return assign(0);
+  return flow;
+}
+
+function canAssembleBouquet(ingredients, initialStock) {
+  var itemIdSet = {};
+  var i, j;
+  
+  for (i = 0; i < ingredients.length; i++) {
+    var ing = ingredients[i];
+    if (ing.shop_item_id) itemIdSet[ing.shop_item_id] = true;
+    if (ing.alternatives) {
+      for (j = 0; j < ing.alternatives.length; j++) {
+        itemIdSet[ing.alternatives[j]] = true;
+      }
+    }
+  }
+  
+  var itemIds = Object.keys(itemIdSet);
+  var itemIndex = {};
+  for (i = 0; i < itemIds.length; i++) {
+    itemIndex[itemIds[i]] = i;
+  }
+  
+  var numItems = itemIds.length;
+  var numIngredients = ingredients.length;
+  var V = numItems + numIngredients + 2;
+  var S = V - 2;
+  var T = V - 1;
+  
+  var capacity = [];
+  for (i = 0; i < V; i++) {
+    capacity.push(new Array(V).fill(0));
+  }
+  
+  var totalNeeded = 0;
+  for (i = 0; i < numItems; i++) {
+    var id = itemIds[i];
+    var stock = Math.max(0, parseFloat(initialStock[id]) || 0);
+    capacity[S][i] = stock;
+  }
+  
+  for (i = 0; i < numIngredients; i++) {
+    var ing2 = ingredients[i];
+    var ingNode = numItems + i;
+    var need = ing2.qty;
+    totalNeeded += need;
+    capacity[ingNode][T] = need;
+    
+    if (ing2.shop_item_id) {
+      var mainIdx = itemIndex[ing2.shop_item_id];
+      if (mainIdx !== undefined) {
+        capacity[mainIdx][ingNode] = totalNeeded;
+      }
+    }
+    
+    if (ing2.alternatives) {
+      for (j = 0; j < ing2.alternatives.length; j++) {
+        var altId = ing2.alternatives[j];
+        var altIdx = itemIndex[altId];
+        if (altIdx !== undefined) {
+          capacity[altIdx][ingNode] = totalNeeded;
+        }
+      }
+    }
+  }
+  
+  var maxFlowValue = maxFlow(capacity, S, T);
+  return maxFlowValue >= totalNeeded - 1e-6;
 }
 
 function setupWarehouseStock(app, bot, s3ctx, getAuth) {
@@ -139,14 +203,26 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
     console.error('Migration idx_shop_number:', e.message); 
   });
 
-  // P2-1: Уникальность каталога товаров (name, unit, COALESCE(cat,0))
-  pool.query(
-    'CREATE UNIQUE INDEX IF NOT EXISTS ' +
-    'idx_wh_items_name_unit_cat ON wh_items(' +
-    'name, unit, COALESCE(category_id, 0))'
-  ).catch(function(e) { 
-    console.error('Migration idx_items_name_unit:', e.message); 
-  });
+  (async function() {
+    try {
+      await pool.query(
+        'DROP INDEX IF EXISTS idx_wh_items_name_unit_cat'
+      );
+      console.log('Drop old idx_items: OK');
+    } catch (e) {
+      console.error('Drop old idx_items:', e.message);
+    }
+    try {
+      await pool.query(
+        'CREATE UNIQUE INDEX IF NOT EXISTS ' +
+        'idx_wh_items_name_unit_cat ON wh_items(' +
+        'name, unit, COALESCE(category_id, -1))'
+      );
+      console.log('Migration idx_items_name_unit: OK');
+    } catch (e) {
+      console.error('Migration idx_items_name_unit:', e.message);
+    }
+  })();
 
   app.get('/api/warehouse/categories', async function(req, res) {
     try {
@@ -585,7 +661,6 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       if (client) client.release();
     }
   });
-
   app.get('/api/warehouse/suppliers', async function(req, res) {
     try {
       const auth = getAuth(req);
@@ -805,6 +880,7 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       res.status(500).json({ ok: false }); 
     }
   });
+
   app.post('/api/warehouse/receipt/item/add', async function(req, res) {
     let client = null;
     let inTx = false;
@@ -853,7 +929,16 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
         return res.json({ ok: false, error: 'Неверные данные' });
       }
 
-      const catId = parseStrictInt(req.body.cat_id);
+      let catId = null;
+      if (req.body.cat_id !== undefined && req.body.cat_id !== null && 
+          req.body.cat_id !== '') {
+        catId = parseStrictInt(req.body.cat_id);
+        if (catId === null || catId <= 0) {
+          await client.query('ROLLBACK'); inTx = false;
+          return res.json({ ok: false, error: 'Неверная категория' });
+        }
+      }
+      
       const unit = String(req.body.unit || 'шт').slice(0, 10);
       let photoUrl = req.body.photo_url || null;
       
@@ -862,14 +947,13 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
         return res.json({ ok: false, error: 'Неверный URL фото' });
       }
 
-      // P2-1: Атомарный INSERT ON CONFLICT по UNIQUE индексу
       let itemId = null;
       try {
         const ins = await client.query(
           'INSERT INTO wh_items (name, unit, category_id) ' +
           'VALUES ($1, $2, $3) ' +
           'ON CONFLICT (name, unit, ' +
-          'COALESCE(category_id, 0)) DO NOTHING ' +
+          'COALESCE(category_id, -1)) DO NOTHING ' +
           'RETURNING id',
           [name, unit, catId]
         );
@@ -878,7 +962,6 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
           itemId = ins.rows[0].id;
         }
       } catch (err) {
-        // 42P10: индекса нет (не создался из-за старых дублей)
         if (err.code !== '42P10') throw err;
       }
       
@@ -1210,7 +1293,22 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       
       const ids = [];
       for (let i = 0; i < items.rows.length; i++) {
-        ids.push(items.rows[i].shop_item_id);
+        const item = items.rows[i];
+        
+        if (item.stock_version_after === null || 
+            item.stock_version_after === undefined ||
+            item.prev_avg_cost === null ||
+            item.prev_avg_cost === undefined ||
+            item.prev_last_cost === null ||
+            item.prev_last_cost === undefined) {
+          await client.query('ROLLBACK'); inTx = false;
+          return res.json({ 
+            ok: false, 
+            error: 'Старая накладная без снимка. Отмена вручную.' 
+          });
+        }
+        
+        ids.push(item.shop_item_id);
       }
       
       const lockedItems = await client.query(
@@ -1284,7 +1382,6 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       if (client) client.release();
     }
   });
-
   app.get('/api/warehouse/bouquets', async function(req, res) {
     try {
       const auth = getAuth(req);
@@ -1359,7 +1456,6 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
         }
         let b = bouquetsMap[key];
         
-        // P2-2: Корректный backtracking через canAssembleBouquet
         let allInStock = canAssembleBouquet(b.ingredients, stockMap);
         
         let photoUrl = null;
@@ -1471,8 +1567,11 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
         'SELECT b.id, b.name, b.price, b.photos, b.wh_linked, ' +
         'b.deleted, b.preorder_only, ' +
         "(SELECT STRING_AGG(COALESCE(shi.custom_name, i.name) " +
-        "|| ' x' || TRIM(TRAILING '.' FROM TRIM(TRAILING '0' " +
-        "FROM rcp.qty::text)), ', ') " +
+        "|| ' x' || " +
+        "CASE WHEN rcp.qty::text LIKE '%.%' " +
+        "THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' " +
+        "FROM rcp.qty::text)) " +
+        "ELSE rcp.qty::text END, ', ') " +
         'FROM wh_bouquet_recipes rcp ' +
         'JOIN wh_shop_items shi ON shi.id = rcp.shop_item_id ' +
         'JOIN wh_items i ON i.id = shi.item_id ' +
@@ -1617,7 +1716,8 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       }
       
       let photos = null;
-      if (photoUrl !== undefined && photoUrl !== null && photoUrl !== '') {
+      if (photoUrl !== undefined && photoUrl !== null && 
+          photoUrl !== '') {
         if (!isValidUrl(photoUrl)) {
           return res.json({ ok: false, error: 'Неверный URL' });
         }
@@ -1737,9 +1837,26 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       const agg = {};
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
+        
+        if (!it || typeof it !== 'object' || Array.isArray(it)) {
+          await client.query('ROLLBACK'); inTx = false;
+          return res.json({ ok: false, error: 'Неверный элемент' });
+        }
+        
         const qty = parseStrictFloat(it.qty);
         const shopItemId = parseStrictInt(it.shop_item_id);
-        const alts = Array.isArray(it.alternatives) ? it.alternatives : [];
+        
+        let alts = [];
+        if (it.alternatives !== undefined) {
+          if (it.alternatives === null || 
+              !Array.isArray(it.alternatives)) {
+            await client.query('ROLLBACK'); inTx = false;
+            return res.json({ 
+              ok: false, error: 'alternatives не массив' 
+            });
+          }
+          alts = it.alternatives;
+        }
         
         if (!shopItemId || qty === null || qty <= 0) {
           await client.query('ROLLBACK'); inTx = false;
@@ -1756,18 +1873,24 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
           const a = alts[k];
           if (!a) {
             await client.query('ROLLBACK'); inTx = false;
-            return res.json({ ok: false, error: 'null в альтернативах' });
+            return res.json({ 
+              ok: false, error: 'null в альтернативах' 
+            });
           }
           const rawId = typeof a === 'object' ? a.shop_item_id : a;
           const altId = parseStrictInt(rawId);
           
           if (!altId) {
             await client.query('ROLLBACK'); inTx = false;
-            return res.json({ ok: false, error: 'Неверная альтернатива' });
+            return res.json({ 
+              ok: false, error: 'Неверная альтернатива' 
+            });
           }
           if (altId === shopItemId) {
             await client.query('ROLLBACK'); inTx = false;
-            return res.json({ ok: false, error: 'Нельзя в альтернативы' });
+            return res.json({ 
+              ok: false, error: 'Нельзя в альтернативы' 
+            });
           }
           if (validAlts.indexOf(altId) === -1) {
             validAlts.push(altId);
@@ -1823,7 +1946,9 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
             );
             if (altCheck.rows.length === 0) {
               await client.query('ROLLBACK'); inTx = false;
-              return res.json({ ok: false, error: 'Чужая альтернатива' });
+              return res.json({ 
+                ok: false, error: 'Чужая альтернатива' 
+              });
             }
           }
         }
@@ -1849,6 +1974,7 @@ function setupWarehouseStock(app, bot, s3ctx, getAuth) {
       if (client) client.release();
     }
   });
+
 }
 
 module.exports = { setupWarehouseStock, logAction, capWords };
